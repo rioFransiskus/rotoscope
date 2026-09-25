@@ -27,9 +27,12 @@ Segmentation → Contour → Stylized stroke. MediaPipe Pose hanya fallback untu
 Kontrak lengkap per modul: docs/01-PIPELINE-SPEC.md. Parameter style: docs/02-STYLE-PARAMS.md.
 
 ## Aturan keras (jangan dilanggar tanpa izin eksplisit)
-1. rembg SELALU pakai model eksplisit `u2net_human_seg`. JANGAN pakai model default
-   (bria-rmbg: lisensi komersial berbayar) — D-003
-   ⚠️ Lisensi weights U-2-Net BELUM diverifikasi (action item D-003). Jangan klaim aman komersial sebelum dicek.
+1. Segmentasi (stage 2): dua kandidat diuji di T-102a (D-008). Jangan pilih sendiri.
+   - MediaPipe SelfieMulticlass 256x256: Apache 2.0, jadi default kalau kualitas setara
+   - rembg u2net_human_seg: lisensi ABU-ABU (dilatih di dataset non-komersial), hanya untuk
+     eksperimen, JANGAN diklaim aman komersial
+   Kalau memakai rembg: SELALU model eksplisit. JANGAN model default (bria-rmbg: lisensi
+   komersial berbayar) — D-003
 2. Tolak library/model berlisensi AGPL/copyleft atau lisensi komersial berbayar
    (contoh: YOLOv8 — D-004). Cek lisensi sebelum menambah dependency apa pun
 3. Semua parameter style dan threshold dibaca dari YAML (configs/). Tidak ada magic number.
