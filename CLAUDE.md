@@ -29,6 +29,7 @@ Kontrak lengkap per modul: docs/01-PIPELINE-SPEC.md. Parameter style: docs/02-ST
 ## Aturan keras (jangan dilanggar tanpa izin eksplisit)
 1. rembg SELALU pakai model eksplisit `u2net_human_seg`. JANGAN pakai model default
    (bria-rmbg: lisensi komersial berbayar) — D-003
+   ⚠️ Lisensi weights U-2-Net BELUM diverifikasi (action item D-003). Jangan klaim aman komersial sebelum dicek.
 2. Tolak library/model berlisensi AGPL/copyleft atau lisensi komersial berbayar
    (contoh: YOLOv8 — D-004). Cek lisensi sebelum menambah dependency apa pun
 3. Semua parameter style dan threshold dibaca dari YAML (configs/). Tidak ada magic number.
