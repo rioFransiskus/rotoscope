@@ -49,7 +49,8 @@ Kontrak lengkap per modul: docs/01-PIPELINE-SPEC.md. Parameter style: docs/02-ST
 - Python 3.11.9, venv di ./venv → aktifkan: .\venv\Scripts\Activate.ps1
 - GPU: NVIDIA GTX 1650 Ti, 4 GB VRAM. Jangan sarankan model/teknik yang butuh >3 GB VRAM
 - ffmpeg: binary eksternal
-- Stack disetujui: opencv-python, rembg, mediapipe, numpy, scipy, svgwrite, Pillow, pyyaml
+- Stack disetujui: opencv-contrib-python (via mediapipe; JANGAN install opencv-python juga), rembg, mediapipe, numpy, scipy, svgwrite, Pillow, pyyaml
+- Versi mayor baru: OpenCV 5.x dan mediapipe 1.x. Jangan asumsikan API versi lama (OpenCV 4.x / mediapipe 0.10.x); cek dokumentasi versi terinstall dulu.
 
 ## Cara kerja
 - Satu task/modul per sesi, sesuai ID task di docs/05-TASK-BOARD.md. Jangan sentuh modul lain

@@ -10,3 +10,6 @@ __pycache__/
 !assets/**/*.png
 .env
 Thumbs.db
+models/
+samples/*
+!samples/.gitkeep
