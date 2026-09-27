@@ -122,7 +122,7 @@ Tiga langkah, jadikan refleks:
   - [2026-09-27] Temuan: sumber 480 px < `working_width` 720 → pipeline bekerja di 480 px (tanpa
     upscale). Target TikTok/Reels 1080×1920 → perlu `output_width` terpisah, dicatat di T-203
 
-### T-005 · Setup GitHub sync · `WIP`
+### T-005 · Setup GitHub sync · `DONE`
 - **Kerjakan:** buat repo GitHub (private) → pindahkan `docs/00`–`docs/06` ke repo → push →
   connect ke Project → pilih `docs/` + `CLAUDE.md` + `requirements.txt` → hapus salinan lama di `claude/`
 - **Done when:** edit file di repo → push → Sync now → perubahan terlihat di chat Project
@@ -136,6 +136,7 @@ Tiga langkah, jadikan refleks:
     punya commit + branch `main`, `.gitignore` merujuk file di repo, 7 dokumen lama (bukan 6),
     uji sync = tandai T-005 DONE. Selain `docs/`, `CLAUDE.md` + `requirements.txt` ikut di-sync agar
     Claude di chat melihat aturan & versi yang dipakai Claude Code
+  - [2026-09-27] DONE — repo private rioFransiskus/rotoscope, sync Project: docs/ + CLAUDE.md + requirements.txt. 7 salinan lama claude/ dihapus dari Project knowledge. Mulai sekarang status diupdate di repo, bukan lewat chat.
 
 ---
 
@@ -321,7 +322,7 @@ Tiga langkah, jadikan refleks:
 
 | Phase | Task | Selesai |
 |---|---|---|
-| 0 Setup | T-001 … T-005 | 4/5 |
+| 0 Setup | T-001 … T-005 | 5/5 |
 | 1 Skeleton | T-101 … T-104 (T-102 → a/b) | 0/5 |
 | 2 Vectorize | T-201 … T-204 | 0/4 |
 | 3 Stabilize | T-301 … T-304 | 0/4 |
@@ -329,4 +330,4 @@ Tiga langkah, jadikan refleks:
 | 5 Fallback | T-501 … T-502 | 0/2 |
 | 6 Opsional | T-601 … T-603 | 0/3 |
 
-**Total: 29 task** · Selesai: 4/29
+**Total: 29 task** · Selesai: 5/29
