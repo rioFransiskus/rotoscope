@@ -39,6 +39,7 @@ tidak perlu diulang. Ini krusial karena iterasi style akan sering (stage 5 saja)
 ### [2] `segment.py`
 - **In:** `frames/*.png`
 - **Out:** `masks/frame_%05d.png` (grayscale 0–255), `qc_report.json`
+- ⚠️ Backend diganti ke Sapiens2 (D-009) — kontrak lengkap diperbarui setelah T-102c.
 - **Model:** ⚠️ backend final ditentukan di **T-102a (D-008)**:
   - MediaPipe SelfieMulticlass 256×256 (Apache 2.0) — default kalau kualitas setara
   - rembg `u2net_human_seg` — lisensi abu-abu, eksperimen saja. Kalau dipakai: **eksplisit**

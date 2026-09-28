@@ -6,7 +6,7 @@ menjadi animasi rotoscope bergaya sketsa outline hand-drawn. Output: MP4 + SVG p
 Hasil akan dimonetisasi (TikTok/Reels/YouTube) → lisensi semua dependency wajib aman komersial.
 
 ## Style target
-- Hanya siluet luar. Tanpa detail interior (wajah, lipatan baju, otot)
+- Siluet luar + garis oklusi: tepi anggota tubuh yang berada di depan bagian tubuh lain (mis. lengan di depan dada, kaki menyilang) — D-009. Tanpa garis batas baju–kulit, tanpa detail wajah, tanpa lipatan baju/otot
 - Garis tunggal kontinu, tebal-tipis bervariasi, sedikit bergetar
 - Background kertas polos, monokrom
 - Kasar seperti gesture drawing. BUKAN hasil edge detection, BUKAN vector yang terlalu rapi
@@ -27,12 +27,8 @@ Segmentation → Contour → Stylized stroke. MediaPipe Pose hanya fallback untu
 Kontrak lengkap per modul: docs/01-PIPELINE-SPEC.md. Parameter style: docs/02-STYLE-PARAMS.md.
 
 ## Aturan keras (jangan dilanggar tanpa izin eksplisit)
-1. Segmentasi (stage 2): dua kandidat diuji di T-102a (D-008). Jangan pilih sendiri.
-   - MediaPipe SelfieMulticlass 256x256: Apache 2.0, jadi default kalau kualitas setara
-   - rembg u2net_human_seg: lisensi ABU-ABU (dilatih di dataset non-komersial), hanya untuk
-     eksperimen, JANGAN diklaim aman komersial
-   Kalau memakai rembg: SELALU model eksplisit. JANGAN model default (bria-rmbg: lisensi
-   komersial berbayar) — D-003
+1. Segmentasi (stage 2) = Sapiens2 seg (+ pointmap, dievaluasi di T-102c) — D-009.
+   rembg/u2net_human_seg DITOLAK (D-008): jangan dipakai lagi
 2. Tolak library/model berlisensi AGPL/copyleft atau lisensi komersial berbayar
    (contoh: YOLOv8 — D-004). Cek lisensi sebelum menambah dependency apa pun
 3. Semua parameter style dan threshold dibaca dari YAML (configs/). Tidak ada magic number.
@@ -40,7 +36,7 @@ Kontrak lengkap per modul: docs/01-PIPELINE-SPEC.md. Parameter style: docs/02-ST
 4. Randomness wajib deterministic: seed = hash(frame_index, param_seed) — P-007
 5. Setiap stage baca dari disk dan tulis ke disk → pipeline resumable, tiap stage bisa
    dijalankan ulang sendiri
-6. onnxruntime versi CPU dulu. Jangan setup GPU/CUDA kecuali mengerjakan T-601
+6. GPU/CUDA hanya lewat PyTorch untuk Sapiens2, mulai T-102c (D-009). onnxruntime-gpu tidak dipakai (T-601 SKIP).
 7. Jangan tambah dependency baru tanpa bertanya dulu dan membandingkannya dengan stack
    yang sudah disetujui
 
@@ -49,7 +45,7 @@ Kontrak lengkap per modul: docs/01-PIPELINE-SPEC.md. Parameter style: docs/02-ST
 - Python 3.11.9, venv di ./venv → aktifkan: .\venv\Scripts\Activate.ps1
 - GPU: NVIDIA GTX 1650 Ti, 4 GB VRAM. Jangan sarankan model/teknik yang butuh >3 GB VRAM
 - ffmpeg: binary eksternal
-- Stack disetujui: opencv-contrib-python (via mediapipe; JANGAN install opencv-python juga), rembg, mediapipe, numpy, scipy, svgwrite, Pillow, pyyaml
+- Stack disetujui: opencv-contrib-python (via mediapipe; JANGAN install opencv-python juga), mediapipe, numpy, scipy, svgwrite, Pillow, pyyaml. rembg DITOLAK (D-008) — masih terinstall sampai follow-up pembersihan, jangan dipakai
 - Dev-only: pytest (requirements-dev.txt). Package di-install editable: pip install -e .
 - Versi mayor baru: OpenCV 5.x dan mediapipe 1.x. Jangan asumsikan API versi lama (OpenCV 4.x / mediapipe 0.10.x); cek dokumentasi versi terinstall dulu.
 

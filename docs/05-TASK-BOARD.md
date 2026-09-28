@@ -156,7 +156,7 @@ Tiga langkah, jadikan refleks:
     File setup baru: `pyproject.toml` (setuptools>=64, `pip install -e .`), `requirements-dev.txt`
     (pytest==9.1.1, MIT); `requirements-lock.txt` tetap snapshot runtime
 
-### T-102a · A/B test backend segmentasi · `TODO`
+### T-102a · A/B test backend segmentasi · `DONE`
 - **Kerjakan:** jalankan MediaPipe SelfieMulticlass 256×256 dan rembg `u2net_human_seg` pada frame
   video test yang sama (output T-101) → render side-by-side → hitung metrik sederhana di script
   A/B sendiri: waktu CPU per frame, IoU rata-rata frame berurutan, jumlah frame gagal `area_ratio`
@@ -167,15 +167,48 @@ Tiga langkah, jadikan refleks:
 - **Catatan:** script A/B = alat sekali pakai di `scripts/`, bukan bagian pipeline
 - **Update log:**
   - [2026-09-25] Task baru, dipecah dari T-102 — D-008
+  - [2026-09-28] WIP — mulai. Rencana script `scripts/ab_segment.py` menunggu approval
+  - [2026-09-28] `scripts/ab_segment.py` dijalankan pada `samples/test.mp4` (283 frame 480×854, 24 fps),
+    CPU 12 core, threshold 0.5, tanpa morfologi. ms tanpa 3 frame warm-up. Output di `work/ab_t102a/`.
+    Varian `mediapipe_pad` = frame di-pad persegi sebelum inferensi (diagnostik aspect ratio).
+    u2net memakai jalur raw (tanpa min-max `predict()` rembg), provider hanya `CPUExecutionProvider`
+
+    | backend | ms mean | ms med | ms p95 | iou_prev mean | med | min | iou<0.55 | area<3% | area>70% | >1 blob |
+    |---|---|---|---|---|---|---|---|---|---|---|
+    | mediapipe | 105.3 | 104.8 | 109.1 | 0.856 | 0.870 | 0.581 | 0 | 0 | 0 | 0 |
+    | mediapipe_pad | 106.8 | 106.6 | 109.3 | 0.840 | 0.857 | 0.489 | 3 | 0 | 0 | 1 |
+    | u2net | 417.1 | 416.2 | 427.3 | 0.864 | 0.897 | 0.424 | 7 | 0 | 0 | 0 |
+
+    cross_iou (mean / median / min): mediapipe vs u2net 0.805 / 0.832 / 0.451 (frame_00167);
+    mediapipe_pad vs u2net 0.750 / 0.783 / 0.432 (frame_00122); mediapipe vs mediapipe_pad
+    0.825 / 0.868 / 0.496 (frame_00044). u2net raw: max = 1.000 dan min = 0.000 di semua frame
+    (min-max `predict()` praktis tidak mengubah hasil pada klip ini). Menunggu penilaian visual Rio
+  - [2026-09-28] DONE — keputusan Rio (D-008): u2net dan mediapipe_pad ditolak; MediaPipe unggul
+    atas u2net tapi tidak dipakai sebagai backend final. Style target ditambah garis oklusi →
+    backend Sapiens2 (D-009), kelayakan diuji di T-102c
+  - **Follow-up (JANGAN dikerjakan tanpa tanya Rio):** keluarkan `rembg` + `onnxruntime` dari
+    requirements
+
+### T-102c · Uji kelayakan Sapiens2 lokal (seg + pointmap) di GTX 1650 Ti · `TODO`
+- **Kerjakan:** jalankan Sapiens2-seg 0.4B (dan Sapiens2-pointmap 0.4B) lokal pada 283 frame
+  output T-101; tentukan strategi environment (Python ≥3.12 + PyTorch ≥2.7, project 3.11.9);
+  fp16/fp32, tanpa bf16 (P-005) — D-009
+- **Done when:** VRAM dan s/frame terukur, garis oklusi 283 frame dinilai Rio, status D-009 diperbarui
+- **Catatan:** pointmap dibuang kalau seg saja sudah cukup. Cadangan kalau gagal: Depth Anything V2
+  Small (Apache 2.0)
+- **Update log:**
+  - [2026-09-28] Task baru — D-009
 
 ### T-102b · `segment.py` · `TODO`
-- **Kerjakan:** backend hasil T-102a → threshold → morphological open+close → ambil connected
-  component terbesar
-- **Done when:** `work/masks/` terisi mask biner, subjek terpisah bersih dari background
-- **⚠️ Kritis:** kalau rembg dipakai: model eksplisit, jangan model default (lisensi komersial
-  berbayar — D-003)
+- **Kerjakan:** backend Sapiens2 (hasil T-102c) → mask foreground → threshold → morphological
+  open+close → ambil connected component terbesar. Simpan class map bagian tubuh (+ pointmap kalau
+  dipakai) ke disk
+- **Done when:** `work/masks/` terisi mask biner + class map (+ pointmap kalau dipakai), subjek
+  terpisah bersih dari background
+- **⚠️ Kritis:** rembg/u2net ditolak (D-008), jangan dipakai
 - **Update log:**
   - [2026-09-25] Dulu T-102. Backend ditentukan T-102a — D-008
+  - [2026-09-28] Backend → Sapiens2 (D-009), menunggu T-102c
 
 ### T-103 · `export.py` naif · `TODO`
 - **Kerjakan:** PNG sequence → MP4 via ffmpeg, `-r 24 -pix_fmt yuv420p`
@@ -307,11 +340,13 @@ Tiga langkah, jadikan refleks:
 
 # PHASE 6 — Opsional
 
-### T-601 · `onnxruntime-gpu` · `TODO`
+### T-601 · `onnxruntime-gpu` · `SKIP`
 - **Kerjakan:** CUDA 12.x + cuDNN 9 versi cocok → benchmark sebelum/sesudah
 - **Risiko:** sumber error setup yang sering di Windows (P-006). Timebox, jangan dikejar
 - **Catatan:** jadi `SKIP` kalau T-102a memilih MediaPipe (rembg + onnxruntime keluar dari stack)
 - **Update log:**
+  - [2026-09-28] SKIP — `onnxruntime-gpu` tidak relevan lagi: rembg/u2net ditolak (D-008), GPU
+    lewat PyTorch untuk Sapiens2 (D-009, T-102c)
 
 ### T-602 · Eksperimen SAM 2 tiny · `TODO`
 - **Kerjakan:** `sam2.1_hiera_tiny`, frame di-downscale, propagasi per-chunk
@@ -330,11 +365,11 @@ Tiga langkah, jadikan refleks:
 | Phase | Task | Selesai |
 |---|---|---|
 | 0 Setup | T-001 … T-005 | 5/5 |
-| 1 Skeleton | T-101 … T-104 (T-102 → a/b) | 1/5 |
+| 1 Skeleton | T-101 … T-104 (T-102 → a/b/c) | 2/6 |
 | 2 Vectorize | T-201 … T-204 | 0/4 |
 | 3 Stabilize | T-301 … T-304 | 0/4 |
 | 4 Style | T-401 … T-406 | 0/6 |
 | 5 Fallback | T-501 … T-502 | 0/2 |
 | 6 Opsional | T-601 … T-603 | 0/3 |
 
-**Total: 29 task** · Selesai: 6/29
+**Total: 30 task** · Selesai: 7/30 (SKIP tidak dihitung selesai)

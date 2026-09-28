@@ -13,7 +13,7 @@ Karakteristik style B yang harus dicapai:
 
 | Aspek | Target |
 |---|---|
-| Detail | **Hanya siluet luar.** Tidak ada detail interior (wajah, lipatan baju, otot) |
+| Detail | **Siluet luar + garis oklusi:** tepi anggota tubuh yang berada di depan bagian tubuh lain (mis. lengan di depan dada, kaki menyilang). Tanpa garis batas baju–kulit, tanpa detail wajah, tanpa lipatan baju. *(diubah 2026-09-28, D-009)* |
 | Garis | Tunggal, kontinu, tebal-tipis bervariasi, sedikit bergetar (hand-drawn) |
 | Background | Putih/kertas polos. Background asli video dibuang total |
 | Warna | Monokrom. Garis gelap di atas kertas terang |
