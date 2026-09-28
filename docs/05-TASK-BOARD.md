@@ -142,12 +142,19 @@ Tiga langkah, jadikan refleks:
 
 # PHASE 1 — Skeleton pipeline (end-to-end jalan)
 
-### T-101 · `ingest.py` · `TODO`
+### T-101 · `ingest.py` · `DONE`
 - **Kerjakan:** video → frame sequence, normalisasi ke 24 fps, resize proporsional ke
   `working_width`, tulis `meta.json`
 - **Done when:** folder `work/frames/` terisi, jumlah frame sesuai durasi × 24
 - **Jangan:** upscale kalau sumber lebih kecil
 - **Update log:**
+  - [2026-09-28] DONE — ffmpeg `fps` + `scale=W:-2` via subprocess (aman VFR, autorotate), metadata
+    via ffprobe JSON. `samples/test.mp4` (30 fps, 11,8 s, 480×854, ada audio) → 283 frame 480×854
+    (tanpa upscale) dalam 0,71 s. Dimensi frame divalidasi vs hitungan Python (deteksi rotasi/SAR);
+    `meta.json` ditulis terakhir (atomik) sebagai penanda sukses. `source_frame_count` = null
+    (ffprobe tidak melaporkan `nb_frames` untuk sampel). `tests/test_ingest.py` 19 PASS.
+    File setup baru: `pyproject.toml` (setuptools>=64, `pip install -e .`), `requirements-dev.txt`
+    (pytest==9.1.1, MIT); `requirements-lock.txt` tetap snapshot runtime
 
 ### T-102a · A/B test backend segmentasi · `TODO`
 - **Kerjakan:** jalankan MediaPipe SelfieMulticlass 256×256 dan rembg `u2net_human_seg` pada frame
@@ -323,11 +330,11 @@ Tiga langkah, jadikan refleks:
 | Phase | Task | Selesai |
 |---|---|---|
 | 0 Setup | T-001 … T-005 | 5/5 |
-| 1 Skeleton | T-101 … T-104 (T-102 → a/b) | 0/5 |
+| 1 Skeleton | T-101 … T-104 (T-102 → a/b) | 1/5 |
 | 2 Vectorize | T-201 … T-204 | 0/4 |
 | 3 Stabilize | T-301 … T-304 | 0/4 |
 | 4 Style | T-401 … T-406 | 0/6 |
 | 5 Fallback | T-501 … T-502 | 0/2 |
 | 6 Opsional | T-601 … T-603 | 0/3 |
 
-**Total: 29 task** · Selesai: 5/29
+**Total: 29 task** · Selesai: 6/29
