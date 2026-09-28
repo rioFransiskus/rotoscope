@@ -50,6 +50,7 @@ Kontrak lengkap per modul: docs/01-PIPELINE-SPEC.md. Parameter style: docs/02-ST
 - GPU: NVIDIA GTX 1650 Ti, 4 GB VRAM. Jangan sarankan model/teknik yang butuh >3 GB VRAM
 - ffmpeg: binary eksternal
 - Stack disetujui: opencv-contrib-python (via mediapipe; JANGAN install opencv-python juga), rembg, mediapipe, numpy, scipy, svgwrite, Pillow, pyyaml
+- Dev-only: pytest (requirements-dev.txt). Package di-install editable: pip install -e .
 - Versi mayor baru: OpenCV 5.x dan mediapipe 1.x. Jangan asumsikan API versi lama (OpenCV 4.x / mediapipe 0.10.x); cek dokumentasi versi terinstall dulu.
 
 ## Cara kerja
