@@ -56,6 +56,7 @@ Kontrak lengkap per modul: docs/01-PIPELINE-SPEC.md. Parameter style: docs/02-ST
 ## Cara kerja
 - Satu task/modul per sesi, sesuai ID task di docs/05-TASK-BOARD.md. Jangan sentuh modul lain
 - Ikuti kontrak modul di docs/01. Kalau kontrak perlu berubah: jelaskan alasannya, tanya dulu
+- Edit file teks di repo pakai tool Edit/Write, BUKAN script Python/sed/heredoc di shell — supaya setiap perubahan tampil sebagai diff yang bisa saya review
 - Setiap modul punya test di tests/test_<modul>.py
 - Developer level beginner-intermediate: jelaskan singkat istilah CV/ML saat pertama muncul
 - JANGAN membaca isi work/, out/, samples/, atau file *.png / *.mp4 (ribuan frame, boros token)
