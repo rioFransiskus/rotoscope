@@ -27,7 +27,9 @@ Segmentation → Contour → Stylized stroke. MediaPipe Pose hanya fallback untu
 Kontrak lengkap per modul: docs/01-PIPELINE-SPEC.md. Parameter style: docs/02-STYLE-PARAMS.md.
 
 ## Aturan keras (jangan dilanggar tanpa izin eksplisit)
-1. Segmentasi (stage 2) = Sapiens2 seg (+ pointmap, dievaluasi di T-102c) — D-009.
+1. Segmentasi (stage 2) = Sapiens2-seg 0.8B fp16 GPU; fallback Sapiens2-seg 0.4B fp16 untuk SELURUH
+   klip (tidak pernah dicampur dalam satu klip). Kedalaman (garis oklusi) = Depth Anything V2 Small
+   (Apache-2.0; Base/Large CC-BY-NC DILARANG). Sapiens2-pointmap dan seg 1B DIBUANG — D-009.
    rembg/u2net_human_seg DITOLAK (D-008): jangan dipakai lagi
 2. Tolak library/model berlisensi AGPL/copyleft atau lisensi komersial berbayar
    (contoh: YOLOv8 — D-004). Cek lisensi sebelum menambah dependency apa pun
@@ -36,16 +38,20 @@ Kontrak lengkap per modul: docs/01-PIPELINE-SPEC.md. Parameter style: docs/02-ST
 4. Randomness wajib deterministic: seed = hash(frame_index, param_seed) — P-007
 5. Setiap stage baca dari disk dan tulis ke disk → pipeline resumable, tiap stage bisa
    dijalankan ulang sendiri
-6. GPU/CUDA hanya lewat PyTorch untuk Sapiens2, mulai T-102c (D-009). onnxruntime-gpu tidak dipakai (T-601 SKIP).
+6. GPU/CUDA hanya lewat PyTorch (wheel cu118) untuk Sapiens2-seg dan Depth Anything V2 Small, satu model
+   di GPU pada satu waktu. Tanpa bf16 (Turing, P-005): fp16/fp32 saja (D-009). onnxruntime-gpu tidak dipakai (T-601 SKIP).
 7. Jangan tambah dependency baru tanpa bertanya dulu dan membandingkannya dengan stack
    yang sudah disetujui
 
 ## Environment
 - Windows, PowerShell (Git Bash juga tersedia)
 - Python 3.11.9, venv di ./venv → aktifkan: .\venv\Scripts\Activate.ps1
-- GPU: NVIDIA GTX 1650 Ti, 4 GB VRAM. Jangan sarankan model/teknik yang butuh >3 GB VRAM
+- GPU: NVIDIA GTX 1650 Ti, 4 GB VRAM, driver 517.00 (CUDA maks 11.7). Jangan sarankan model/teknik yang
+  butuh >3 GB VRAM. PENGECUALIAN (disetujui Rio, D-005/D-009): Sapiens2-seg 0.8B fp16 (3276 MiB reserved),
+  dengan syarat cek VRAM bebas sebelum stage [2] + berhenti dengan pesan jelas, resume per frame, dan
+  fallback 0.4B fp16 (2258 MiB) untuk seluruh klip
 - ffmpeg: binary eksternal
-- Stack disetujui: opencv-contrib-python (via mediapipe; JANGAN install opencv-python juga), mediapipe, numpy, scipy, svgwrite, Pillow, pyyaml. rembg DITOLAK (D-008) — masih terinstall sampai follow-up pembersihan, jangan dipakai
+- Stack disetujui: opencv-contrib-python (via mediapipe; JANGAN install opencv-python juga), mediapipe, numpy, scipy, svgwrite, Pillow, pyyaml, torch==2.7.1+cu118, torchvision==0.22.1+cu118, transformers==5.17.0 (index PyTorch cu118 di requirements.txt). rembg DITOLAK (D-008) — masih terinstall sampai follow-up pembersihan, jangan dipakai
 - Dev-only: pytest (requirements-dev.txt). Package di-install editable: pip install -e .
 - Versi mayor baru: OpenCV 5.x dan mediapipe 1.x. Jangan asumsikan API versi lama (OpenCV 4.x / mediapipe 0.10.x); cek dokumentasi versi terinstall dulu.
 

@@ -38,6 +38,18 @@ GTX 1650 Ti punya tepat 4 GB, dikurangi alokasi display Windows. Memory bank SAM
 tumbuh seiring panjang video → risiko OOM tinggi.
 **Catatan:** CC 7.5 memenuhi syarat SAM 2 (butuh 7.0+), jadi secara hardware kompatibel —
 hanya VRAM yang jadi kendala.
+**Anggaran VRAM (T-102c, 2026-09-29, D-009)** — peak PyTorch reserved; GTX 1650 Ti 4096 MiB, di luar
+proses ±260–690 MiB (display Windows):
+
+| model | precision | reserved MiB | allocated MiB | peran |
+|---|---|---|---|---|
+| Sapiens2-seg 0.8B | fp16 | 3276 | 3014 | stage [2] utama — **pengecualian aturan ≤ 3 GB (disetujui Rio)** |
+| Sapiens2-seg 0.4B | fp16 | 2258 | 2185 | fallback stage [2] untuk seluruh klip |
+| Depth Anything V2 Small | fp32 | 424 | 291 | kedalaman (garis oklusi) |
+
+Model dijalankan **bergantian** (satu model di GPU pada satu waktu), tidak pernah bersamaan. Syarat
+pengecualian: cek VRAM bebas sebelum stage [2] + berhenti dengan pesan jelas, resume per frame,
+fallback 0.4B fp16 untuk seluruh klip (tidak dicampur) — diimplementasikan di T-102b.
 
 ### D-006 — Output: MP4 + SVG per frame
 **Alasan:** SVG memungkinkan koreksi manual di Krita/Illustrator untuk frame yang
@@ -88,7 +100,8 @@ cross_iou (mean / median / min): mediapipe vs u2net 0.805 / 0.832 / 0.451; media
 
 ### D-009 — Style target garis oklusi + backend Sapiens2
 **Tanggal:** 2026-09-28
-**Status:** DIPILIH — menunggu uji kelayakan hardware **T-102c**
+**Status (2026-09-29): LOLOS** — uji kelayakan **T-102c** selesai; keputusan final di bagian
+**Hasil T-102c** di bawah (seg 0.8B fp16 + Depth Anything V2 Small; pointmap dibuang)
 **Konteks:** Siluet saja kehilangan keterbacaan pose saat lengan/kaki menempel ke badan (review
 visual Rio, T-102a). Mask MediaPipe tidak menyimpan batas antar anggota tubuh.
 **Keputusan:**
@@ -102,9 +115,12 @@ visual Rio, T-102a). Mask MediaPipe tidak menyimpan batas antar anggota tubuh.
 - Meta dapat mengubah lisensi sepihak. Bukan OSI open source
 - **Risiko tercatat:** video input milik pihak ketiga (klausul hak pihak ketiga)
 **Syarat teknis:**
-- Python ≥3.12 + PyTorch ≥2.7 (project sekarang 3.11.9) → strategi environment diputuskan di T-102c
+- Python ≥3.12 + PyTorch ≥2.7 (project sekarang 3.11.9) → strategi environment diputuskan di T-102c.
+  **Koreksi (T-102c):** syarat Python ≥3.12 hanya berlaku untuk repo resmi `facebookresearch/sapiens2`;
+  lewat Hugging Face Transformers (≥5.10.1, Python ≥3.10) Sapiens2 jalan di Python 3.11.9
 - GPU Turing: tanpa bf16 (P-005) → fp16/fp32
-- Pin versi PyTorch (wheel cu128 masih mendukung sm_75)
+- Pin versi PyTorch. **Koreksi (T-102c):** driver 517.00 hanya sampai CUDA 11.7 → cu126/cu128 tidak
+  jalan tanpa update driver; dipakai wheel **cu118** (memuat sm_75)
 **Alternatif ditolak:**
 - Batas kelas MediaPipe multiclass — hanya kulit vs baju
 - Pose landmark — bentuk generik (D-002)
@@ -115,6 +131,90 @@ visual Rio, T-102a). Mask MediaPipe tidak menyimpan batas antar anggota tubuh.
 **Ditunda:** benda yang dipegang (gelas dll.) — tidak ada kelasnya di Sapiens2.
 **Dampak (dikerjakan setelah T-102c lolos):** kontrak stage [2]/[4]/[5] di `01-PIPELINE-SPEC.md`,
 stack + aturan #6 `CLAUDE.md`, D-005 (VRAM).
+
+**Hasil T-102c (2026-09-29)** — `scripts/sapiens2_probe.py`, `scripts/sapiens2_exp.py`,
+`scripts/look_test.py`; `samples/test.mp4`, 283 frame 480×854; detail di update log T-102c `docs/05`.
+
+*Environment — Opsi 1a (dipilih Rio):* venv utama Python 3.11.9 + `torch==2.7.1+cu118`,
+`torchvision==0.22.1+cu118`, `transformers==5.17.0`; GTX 1650 Ti (sm_75), driver 517.00, attention
+`sdpa`. 0 paket existing berubah versi, `pip check` bersih. Checkpoint di cache Hugging Face (di luar repo).
+
+*Benchmark* (s/frame = forward + post-process, tanpa 3 frame warm-up; VRAM = peak PyTorch):
+
+| model | precision / device | status | s/frame | VRAM alloc / reserved MiB | catatan |
+|---|---|---|---|---|---|
+| seg 0.4B | fp32 GPU | ok | 2.54 | 2972 / 3188 | full run 283 frame, 0 NaN |
+| seg 0.4B | fp16 GPU | ok | 7.99 | 2185 / 2258 | kelas sama vs fp32 99.998% |
+| **seg 0.8B** | **fp16 GPU** | **ok** | **15.85** | **3014 / 3276** | **full run 283 frame, 0 NaN** |
+| seg 1B | – | tidak dijalankan | – | – | tidak layak di hardware ini (VRAM tidak muat, RAM CPU tidak memenuhi syarat) |
+| pointmap 0.4B | fp16 GPU | NaN/inf 20/20 | 14.69 | 2420 / 3084 | |
+| pointmap 0.4B | fp32 GPU | OOM | – | 3437 saat gagal | |
+| pointmap 0.4B | fp32 + autocast fp16 GPU | OOM (2×) | – | 3469 / 3546 | percobaan perbaikan `max_split_size_mb:128` juga OOM |
+| pointmap 0.4B | fp32 CPU | ok | 30.66 | RAM 5142 MiB | full run terhenti di 95/283 (RAM sistem habis) |
+| **Depth Anything V2 Small** | **fp32 GPU** | **ok** | **0.16** | **291 / 424** | **full run 283 frame, 0 NaN, 0.185 s/frame total** |
+
+*Full run seg 0.8B fp16 (283 frame):* VRAM di luar proses sebelum run 258 MiB (nvidia-smi); bebas
+3318 MiB sebelum load, 1568 MiB setelah load (`torch.cuda.mem_get_info`). Tanpa OOM, NaN/inf 0.
+s/frame infer 15.85 (p95 15.87), total termasuk I/O 15.87. Peak VRAM reserved **3276 MiB di semua
+frame**, allocated maks 3014 MiB. Estimasi klip 15 s (360 frame): seg 0.8B ≈ 95 mnt + DA ≈ 1 mnt
+→ **±1.6 jam per klip**; waktu bukan batasan (keputusan Rio).
+
+*Metrik foreground full klip* (definisi `sapiens2_probe.py` = `ab_segment.py`):
+
+| backend | iou_prev mean / min | frame gagal QC | label_agreement_prev mean / min | cross_iou vs MediaPipe mean |
+|---|---|---|---|---|
+| seg 0.4B fp32 | 0.903 / 0.724 | 0 | 0.951 / 0.790 | 0.861 |
+| seg 0.8B fp16 | 0.901 / 0.713 | 0 | 0.955 / 0.778 | 0.863 |
+| MediaPipe (T-102a) | 0.856 / 0.581 | 0 | – | – |
+
+Kelas sama 0.8B vs 0.4B per frame: mean 99.33%, min 97.50%.
+
+**Keputusan final (Rio, 2026-09-29):**
+- **Seg = Sapiens2-seg 0.8B, fp16 GPU**, input default image processor 1024×768 (**stretch**,
+  `do_pad=false`). Alasan: penilaian visual Rio — setelah post-processing jauh lebih bersih dari 0.4B
+  (komponen garis kecil < 100 px setelah post-processing, total 20 frame: 102 vs 116 di frame 73–92,
+  31 vs 50 di frame 183–202; label_agreement_prev 0.976 vs 0.969 di frame 73–92) — dan lolos full run
+  283 frame.
+- **PENGECUALIAN aturan VRAM ≤ 3 GB (disetujui Rio):** seg 0.8B reserved 3276 MiB. Syarat, diimplementasikan
+  di T-102b: (1) cek VRAM bebas sebelum stage [2], berhenti dengan pesan jelas kalau tidak cukup;
+  (2) resume per frame; (3) fallback **seg 0.4B fp16** (2258 MiB reserved) untuk **SELURUH klip** —
+  tidak pernah dicampur dengan 0.8B dalam satu klip.
+- **Post-processing seg** (default kandidat untuk T-102b/T-201, jadi parameter YAML):
+  - filter pulau kelas **N = 30 px** — komponen 8-arah sebuah kelas < N diganti kelas mayoritas di
+    cincin 1 px sekelilingnya. Pulau penyebab garis glitch di tangan (frame 90) berukuran 1–28 px → N > 28;
+    struktur terkecil yang stabil antar frame: Left_Hand 36 px (0.8B frame 196), Left_Shoe 44–48 px
+    (frame 187–190) → N ≤ 36. N = 50 menghapus keduanya
+  - mode filter peta grup **K = 3** (background ikut dihitung sebagai grup) — K terbesar yang tidak
+    membuat komponen grup ≥ N px kehilangan > 50% area (80 peta uji: K=3 → 0, K=5 → 12, K=7 → 43);
+    0.099% piksel foreground berubah grup
+  - filter komponen garis **M = 5 px** (8-arah) — bintik garis DA di zona tangan 2–4 px; setelah
+    pulau + mode filter, 30% komponen garis ≤ 4 px
+- **Seg 1B:** tidak layak di hardware ini.
+- **Kedalaman = Depth Anything V2 Small** (`depth-anything/Depth-Anything-V2-Small-hf`, model card
+  **Apache-2.0**; Base/Large CC-BY-NC — DILARANG), fp32 GPU, 0.16 s/frame, VRAM 424 MiB reserved. Garis
+  oklusi dari lompatan kedalaman relatif (threshold p95 per klip). Penilaian Rio: setara pointmap di
+  frame 73–92 (kaki menyilang), tanpa garis palsu di tali cargo/saku/lipatan.
+- **Sapiens2-pointmap DIBUANG:** GPU OOM (fp32, fp32 + autocast) dan NaN (fp16); CPU 30.7 s/frame
+  (±3.1 jam per klip) + risiko RAM sistem habis.
+- **Grup garis** (`scripts/sapiens2_groups.json`): hair dan face terpisah; Lower_Clothing masuk torso
+  (tanpa garis pinggang kaos–celana). Batas di dalam satu grup tidak digambar.
+- **Target konten garis (disetujui Rio):** tingkat detail `work/t102c/exp/filtered_full_0.8b.mp4` —
+  siluet + batas grup + garis oklusi kedalaman — TANPA bayangan dan duplikat siluet. Tampilan
+  hand-drawn = tugas stage [4]–[5].
+- Nama 29 kelas: `scripts/sapiens2_classes.json` (config HF hanya `LABEL_0..28`; sumber
+  `facebookresearch/sapiens2` `docs/SEG.md` commit `744905ba`).
+
+**Known issues (dicatat, belum diperbaiki):**
+- Garis kedalaman DA mentah menghasilkan "bayangan": duplikat sejajar siluet/batas seg dan bercak
+  tebal (`work/t102c/look/diag_sources.png`; frame 120: 4234 px garis DA vs 11808 px garis seg).
+  Syarat T-201: tepi tipis (NMS + hysteresis), hanya di dalam grup dengan jarak minimum ke batas seg,
+  panjang minimum. Titik awal dari look test (`scripts/look_test.py`): T_high p95 / T_low p90 per klip
+  atas |grad log d|, jarak minimum D = 7 px, panjang skeleton minimum L = 30 px
+- Getaran garis interior → T-302 harus menstabilkan **peta grup**, bukan hanya mask biner; kontrak
+  T-102b perlu menyimpan data yang dibutuhkan (mis. probabilitas per grup)
+- Satu komponen garis DA ±94 px di area tangan (frame 90) tidak bisa dibedakan dari garis sah hanya
+  dengan ukuran → dievaluasi lagi di T-201/T-302
+- Benda yang dipegang: ditunda (tidak ada kelasnya di Sapiens2)
 
 ---
 

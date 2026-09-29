@@ -1,0 +1,10 @@
+{
+  "_comment": "Grup bagian tubuh untuk preview garis T-102c (scripts/sapiens2_probe.py). Batas di dalam satu grup tidak digambar. Nama = id2label model sapiens2-seg. Lower_Clothing masuk torso (poin D, 2026-09-29): garis pinggang kaos-celana tidak digambar. Grup head dipecah jadi hair + face (2026-09-29): rambut dipisahkan dari wajah.",
+  "hair": ["Hair"],
+  "face": ["Face_Neck", "Eyeglass", "Lower_Lip", "Upper_Lip", "Lower_Teeth", "Upper_Teeth", "Tongue"],
+  "torso": ["Torso", "Upper_Clothing", "Apparel", "Lower_Clothing"],
+  "left_arm": ["Left_Upper_Arm", "Left_Lower_Arm", "Left_Hand"],
+  "right_arm": ["Right_Upper_Arm", "Right_Lower_Arm", "Right_Hand"],
+  "left_leg": ["Left_Upper_Leg", "Left_Lower_Leg", "Left_Foot", "Left_Shoe", "Left_Sock"],
+  "right_leg": ["Right_Upper_Leg", "Right_Lower_Leg", "Right_Foot", "Right_Shoe", "Right_Sock"]
+}

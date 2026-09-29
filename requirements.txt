@@ -7,3 +7,10 @@ svgwrite==1.4.3
 Pillow==12.3.0
 pyyaml==6.0.3
 onnxruntime==1.30.0
+# Sapiens2-seg + Depth Anything V2 Small lewat PyTorch (T-102c, D-009). Wheel CUDA 11.8: driver 517.00
+# (CUDA maks 11.7) tidak bisa cu126/cu128; cu118 memuat sm_75 (Turing). Versi "+cu118" hanya ada di index
+# PyTorch -> index itu DITAMBAHKAN (--extra-index-url); PyPI tetap index utama untuk paket lain.
+--extra-index-url https://download.pytorch.org/whl/cu118
+torch==2.7.1+cu118
+torchvision==0.22.1+cu118
+transformers==5.17.0
