@@ -1,0 +1,63 @@
+# Style rough-sketch (stage [5]). Nilai = default kode (src/rotoscope/config.py) = docs/02.
+# Path aset relatif → terhadap root project (folder berisi pyproject.toml), bukan cwd.
+
+# ── SHAPE ──────────────────────────────────────────
+shape:
+  simplify_epsilon: 2.5      # cv2.approxPolyDP. Naik = lebih sedikit titik, lebih kasar
+  resample_points: 200       # jumlah titik tetap per stroke (maks 1 titik / px untuk stroke pendek)
+  smooth_tension: 0.5        # Catmull-Rom tension. 0 = tajam, 0.5 = Catmull-Rom standar
+  spline_steps: 8            # titik spline per segmen sebelum resample
+# (min_contour_area pindah ke vectorize.min_region_area di default.yaml — D-010)
+
+# ── STROKE ─────────────────────────────────────────
+stroke:
+  width_base: 3.2            # tebal dasar garis (px)
+  width_variation: 0.45      # 0 = seragam, 1 = variasi ekstrem
+  width_noise_scale: 0.08    # frekuensi perubahan tebal sepanjang path
+  color: "#1a1a1a"
+  opacity: 0.92
+  cap: "round"
+  taper_ends: true           # ujung garis menipis
+  taper_px: 20               # panjang zona taper di tiap ujung (px)
+  taper_min: 0.15            # tebal di ujung sebagai fraksi tebal normal
+  by_type:                   # override per jenis garis (skema [4]); 1.0 = sama dengan dasar
+    silhouette:      {width_scale: 1.0, opacity_scale: 1.0}
+    silhouette_hole: {width_scale: 1.0, opacity_scale: 1.0}
+    group_boundary:  {width_scale: 1.0, opacity_scale: 1.0}
+    occlusion:       {width_scale: 1.0, opacity_scale: 1.0}
+
+# ── JITTER (hand-drawn feel) ───────────────────────
+jitter:
+  amplitude: 1.8             # pergeseran titik (px). 0 = garis mekanis
+  frequency: 0.12            # skala noise. Kecil = gelombang panjang
+  temporal_seed_mode: "frame"  # "frame" = getar tiap frame | "fixed" = diam
+  temporal_drift: 0.35       # seberapa cepat pola jitter berubah antar frame
+  param_seed: 0              # seed = hash(frame_index, param_seed, track_id) — P-007
+
+# ── MULTI-PASS (kesan sketsa ditimpa) ──────────────
+multipass:
+  enabled: true
+  passes: 2                  # jumlah garis tumpang tindih
+  offset: 1.2                # jarak antar pass (px)
+  opacity_falloff: 0.55      # pass ke-2 lebih pudar
+
+# ── TEXTURE ────────────────────────────────────────
+texture:
+  mode: "brush_stamp"        # "none" | "brush_stamp" | "grain_overlay"
+  brush_image: "assets/brushes/pencil_01.png"
+  stamp_spacing: 0.35        # rasio terhadap lebar brush
+  pressure_noise: 0.25
+  grain_strength: 0.18
+
+# ── PAPER ──────────────────────────────────────────
+paper:
+  enabled: true
+  color: "#f4f1ea"
+  texture_image: "assets/paper/rough_01.jpg"
+  texture_opacity: 0.35
+  vignette: 0.12
+
+# ── RENDER ─────────────────────────────────────────
+render:
+  ss: 3                      # faktor supersampling raster (anti-alias)
+  # output_width: diputuskan sebelum T-203 (resolusi output terpisah dari resolusi kerja)

@@ -1,0 +1,82 @@
+# Parameter pipeline (stage [2]–[4]). Nilai = default kode (src/rotoscope/config.py) = docs/02.
+# Ubah default: ubah ketiganya (dicek tests/test_config.py). Untuk eksperimen, salin file ini.
+
+# ── PATHS ──────────────────────────────────────────
+paths:
+  # Relatif → terhadap direktori kerja (cwd) saat load. Path Windows: pakai "/" atau kutip TUNGGAL.
+  #   work_dir: "D:/rotoscope/work"   → OK
+  #   work_dir: 'D:\rotoscope\work'   → OK
+  #   work_dir: "D:\rotoscope\new"    → ERROR: di kutip GANDA backslash = escape ("\r", "\n" = kontrol)
+  work_dir: "work"           # boleh di drive lain (±1–5 GB per klip)
+  out_dir: "out"
+
+# ── SEGMENT [2] — Sapiens2-seg ─────────────────────
+segment:
+  model: "0.8b"              # "0.8b" | "0.4b" — eksplisit, untuk SELURUH klip (D-009)
+  model_ids:
+    "0.8b": "facebook/sapiens2-seg-0.8b"   # id HF yang dipakai di T-102c
+    "0.4b": "facebook/sapiens2-seg-0.4b"
+  revision: null             # commit hash checkpoint HF; diisi di T-102b (pin)
+  precision: "fp16"          # "fp16" | "fp32" — TANPA bf16 (P-005)
+  vram_min_free_mib:
+    "0.8b": 3300             # peak reserved 3276 MiB (T-102c)
+    "0.4b": 2300             # peak reserved 2258 MiB
+  probs_dtype: "uint8"       # round(p × 255), npz deflate
+
+# ── DEPTH [2c] — Depth Anything V2 Small ───────────
+depth:
+  model_id: "depth-anything/Depth-Anything-V2-Small-hf"   # HANYA Small (Apache-2.0)
+  revision: null             # diisi di T-105 (pin)
+  precision: "fp32"
+  vram_min_free_mib: 500     # peak reserved 424 MiB
+
+# ── QC (akhir stage [2]) ───────────────────────────
+qc:
+  area_min: 0.03             # fraksi frame
+  area_max: 0.70
+  iou_min: 0.55              # IoU foreground vs frame sebelumnya
+  blob_min: 0.05             # komponen "besar" = > 5% area frame
+  max_big_blobs: 1
+  area_median_window: 49     # frame (±2 s); median BERGULIR, bukan median klip
+  area_drop_min: 0.6         # SEMENTARA — dikalibrasi di T-102b
+
+# ── GROUPS (dipakai [3] dan [4]) ───────────────────
+# Urutan = id grup (1..G); 0 = background (dicadangkan). Batas di dalam satu grup tidak digambar.
+groups:
+  hair: [Hair]
+  face: [Face_Neck, Eyeglass, Lower_Lip, Upper_Lip, Lower_Teeth, Upper_Teeth, Tongue]
+  torso: [Torso, Upper_Clothing, Apparel, Lower_Clothing]
+  left_arm: [Left_Upper_Arm, Left_Lower_Arm, Left_Hand]
+  right_arm: [Right_Upper_Arm, Right_Lower_Arm, Right_Hand]
+  left_leg: [Left_Upper_Leg, Left_Lower_Leg, Left_Foot, Left_Shoe, Left_Sock]
+  right_leg: [Right_Upper_Leg, Right_Lower_Leg, Right_Foot, Right_Shoe, Right_Sock]
+
+# ── STABILIZE [3] ──────────────────────────────────
+stabilize:
+  temporal:
+    enabled: false           # Phase 1–2: false; dinyalakan di T-302
+    mask_ema_alpha: 0.7      # 1.0 = tanpa smoothing. Turun = lebih stabil, lebih lag
+    optical_flow_blend: 0.4  # bobot probabilitas hasil warp
+    boil_preserve: 0.3       # 0 = mati total, 1 = boiling penuh
+    qc_fail_weight: 0.25     # SEMENTARA — bobot frame gagal QC di EMA, dikalibrasi di T-302
+  island_min_px: 30          # N — filter pulau pada peta GRUP (T-102c: pada peta kelas → T-305)
+  mode_k: 3                  # K — mode filter peta grup, background ikut
+  depth:
+    normalize: "log_median_iqr"  # SEMENTARA — metode dipilih + diuji di T-302
+    temporal: true           # hanya berlaku kalau temporal.enabled
+
+# ── VECTORIZE [4] ──────────────────────────────────
+vectorize:
+  min_region_area: 800       # px² — kontur luar foreground lebih kecil dibuang
+  min_hole_area: 200         # px² — SEMENTARA, lubang siluet lebih kecil dibuang; dikalibrasi di T-305
+  line_min_px: 5             # M — komponen garis 8-arah < M px dibuang, SEBELUM thinning
+  min_stroke_px: 6           # jalur hasil tracing < 6 px dibuang
+  depth_lines:
+    blur_sigma: 1.0          # Gaussian σ (px) sebelum Sobel
+    hi_pct: 95               # T_high = persentil per klip |grad depth_smooth|
+    lo_pct: 90               # T_low  = persentil per klip
+    erode_px: 5              # kernel erosi foreground untuk wilayah persentil
+    min_dist_px: 7           # D — jarak minimum ke batas grup (termasuk siluet)
+    min_len_px: 30           # L — panjang skeleton minimum
+  track:
+    max_match_dist_px: 12    # SEMENTARA — jarak rata-rata maks pencocokan track_id, dikalibrasi di T-202

@@ -1,5 +1,5 @@
 {
-  "_comment": "Nama 29 kelas Sapiens2-seg (indeks = id kelas). config.json checkpoint HF hanya berisi LABEL_0..28, jadi tabel ini disimpan sekali dari sumber resmi di bawah. Dibaca lokal oleh scripts/sapiens2_*.py, tanpa akses jaringan saat runtime.",
+  "_comment": "Nama 29 kelas Sapiens2-seg (indeks = id kelas). config.json checkpoint HF hanya berisi LABEL_0..28, jadi tabel ini disimpan sekali dari sumber resmi di bawah. Data paket rotoscope (dibaca config.load_class_names() dan scripts/sapiens2_*.py), tanpa akses jaringan saat runtime.",
   "source_url": "https://github.com/facebookresearch/sapiens2/blob/744905ba762c0ccb369c3206e3a49d81a634e023/docs/SEG.md#class-definitions",
   "source_commit": "744905ba762c0ccb369c3206e3a49d81a634e023",
   "source_commit_date": "2026-05-15T23:23:38Z",

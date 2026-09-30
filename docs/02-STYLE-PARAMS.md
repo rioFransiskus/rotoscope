@@ -17,6 +17,10 @@ Nilai bertanda **sementara** belum dikalibrasi; task kalibrasinya disebut di kol
 ```yaml
 # ── PATHS ──────────────────────────────────────────
 paths:
+  # Relatif → terhadap direktori kerja (cwd) saat load. Path Windows: pakai "/" atau kutip TUNGGAL.
+  #   work_dir: "D:/rotoscope/work"   → OK
+  #   work_dir: 'D:\rotoscope\work'   → OK
+  #   work_dir: "D:\rotoscope\new"    → ERROR: di kutip GANDA backslash = escape ("\r", "\n" = kontrol)
   work_dir: "work"           # boleh di drive lain (±1–5 GB per klip)
   out_dir: "out"
 
@@ -96,8 +100,11 @@ vectorize:
 
 | parameter | range / aturan |
 |---|---|
-| `paths.work_dir`, `paths.out_dir` | string tidak kosong; folder dibuat kalau belum ada |
+| `paths.work_dir`, `paths.out_dir` | string tidak kosong, tanpa karakter kontrol; relatif → di-resolve terhadap direktori kerja (cwd) saat load; absolut (mis. `D:/…`) boleh. Loader **tidak** membuat folder (tanpa side effect) — stage memanggil `ensure_dir()` |
 | `segment.model` | `"0.8b"` atau `"0.4b"` |
+| `segment.model_ids`, `segment.vram_min_free_mib` | key persis {`0.8b`, `0.4b`} |
+| `segment.model_ids.*` | wajib diawali `facebook/sapiens2-seg-` — Sapiens v1 (`facebook/sapiens-seg-…`, CC-BY-NC) ditolak |
+| `segment.revision`, `depth.revision` | `null` atau string tidak kosong (stage [2]/[2c] menolak `null` saat runtime — T-102b/T-105) |
 | `segment.precision` | `"fp16"` atau `"fp32"` (`bf16` ditolak, P-005) |
 | `segment.vram_min_free_mib.*`, `depth.vram_min_free_mib` | int 0–4096 |
 | `segment.probs_dtype` | `"uint8"` |
@@ -112,7 +119,8 @@ vectorize:
 | `stabilize.temporal.optical_flow_blend`, `boil_preserve`, `qc_fail_weight` | 0–1 |
 | `stabilize.island_min_px` | int ≥ 0 (0 = mati) |
 | `stabilize.mode_k` | int ganjil ≥ 1 (1 = mati) |
-| `stabilize.depth.normalize` | nilai dari daftar metode yang diimplementasi (T-302) |
+| `stabilize.temporal.enabled`, `stabilize.depth.temporal` | bool |
+| `stabilize.depth.normalize` | nilai dari daftar metode yang diimplementasi — sekarang hanya `"log_median_iqr"`; diperluas di T-302 (kandidat: affine) |
 | `vectorize.min_region_area`, `min_hole_area` | int ≥ 0 |
 | `vectorize.line_min_px`, `min_stroke_px` | int ≥ 1 |
 | `vectorize.depth_lines.blur_sigma` | ≥ 0 (0 = tanpa blur) |
@@ -222,7 +230,8 @@ Bagian `temporal:` lama (mask_ema_alpha, optical_flow_blend, boil_preserve) **pi
 | `multipass.offset` | ≥ 0 |
 | `multipass.opacity_falloff` | 0–1 |
 | `texture.mode` | `"none"` \| `"brush_stamp"` \| `"grain_overlay"` |
-| `texture.brush_image`, `paper.texture_image` | file ada (kalau dipakai) |
+| `stroke.taper_ends`, `multipass.enabled`, `paper.enabled` | bool |
+| `texture.brush_image`, `paper.texture_image` | path relatif → di-resolve terhadap **root project** (folder berisi `pyproject.toml`, dicari dari lokasi paket — editable install), **bukan** cwd; absolut boleh; root tidak ditemukan → error. File wajib ada hanya kalau dipakai (`texture.mode == "brush_stamp"` / `paper.enabled`). Aturan ini khusus aset input — `paths.*` tetap relatif terhadap cwd |
 | `texture.stamp_spacing` | > 0 |
 | `texture.pressure_noise`, `texture.grain_strength`, `paper.texture_opacity`, `paper.vignette` | 0–1 |
 | `render.ss` | int 1–8 |

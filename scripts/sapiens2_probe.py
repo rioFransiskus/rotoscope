@@ -53,7 +53,7 @@ PRECISIONS = ["fp16", "fp32"]  # tanpa bf16: Turing (P-005)
 NUM_CLASSES = 29
 # config.json checkpoint HF hanya berisi LABEL_0..28. Nama kelas resmi (facebookresearch/sapiens2
 # docs/SEG.md, commit tercatat di file) disimpan sekali di sini; dipakai kalau id2label generik.
-CLASSES_FILE = ROOT / "scripts" / "sapiens2_classes.json"
+CLASSES_FILE = ROOT / "src" / "rotoscope" / "data" / "sapiens2_classes.json"
 ZONES = [(1, 7), (236, 241)]  # zona gagal T-102a (nomor frame)
 
 # Visualisasi (bukan parameter pipeline)

@@ -581,7 +581,7 @@ Tiga langkah, jadikan refleks:
 - **Update log:**
   - [2026-09-29] Input diganti dari `masks/*.png` ke `stable/groups/*.png` — D-010
 
-### T-104a · `config.py` — loader YAML + validasi · `TODO`
+### T-104a · `config.py` — loader YAML + validasi · `DONE`
 - **Kerjakan:** loader `configs/default.yaml` + `configs/styles/*.yaml`, default lengkap (jalan tanpa
   YAML), validasi range + aturan grup (`docs/02`), `paths.work_dir` bisa di drive lain
 - **Done when:** config tanpa YAML = default `docs/02`; nilai di luar range / grup tidak valid → error
@@ -589,6 +589,27 @@ Tiga langkah, jadikan refleks:
 - **Kenapa duluan:** T-102b dan stage lain membaca parameternya dari sini
 - **Update log:**
   - [2026-09-29] Dipecah dari T-104 (loader dibutuhkan sebelum implementasi T-102b) — D-010
+  - [2026-09-30] WIP — mulai. Rencana (sumber default, API, aturan, test) menunggu approval Rio
+  - [2026-09-30] DONE — `src/rotoscope/config.py` (pyyaml + stdlib, `yaml.safe_load`),
+    `configs/default.yaml`, `configs/styles/rough-sketch.yaml`, `tests/test_config.py` (150 test; total
+    dengan test_ingest 169 lolos).
+    - **Sumber default (opsi 2a = A):** frozen dataclass di `config.py`; `configs/*.yaml` dan dua blok YAML
+      `docs/02` wajib identik — dicek test (termasuk urutan grup). Ubah default = ubah ketiganya.
+    - **API:** `load_pipeline(path=None, overrides=None)`, `load_style(path=None, overrides=None)` →
+      dataclass frozen (mapping read-only, `groups` = tuple berurutan); overrides = key bertitik
+      (`{"segment.model": "0.4b"}`) untuk flag CLI T-104b; `section_hash(cfg, "groups")` = sha256 canonical
+      JSON (urutan key YAML + int/float tidak berpengaruh; urutan grup berpengaruh, urutan kelas di grup
+      tidak); `to_dict()`, `ensure_dir()`, `load_class_names()`, `project_root()`, `ConfigError`.
+    - **Aturan:** key tidak dikenal / duplikat = error + saran; YAML parsial di-merge (`groups` diganti
+      utuh); `null` hanya di `revision` (stage [2]/[2c] menolak `null` saat runtime — T-102b/T-105);
+      `paths.*` relatif ke cwd, aset style relatif ke root project; path dengan karakter kontrol = error;
+      load tanpa side effect.
+    - Nama kelas dipindah → `src/rotoscope/data/sapiens2_classes.json` (package data di `pyproject.toml`);
+      `scripts/sapiens2_probe.py` hanya baris `CLASSES_FILE` (`sapiens2_exp.py` memakai
+      `probe.CLASSES_FILE`, tidak diubah).
+    - `docs/02` diperbarui atas keputusan Rio: `paths.*` tanpa pembuatan folder saat load, contoh path Windows
+      di blok YAML, `normalize` = `log_median_iqr` saja (T-302), baris baru bool / `model_ids` (prefiks
+      `facebook/sapiens2-seg-`) / key `0.8b`/`0.4b` / `revision`, aturan path aset relatif root project
 
 ### T-104b · `cli.py` · `TODO`
 - **Kerjakan:** CLI satu perintah jalankan pipeline (stage GPU [2] dan [2c] sebagai proses sendiri),
@@ -819,11 +840,11 @@ Tiga langkah, jadikan refleks:
 | Phase | Task | Selesai |
 |---|---|---|
 | 0 Setup | T-001 … T-005 | 5/5 |
-| 1 Skeleton | T-101 … T-107 (T-102 → a/b/c, T-104 → a/b) | 3/10 |
+| 1 Skeleton | T-101 … T-107 (T-102 → a/b/c, T-104 → a/b) | 4/10 |
 | 2 Vectorize | T-201 … T-204 (T-201 → a/b) | 0/5 |
 | 3 Stabilize | T-301 … T-305 (T-301 SKIP) | 0/5 |
 | 4 Style | T-401 … T-406 | 0/6 |
 | 5 Fallback | T-501 … T-502 (BLOCKED) | 0/2 |
 | 6 Opsional | T-601 … T-603 | 0/3 |
 
-**Total: 36 task** · Selesai: 8/36 (SKIP tidak dihitung selesai)
+**Total: 36 task** · Selesai: 9/36 (SKIP tidak dihitung selesai)
