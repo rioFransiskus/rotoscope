@@ -28,7 +28,7 @@ segment:
 # ── DEPTH [2c] — Depth Anything V2 Small ───────────
 depth:
   model_id: "depth-anything/Depth-Anything-V2-Small-hf"   # HANYA Small (Apache-2.0)
-  revision: null             # diisi di T-105 (pin)
+  revision: "5426e4f0f36572d16453bbda7a8389317b1bef99"   # commit hash snapshot HF (pin T-105); wajib ada di cache HF
   precision: "fp32"
   vram_min_free_mib: 500     # peak reserved 424 MiB
 

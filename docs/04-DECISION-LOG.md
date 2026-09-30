@@ -288,6 +288,20 @@ Ditulis ulang di T-102b sesi 1, berdasarkan metode yang terbukti di T-102c (`scr
   stage [2] berhenti di cek VRAM
 - `qc.area_drop_min` = **0.63 sementara** (satu klip; celah aman 0.608–0.652, W = 49); QC klip uji 0/283 gagal
 
+**Hasil T-105 (2026-09-30)** — `src/rotoscope/depth.py`, klip uji 283 frame 480×854:
+- `depth.revision` = `5426e4f0f36572d16453bbda7a8389317b1bef99` (94.6 MiB). Lisensi dicek tiga lapis saat load:
+  nama `Small`, backbone hidden_size 384 (ViT-S), front-matter model card `license: apache-2.0` (README.md
+  wajib di cache, dicatat di `depth/manifest.json`)
+- Input processor terukur 518×924 untuk frame 480×854; NaN/inf → 0 + `finite: false`, tidak diproses ulang
+- **0.19 s/frame** (±1.1 mnt per 360 frame), peak VRAM reserved **424 MiB**; npy 820 KB/frame → ±295 MB per
+  klip 360 frame; full run NaN/inf 0
+- Uji regresi vs T-102c (`work/t102c/exp/depth_da2s_gpu/`): **283/283 frame identik bit per bit**
+- **`src/rotoscope/stage_common.py`** = helper bersama untuk semua stage (tulis atomik + retry Windows,
+  `frames.jsonl`, daftar frame, error + exit code, stdout cp1252; khusus GPU: offline/revision/cache HF, VRAM,
+  OOM). `segment.py` di-refactor memakainya — bukti perilaku tidak berubah: `test_segment.py` tidak diubah dan
+  lolos, `qc_report.json` dari `--qc-only` identik, classmap + probs frame 0–1 (`--limit 2` ke work_dir
+  sementara) identik bit per bit dengan `work/seg/`
+
 ---
 
 ## Pitfall yang sudah diketahui

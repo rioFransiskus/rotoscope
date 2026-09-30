@@ -131,7 +131,8 @@ class SegmentConfig:
 @dataclass(frozen=True)
 class DepthConfig:
     model_id: str = "depth-anything/Depth-Anything-V2-Small-hf"
-    revision: str | None = None
+    # Commit hash snapshot HF, di-pin di T-105 dari cache T-102c.
+    revision: str | None = "5426e4f0f36572d16453bbda7a8389317b1bef99"
     precision: str = "fp32"
     vram_min_free_mib: int = 500
 

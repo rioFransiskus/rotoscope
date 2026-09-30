@@ -653,13 +653,44 @@ Tiga langkah, jadikan refleks:
 - **Update log:**
   - [2026-09-29] Dipecah dari T-104 (config loader → T-104a) — D-010
 
-### T-105 · `depth.py` — Depth Anything V2 Small · `TODO`
+### T-105 · `depth.py` — Depth Anything V2 Small · `DONE`
 - **Kerjakan:** kontrak stage [2c] `docs/01`: DA-V2 Small fp32 GPU (proses sendiri, revision di-pin,
   hanya varian Small) → `depth/*.npy` disparity mentah float16 resolusi kerja + `depth/manifest.json` +
   `depth/frames.jsonl`; cek VRAM ≥ 500 MiB bebas; resume per frame
 - **Done when:** `depth/` terisi untuk klip uji, 0 NaN/inf; `tests/test_depth.py` lolos
 - **Update log:**
   - [2026-09-29] Task baru — D-010
+  - [2026-09-30] WIP — mulai. Snapshot di cache HF (`scan_cache_dir`, offline):
+    `depth-anything/Depth-Anything-V2-Small-hf` `5426e4f0f36572d16453bbda7a8389317b1bef99` (94.6 MiB; hanya
+    `config.json`, `preprocessor_config.json`, `model.safetensors` — model card `README.md` TIDAK ada di cache,
+    lisensi belum bisa dicek offline). Arsitektur di config: `DepthAnythingForDepthEstimation`, backbone
+    hidden_size 384 (ViT-S = Small). Processor `DPTImageProcessor` 518, `keep_aspect_ratio`, kelipatan 14 →
+    input 924×518 untuk frame 854×480 (T-102c). Rencana (kode bersama dengan `segment.py`, urutan per frame,
+    NaN/inf, frames.jsonl, manifest, entry point, uji regresi vs T-102c, test) menunggu approval Rio
+  - [2026-09-30] implementasi + run klip uji. Keputusan Rio: helper bersama diekstrak ke
+    `src/rotoscope/stage_common.py` (nama umum — dipakai juga stage CPU [3]/[4]/[5]) dan `segment.py`
+    di-refactor memakainya (`SegmentError`/`SegmentOOMError` = alias error bersama); `README.md` DA-V2 Small
+    diunduh (online, `hf_hub_download`) → front-matter `license: apache-2.0`, ikut `--download` + cek cache
+    runtime, dicatat di manifest; cek backbone hidden_size 384 (lapis kedua di samping nama "Small");
+    NaN/inf → 0 + `finite: false`, tidak diproses ulang (kalimat resume baru untuk `docs/01` [2c]).
+    - Kode: `src/rotoscope/depth.py` (entry point sementara `python -m rotoscope.depth [--restart] [--limit N]
+      [--download]`, exit code 0/1/3), `stage_common.py`, `tests/test_depth.py`, `tests/test_stage_common.py`;
+      `depth.revision` di-pin di `config.py` / `default.yaml` / `docs/02` (`test_config.py`: satu assert);
+      `docs/01` struktur repo + `stage_common.py`. Total 274 test lolos, 2 skip (GPU); test GPU depth nyata lolos.
+    - Bukti `segment.py` tidak berubah: `test_segment.py` tidak diubah, lolos; `--qc-only` → `qc_report.json`
+      identik dengan sebelum refactor (kecuali `created_utc`); `segment --limit 2` ke work_dir sementara →
+      classmap + probs frame 0–1 identik bit per bit dengan `work/seg/` (beda maks 0 langkah uint8), manifest sama.
+    - `--limit 20`: 0.186 s/frame (infer 0.169 s, tanpa 3 warm-up), peak VRAM reserved 424 / allocated 291 MiB,
+      VRAM bebas sebelum load 3314 MiB (batas 500). Input processor terukur 924×518 (H×W) untuk frame 854×480
+      (`DPTImageProcessor`). npy 820 KB/frame → ±295 MB per klip 360 frame.
+    - Full run: resume melanjutkan dari `frame_00020` (frame ke-21), 263 frame 60.2 s (0.190 s/frame, p95 0.204);
+      NaN/inf 0, OOM 0, peak reserved 424 MiB di semua frame. Disparity per frame: min 0.64–1.40, median
+      1.44–1.87, maks 3.84–6.93.
+    - Regresi vs T-102c (`work/t102c/exp/depth_da2s_gpu/`): **283/283 frame identik bit per bit** (selisih
+      maks 0) — revision, processor, fp32 dan post-process GPU sama. Status tetap WIP, menunggu konfirmasi Rio
+  - [2026-09-30] DONE — konfirmasi Rio. `docs/01` [2c]: validasi lisensi tiga lapis, urutan per frame + ukuran
+    input terukur 518×924, kalimat resume/NaN baru, isi manifest/frames.jsonl, entry point + exit code.
+    `docs/04` D-010: catatan "Hasil T-105"
 
 ### T-106 · `stabilize.py` spasial saja · `TODO`
 - **Kerjakan:** kontrak stage [3] `docs/01` dengan `stabilize.temporal.enabled: false`: probabilitas
@@ -874,11 +905,11 @@ Tiga langkah, jadikan refleks:
 | Phase | Task | Selesai |
 |---|---|---|
 | 0 Setup | T-001 … T-005 | 5/5 |
-| 1 Skeleton | T-101 … T-107 (T-102 → a/b/c, T-104 → a/b) | 5/10 |
+| 1 Skeleton | T-101 … T-107 (T-102 → a/b/c, T-104 → a/b) | 6/10 |
 | 2 Vectorize | T-201 … T-204 (T-201 → a/b) | 0/5 |
 | 3 Stabilize | T-301 … T-305 (T-301 SKIP) | 0/5 |
 | 4 Style | T-401 … T-406 | 0/6 |
 | 5 Fallback | T-501 … T-502 (BLOCKED) | 0/2 |
 | 6 Opsional | T-601 … T-603 | 0/3 |
 
-**Total: 36 task** · Selesai: 10/36 (SKIP tidak dihitung selesai)
+**Total: 36 task** · Selesai: 11/36 (SKIP tidak dihitung selesai)

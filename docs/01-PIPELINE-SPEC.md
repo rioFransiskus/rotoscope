@@ -167,17 +167,31 @@ dan temporal fill tidak cukup. D-002 (pose hanya fallback, bukan primary) tetap 
   langkah terpisah sekali jalan (subperintah `download`); revision tidak ada di cache → berhenti dengan
   pesan jelas + perintah unduh.
 - **Cek VRAM:** bebas < `depth.vram_min_free_mib` (500) → berhenti dengan pesan jelas.
+- **Validasi lisensi saat load (tiga lapis):** model id memuat `Small`; backbone `hidden_size` = 384
+  (ViT-S); front-matter `license` model card (`README.md`, wajib ada di cache, ikut `--download`) =
+  `apache-2.0`, dicatat di manifest.
+- **Per frame:** image processor default (`DPTImageProcessor`: sisi pendek 518, rasio dipertahankan,
+  kelipatan 14 → frame 480×854 masuk model sebagai **518×924**, terukur T-105) → forward fp32 →
+  `post_process_depth_estimation` ke resolusi kerja (GPU) → CPU → float16 → tulis atomik (aturan sama
+  dengan [2]).
 - Output = **disparity relatif mentah** (hanya benar sampai skala + offset per frame), di-resize ke
   resolusi kerja (`post_process_depth_estimation`).
 
 | path | isi | dtype | resolusi | disk / klip |
 |---|---|---|---|---|
-| `depth/frame_%05d.npy` | disparity relatif mentah | float16 | kerja | 295 MB |
-| `depth/manifest.json` | model id, revision, precision, ukuran input processor | – | – | kecil |
-| `depth/frames.jsonl` | log per frame: waktu, peak VRAM, finite | – | – | kecil |
+| `depth/frame_%05d.npy` | disparity relatif mentah | float16 | kerja | 295 MB (820 KB/frame, terukur T-105) |
+| `depth/manifest.json` | model id, revision, lisensi, precision, processor, ukuran input processor, jenis output, ukuran frame | – | – | kecil |
+| `depth/frames.jsonl` | log per frame: waktu, peak VRAM, finite + jumlah piksel NaN/inf, disparity min / median / max | – | – | kecil |
 
 - float16 aman: langkah kuantisasi ±0.0006 relatif (T-102c), jauh di bawah threshold garis.
-- **Resume:** frame dilewati kalau file terbaca, ukuran = frame, semua finite.
+- **Resume:** frame dilewati kalau file terbaca, float16, ukuran = frame, dan semua finite. NaN/inf dari
+  model diganti 0 sebelum ditulis (`finite: false` + jumlah piksel di `depth/frames.jsonl`), jadi file
+  selalu finite dan frame itu **tidak** diproses ulang otomatis; [3] membaca status `finite` dari
+  `frames.jsonl`. File tidak finite di disk = rusak → diproses ulang.
+- **Manifest:** perbedaan apa pun (model id, revision, lisensi, precision, processor, ukuran input, jenis
+  output, ukuran frame) → **tolak**; output tanpa manifest juga ditolak. `--restart` hanya menghapus `depth/`.
+- **Entry point sementara** (sampai `cli.py`, T-104b): `python -m rotoscope.depth [--config PATH]
+  [--restart] [--limit N] [--download]`. Exit code sama dengan [2] (0 / 1 / 3).
 
 ### [3] `stabilize.py` — stage tersulit, alokasikan waktu paling banyak (CPU)
 - **In:** `seg/probs/`, `seg/manifest.json`, `depth/`, `frames/` (untuk optical flow),
@@ -363,6 +377,8 @@ rotoscope/
 │   ├── ingest.py  segment.py  depth.py  fallback_pose.py (ditunda)
 │   ├── stabilize.py  vectorize.py  stylize.py  export.py
 │   ├── config.py  cli.py
+│   ├── stage_common.py   # helper bersama stage: tulis atomik + retry, frames.jsonl, daftar frame,
+│   │                     # error/exit code; khusus GPU: offline/revision/cache HF, VRAM, OOM (T-105)
 │   └── data/sapiens2_classes.json   # nama 29 kelas (data paket)
 ├── configs/
 │   ├── default.yaml       # paths, segment, depth, qc, groups, stabilize, vectorize

@@ -7,6 +7,7 @@ Dua lapis:
   infer() = logits yang sudah diinterpolasi ke resolusi kerja, di CPU.
 - Logika stage (run_segment, run_qc) — numpy/cv2 saja: resume, manifest, tulis atomik, QC. Unit test
   memakai backend palsu lewat `backend_factory`, tanpa GPU/model.
+Helper bersama (tulis atomik, frames.jsonl, offline/cache HF, OOM, exit code): stage_common.py (T-105).
 
 Per frame: logits (GPU, fp16) → interpolasi bilinear ke resolusi kerja di GPU (sama dengan
 post_process_semantic_segmentation) → CPU → softmax float32 di CPU (sisa VRAM run 0.8B ±42 MiB) →
@@ -29,8 +30,7 @@ import argparse
 import gc
 import io
 import json
-import os
-import re
+import os  # noqa: F401 — test_segment memakai seg.os (monkeypatch os.replace)
 import shutil
 import statistics
 import sys
@@ -38,7 +38,6 @@ import time
 import zipfile
 from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -48,7 +47,16 @@ import numpy as np
 from rotoscope.config import (
     ConfigError, PipelineConfig, ensure_dir, load_class_names, load_pipeline, section_hash, to_dict,
 )
-from rotoscope.ingest import FRAME_PATTERN, FRAMES_DIRNAME, META_FILENAME
+from rotoscope.ingest import FRAMES_DIRNAME
+from rotoscope.stage_common import (  # noqa: F401 — sebagian di-export ulang (seg.MIB, seg.read_jsonl, …)
+    COMMIT_HASH_RE, DOWNLOAD_REVISION_FALLBACK, EXIT_OK, EXIT_OOM, EXIT_PRECONDITION, HF_OFFLINE_ENV, MIB,
+    REPLACE_DELAY_S, REPLACE_RETRIES, TMP_SUFFIX, BackendOOM, StageError, StageOOMError, append_jsonl, clean_tmp,
+    hf_offline_active, last_frame_records, load_frame_list, read_jsonl, read_rgb, reconfigure_stdio,
+    require_frames, set_offline, vram_state, write_bytes_atomic, write_json_atomic,
+)
+from rotoscope.stage_common import ensure_cached as _ensure_cached
+from rotoscope.stage_common import is_oom as _is_oom
+from rotoscope.stage_common import utc_now as _utc_now
 
 # ── Layout output (docs/01 [2]) ────────────────────
 SEG_DIRNAME = "seg"
@@ -59,7 +67,6 @@ FRAMES_LOG_FILENAME = "frames.jsonl"
 QC_REPORT_FILENAME = "qc_report.json"
 PROBS_KEY = "probs"                  # nama array di npz
 PROBS_SCALE = 255                    # probs uint8 = round(p × 255)
-TMP_SUFFIX = ".tmp"
 CLASSMAP_SUFFIX = ".png"
 PROBS_SUFFIX = ".npz"
 
@@ -67,39 +74,14 @@ PROBS_SUFFIX = ".npz"
 MANIFEST_MATCH_KEYS = ("model", "model_id", "revision", "precision", "processor", "num_labels", "frame_size")
 
 # ── Checkpoint HF ──────────────────────────────────
-COMMIT_HASH_RE = re.compile(r"[0-9a-f]{40}")
 REQUIRED_FILES = ("config.json", "preprocessor_config.json", "model.safetensors")
-HF_OFFLINE_ENV = "HF_HUB_OFFLINE"
-DOWNLOAD_REVISION_FALLBACK = "main"  # hanya untuk --download kalau revision null
 
-# ── Windows: os.replace bisa gagal sesaat (file dikunci antivirus/indexer, WinError 5/32) ─
-REPLACE_RETRIES = 5
-REPLACE_DELAY_S = 0.2
-
-# ── Exit code (dipakai cli.py, T-104b) ─────────────
-EXIT_OK = 0
-EXIT_PRECONDITION = 1
-EXIT_OOM = 3
-
-MIB = 2**20
 DEFAULT_CONFIG = Path("configs") / "default.yaml"
 QC_METRICS = ("area_ratio", "iou_prev", "big_blobs", "area_vs_median", "finite")
 
-
-class SegmentError(RuntimeError):
-    """Prasyarat stage [2] gagal (exit 1): config/revision/cache/CUDA/VRAM/manifest/frame/tulis file."""
-
-
-class SegmentOOMError(SegmentError):
-    """GPU kehabisan memori di tengah run (exit 3). Tidak ada ganti model otomatis."""
-
-
-class BackendOOM(RuntimeError):
-    """Dilempar backend saat OOM; `vram` = kondisi VRAM saat gagal (MiB)."""
-
-    def __init__(self, vram: dict):
-        super().__init__("CUDA out of memory")
-        self.vram = vram
+# Alias error bersama (stage_common): prasyarat gagal → exit 1, OOM di tengah run → exit 3.
+SegmentError = StageError
+SegmentOOMError = StageOOMError
 
 
 # ── Backend ────────────────────────────────────────
@@ -120,15 +102,6 @@ class SegBackend(Protocol):
     def close(self) -> None: ...
 
 
-def set_offline() -> None:
-    """HF_HUB_OFFLINE=1 di environment proses — dipanggil SEBELUM transformers/huggingface_hub di-import.
-
-    huggingface_hub membaca variabel ini saat di-import; kalau sudah ter-import lebih dulu,
-    local_files_only=True di setiap from_pretrained tetap menjamin tidak ada akses jaringan.
-    """
-    os.environ[HF_OFFLINE_ENV] = "1"
-
-
 def resolve_revision(cfg: PipelineConfig) -> str:
     """Revision model yang dipakai; wajib commit hash 40-hex (null / nama branch ditolak)."""
     s = cfg.segment
@@ -146,15 +119,8 @@ def resolve_revision(cfg: PipelineConfig) -> str:
 
 def ensure_cached(model_id: str, revision: str, model_key: str, cache_dir: str | Path | None = None) -> None:
     """Semua file checkpoint revision ini ada di cache HF — kalau tidak, berhenti + perintah unduh."""
-    from huggingface_hub import try_to_load_from_cache
-
-    missing = [f for f in REQUIRED_FILES
-               if not isinstance(try_to_load_from_cache(model_id, f, cache_dir=cache_dir, revision=revision), str)]
-    if missing:
-        raise SegmentError(
-            f"checkpoint {model_id} revision {revision} tidak ada di cache HF (hilang: {', '.join(missing)}). "
-            f"Run berjalan offline — unduh dulu (online, sekali jalan):\n"
-            f"    python -m rotoscope.segment --download --seg-model {model_key}")
+    _ensure_cached(model_id, revision, REQUIRED_FILES,
+                   f"python -m rotoscope.segment --download --seg-model {model_key}", cache_dir)
 
 
 def check_vram(free_mib: float, total_mib: float, need_mib: int, model_key: str) -> None:
@@ -166,10 +132,6 @@ def check_vram(free_mib: float, total_mib: float, need_mib: int, model_key: str)
         f"VRAM bebas {free_mib:.0f} MiB < dibutuhkan {need_mib} MiB untuk Sapiens2-seg {model_key} "
         f"(total {total_mib:.0f} MiB, segment.vram_min_free_mib.{model_key}). Tutup aplikasi lain yang "
         f"memakai GPU (browser, game, editor video){alt}.")
-
-
-def _is_oom(torch, e: BaseException) -> bool:
-    return isinstance(e, torch.OutOfMemoryError) or "out of memory" in str(e).lower()
 
 
 class TorchSegBackend:
@@ -206,12 +168,7 @@ class TorchSegBackend:
             num_labels=int(conf.num_labels))
 
     def vram_state(self) -> dict:
-        torch = self._torch
-        free, total = torch.cuda.mem_get_info()
-        return {"free_mib": round(free / MIB, 1), "total_mib": round(total / MIB, 1),
-                "reserved_mib": round(torch.cuda.memory_reserved() / MIB, 1),
-                "allocated_mib": round(torch.cuda.memory_allocated() / MIB, 1),
-                "max_reserved_mib": round(torch.cuda.max_memory_reserved() / MIB, 1)}
+        return vram_state(self._torch)
 
     def _load_model(self):
         from transformers import Sapiens2ForSemanticSegmentation
@@ -275,37 +232,7 @@ class TorchSegBackend:
             self._torch.cuda.empty_cache()
 
 
-# ── Tulis atomik ───────────────────────────────────
-def _replace_with_retry(tmp: Path, dst: Path) -> None:
-    last: OSError | None = None
-    for attempt in range(REPLACE_RETRIES):
-        try:
-            os.replace(tmp, dst)
-            return
-        except PermissionError as e:  # WinError 5/32: dikunci antivirus/indexer sesaat
-            last = e
-            if attempt + 1 < REPLACE_RETRIES:
-                time.sleep(REPLACE_DELAY_S)
-    tmp.unlink(missing_ok=True)
-    raise SegmentError(f"gagal mengganti {dst} setelah {REPLACE_RETRIES} percobaan ({last}). File mungkin "
-                       f"dikunci antivirus/indexer/aplikasi lain — tutup yang membuka file itu lalu jalankan "
-                       f"ulang (frame lain tetap di-resume).")
-
-
-def write_bytes_atomic(path: Path, data: bytes) -> None:
-    """Tulis ke <nama>.tmp (fsync) lalu os.replace — pembaca tidak pernah melihat file setengah jadi."""
-    tmp = path.with_name(path.name + TMP_SUFFIX)
-    with open(tmp, "wb") as f:
-        f.write(data)
-        f.flush()
-        os.fsync(f.fileno())
-    _replace_with_retry(tmp, path)
-
-
-def write_json_atomic(path: Path, data: Any) -> None:
-    write_bytes_atomic(path, json.dumps(data, indent=2, ensure_ascii=False, allow_nan=False).encode("utf-8"))
-
-
+# ── Tulis atomik (write_bytes_atomic / write_json_atomic di stage_common) ─
 def write_classmap(path: Path, classmap: np.ndarray) -> None:
     ok, buf = cv2.imencode(CLASSMAP_SUFFIX, classmap)
     if not ok:
@@ -317,27 +244,6 @@ def write_probs(path: Path, probs: np.ndarray) -> None:
     buf = io.BytesIO()
     np.savez_compressed(buf, **{PROBS_KEY: probs})
     write_bytes_atomic(path, buf.getvalue())
-
-
-def append_jsonl(path: Path, record: dict) -> None:
-    with open(path, "a", encoding="utf-8") as f:
-        f.write(json.dumps(record, ensure_ascii=False) + "\n")
-        f.flush()
-
-
-def read_jsonl(path: Path) -> list[dict]:
-    """Baris rusak/terpotong (mis. proses mati saat menulis) dilewati."""
-    if not path.is_file():
-        return []
-    out = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        try:
-            rec = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(rec, dict):
-            out.append(rec)
-    return out
 
 
 # ── Baca + validasi ────────────────────────────────
@@ -366,13 +272,6 @@ def classmap_valid(path: Path, h: int, w: int, num_classes: int) -> bool:
 def probs_valid(path: Path, h: int, w: int, num_classes: int) -> bool:
     p = read_probs(path)
     return p is not None and p.dtype == np.uint8 and p.shape == (num_classes, h, w)
-
-
-def read_rgb(path: Path) -> np.ndarray:
-    bgr = cv2.imdecode(np.fromfile(path, np.uint8), cv2.IMREAD_COLOR) if path.is_file() else None
-    if bgr is None:
-        raise SegmentError(f"gagal membaca frame {path}")
-    return cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
 
 
 # ── Inferensi → output ─────────────────────────────
@@ -444,18 +343,7 @@ class Clip:
 
 
 def load_clip(work_dir: Path) -> Clip:
-    meta_path = work_dir / META_FILENAME
-    if not meta_path.is_file():
-        raise SegmentError(f"{meta_path} tidak ada — jalankan stage [1] ingest dulu")
-    meta = json.loads(meta_path.read_text(encoding="utf-8"))
-    start = int(meta.get("frame_index_start", 0))
-    indices = tuple(range(start, start + int(meta["frame_count"])))
-    names = tuple(FRAME_PATTERN % i for i in indices)
-    return Clip(work_dir, names, indices, int(meta["working_width"]), int(meta["working_height"]))
-
-
-def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return Clip(work_dir, *load_frame_list(work_dir))
 
 
 def build_manifest(info: ModelInfo, clip: Clip, classes: Sequence[str]) -> dict:
@@ -477,9 +365,7 @@ def _has_outputs(clip: Clip) -> bool:
 
 
 def _clean_tmp(clip: Clip) -> None:
-    if clip.seg_dir.is_dir():
-        for p in clip.seg_dir.rglob("*" + TMP_SUFFIX):
-            p.unlink(missing_ok=True)
+    clean_tmp(clip.seg_dir)
     clip.qc_report_path.with_name(clip.qc_report_path.name + TMP_SUFFIX).unlink(missing_ok=True)
 
 
@@ -504,10 +390,7 @@ def run_segment(cfg: PipelineConfig, *, restart: bool = False, limit: int | None
     resolve_revision(cfg)
     clip = load_clip(cfg.paths.work_dir)
     selected = clip.names[:limit] if limit else clip.names
-    missing = [n for n in selected if not (clip.work_dir / FRAMES_DIRNAME / n).is_file()]
-    if missing:
-        raise SegmentError(f"{len(missing)} frame hilang di {clip.work_dir / FRAMES_DIRNAME}, mis. {missing[0]} "
-                           f"— jalankan ulang stage [1] ingest")
+    require_frames(clip.work_dir, selected)
 
     backend = (backend_factory or TorchSegBackend)(cfg)
     info = backend.describe()
@@ -716,10 +599,6 @@ def summarize_qc(rows: list[dict]) -> dict:
     }
 
 
-def last_frame_records(frames_log: Path) -> dict[str, dict]:
-    return {r["frame"]: r for r in read_jsonl(frames_log) if r.get("event") == "frame" and "frame" in r}
-
-
 def run_qc(cfg: PipelineConfig, *, log: Callable[[str], None] = print) -> dict:
     """QC per klip (butuh semua frame valid). Tanpa GPU/torch. Tulis qc_report.json (atomik)."""
     clip = load_clip(cfg.paths.work_dir)
@@ -759,7 +638,7 @@ def download(cfg: PipelineConfig, *, log: Callable[[str], None] = print) -> str:
     model_id, rev = s.model_ids[s.model], s.revision[s.model]
     if rev is not None and not COMMIT_HASH_RE.fullmatch(rev):
         raise SegmentError(f"segment.revision.{s.model} ({rev!r}) harus commit hash 40 karakter hex")
-    if os.environ.get(HF_OFFLINE_ENV, "").strip().lower() in ("1", "true", "yes", "on"):
+    if hf_offline_active():
         raise SegmentError(f"{HF_OFFLINE_ENV} aktif di environment — --download butuh online; hapus variabel itu")
     from huggingface_hub import snapshot_download
 
@@ -785,11 +664,7 @@ def main(argv: list[str] | None = None, backend_factory: BackendFactory | None =
     p.add_argument("--qc-only", action="store_true", help="hanya QC (tanpa GPU), butuh semua frame valid")
     p.add_argument("--download", action="store_true", help="unduh checkpoint (online) lalu keluar")
     args = p.parse_args(argv)
-    # stdout/stderr yang diarahkan ke file di Windows = cp1252: karakter seperti "→" / "≠" di pesan
-    # membuat print crash (UnicodeEncodeError) → ganti dengan "?" daripada gagal.
-    for stream in (sys.stdout, sys.stderr):
-        if hasattr(stream, "reconfigure"):
-            stream.reconfigure(errors="replace")
+    reconfigure_stdio()  # stdout cp1252 (diarahkan ke file di Windows) tidak boleh membuat print crash
 
     def log(msg: str) -> None:
         print(msg, flush=True)  # progress tetap terlihat walau stdout diarahkan ke file

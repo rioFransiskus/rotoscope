@@ -50,7 +50,7 @@ def test_defaults_without_yaml():
     assert p.segment.model == "0.8b" and p.segment.precision == "fp16"
     assert dict(p.segment.revision) == {"0.8b": "196a627b928676c4429b738ed76f78a21d96c4eb",
                                         "0.4b": "449b3c5335e6722bb94990abdd1aa6e612432f22"}
-    assert p.depth.revision is None
+    assert p.depth.revision == "5426e4f0f36572d16453bbda7a8389317b1bef99"
     assert dict(p.segment.vram_min_free_mib) == {"0.8b": 3300, "0.4b": 2300}
     assert p.depth.model_id == "depth-anything/Depth-Anything-V2-Small-hf" and p.depth.precision == "fp32"
     assert p.qc.area_median_window == 49 and p.stabilize.mode_k == 3 and p.stabilize.temporal.enabled is False
