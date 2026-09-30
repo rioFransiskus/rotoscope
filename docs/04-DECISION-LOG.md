@@ -277,6 +277,17 @@ Ditulis ulang di T-102b sesi 1, berdasarkan metode yang terbukti di T-102c (`scr
 - P6: model `auto` (klip bisa diam-diam turun ke 0.4B karena VRAM terpakai aplikasi lain)
 - Pembersihan spasial di [2] (stabilisasi dari label yang sudah dibulatkan)
 
+**Hasil T-102b (2026-09-30)** — `src/rotoscope/segment.py`, klip uji 283 frame 480×854:
+- `segment.revision` = mapping per model (dua repo HF = dua hash): 0.8b
+  `196a627b928676c4429b738ed76f78a21d96c4eb`, 0.4b `449b3c5335e6722bb94990abdd1aa6e612432f22`; runtime wajib
+  commit hash 40-hex. `depth.revision` tetap satu string
+- Exit code stage [2]: 0 sukses, 1 prasyarat gagal, 3 OOM di tengah run
+- probs npz ±0.11 MB/frame → **±41 MB per klip 360 frame** (Q1 terkonfirmasi, jauh < 3 GB)
+- Waktu seg 0.8B fp16: 16.5 s/frame → **±99 mnt per 360 frame**; peak VRAM reserved 3276 MiB
+- VRAM bebas sebelum load **3314 MiB vs batas 3300 (margin 14 MiB)** — aplikasi GPU lain sedikit saja →
+  stage [2] berhenti di cek VRAM
+- `qc.area_drop_min` = **0.63 sementara** (satu klip; celah aman 0.608–0.652, W = 49); QC klip uji 0/283 gagal
+
 ---
 
 ## Pitfall yang sudah diketahui

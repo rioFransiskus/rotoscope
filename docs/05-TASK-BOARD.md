@@ -540,7 +540,7 @@ Tiga langkah, jadikan refleks:
     Alat sekali pakai: `scripts/sapiens2_probe.py`, `sapiens2_exp.py`, `look_test.py`,
     `sapiens2_groups.json`, `sapiens2_classes.json`
 
-### T-102b · `segment.py` · `WIP`
+### T-102b · `segment.py` · `DONE`
 - **Kerjakan:** kontrak stage [2] `docs/01` (D-010): Sapiens2-seg `segment.model` eksplisit (default
   0.8B fp16) → `seg/classmap/*.png` (argmax, uint8) + `seg/probs/*.npz` (29 kelas, uint8, deflate,
   resolusi kerja; softmax di CPU) + `seg/manifest.json` + `seg/frames.jsonl`. Cek VRAM bebas sebelum load
@@ -573,6 +573,40 @@ Tiga langkah, jadikan refleks:
     anchor + `track_id`, siluet termasuk lubang (Q4-B); model seg eksplisit, tanpa ganti otomatis. Task
     baru T-104a/b, T-105, T-106, T-107, T-201a/b, T-305; T-301 digabung ke sini. Status → WIP (sesi
     berikutnya: implementasi, setelah T-104a)
+  - [2026-09-30] sesi 2: WIP — implementasi `segment.py` dimulai (T-104a DONE). Snapshot di cache HF
+    (`scan_cache_dir`, offline): `facebook/sapiens2-seg-0.8b` `196a627b928676c4429b738ed76f78a21d96c4eb`
+    (3157 MiB), `facebook/sapiens2-seg-0.4b` `449b3c5335e6722bb94990abdd1aa6e612432f22` (1551 MiB).
+    Rencana (struktur modul, urutan per frame, offline/revision, VRAM/OOM, QC, entry point, test) menunggu
+    approval Rio
+  - [2026-09-30] sesi 2: implementasi + run klip uji. Keputusan Rio: `segment.revision` = mapping per model
+    (dua repo = dua hash; `depth.revision` tetap string), jendela `area_vs_median` DIGESER (selalu W sampel),
+    resume menolak SEMUA beda manifest, revision wajib commit hash 40-hex, `os.replace` + retry (Windows),
+    exit code 0/1/3 (`docs/01` [2]). Cache HF: `sapiens2-seg-1b` + `sapiens2-pointmap-0.4b` dihapus
+    (8.0 GB dibebaskan).
+    - Kode: `src/rotoscope/segment.py` (backend Torch terpisah dari logika stage; entry point sementara
+      `python -m rotoscope.segment`), `tests/test_segment.py` (backend palsu); revision di-pin di
+      `config.py` / `default.yaml` / `docs/02`; `test_config.py` disesuaikan. Total 216 test lolos, 1 skip (GPU).
+    - `--limit 20`: 16.51 s/frame (tanpa 3 warm-up; infer 16.2 s, softmax + kuantisasi CPU 0.16 s, tulis
+      0.08 s), peak VRAM reserved 3276 / allocated 3014 MiB di semua frame, VRAM bebas sebelum load 3314 MiB
+      (batas 3300 — margin 14 MiB). probs npz 0.10 MB/frame → ±41 MB per klip 360 frame (jauh < 3 GB → format
+      Q1 tetap); classmap 7 KB/frame. Beda argmax(probs) vs classmap maks 0.0039% (mean 0.0013%).
+    - Full run: resume melanjutkan dari `frame_00020` (frame ke-21; 20 dilewati), 263 frame 72.1 mnt (283
+      frame total ±78 mnt; est. 360 frame ±99 mnt). NaN/inf 0, OOM 0. QC: 0/283 gagal; iou_prev min 0.713,
+      area_ratio 0.080–0.208, big_blobs selalu 1, area_vs_median min 0.652, label_agreement_prev min 0.778.
+    - Bug ditemukan saat run: print ringkasan QC crash (`UnicodeEncodeError`, stdout cp1252 saat diarahkan ke
+      file) setelah `qc_report.json` tertulis → diperbaiki (`errors="replace"`) + test. Run ulang: 283
+      dilewati tanpa GPU, QC OK, exit 0.
+    - Kalibrasi `qc.area_drop_min` (definisi `area_vs_median` yang sama, W = 49): MediaPipe T-102a frame 1–7
+      = 0.564–0.608 (maks frame 6 = 0.608; frame 0 0.634, frame 8 0.623); Sapiens2 min 0.652 (frame 197–202,
+      pose asli: area turun 0.12 → 0.08). Default 0.6 TIDAK menangkap frame 6 MediaPipe. Celah aman
+      (0.608, 0.652). Usulan 0.63 (tengah celah, tetap SEMENTARA — satu klip). Sensitif ke W: W = 25 celah
+      (0.708, 0.757); W = 73 tidak ada celah (MediaPipe maks 0.597, Sapiens2 min 0.491). Batas metrik: zona
+      buruk ≥ separuh jendela ikut menurunkan median → tidak tertangkap. Menunggu keputusan Rio
+  - [2026-09-30] DONE — keputusan Rio: `qc.area_drop_min` = 0.63, tanda SEMENTARA tetap (satu klip; celah
+    0.608–0.652) di `config.py` / `default.yaml` / `docs/02`, plus catatan `area_median_window` jangan diubah
+    tanpa kalibrasi ulang. `docs/01` QC: batas metrik (zona buruk ≥ 25 frame tidak tertangkap) + celah per W.
+    `docs/04` D-010: catatan "Hasil T-102b". `--qc-only` ulang: 0/283 gagal (area_vs_median min 0.652 ≥
+    0.63); 216 test lolos, 1 skip (GPU)
 
 ### T-103 · `export.py` naif · `TODO`
 - **Kerjakan:** PNG sequence → MP4 via ffmpeg, `-r 24 -pix_fmt yuv420p`. Input Phase 1 = foreground
@@ -840,11 +874,11 @@ Tiga langkah, jadikan refleks:
 | Phase | Task | Selesai |
 |---|---|---|
 | 0 Setup | T-001 … T-005 | 5/5 |
-| 1 Skeleton | T-101 … T-107 (T-102 → a/b/c, T-104 → a/b) | 4/10 |
+| 1 Skeleton | T-101 … T-107 (T-102 → a/b/c, T-104 → a/b) | 5/10 |
 | 2 Vectorize | T-201 … T-204 (T-201 → a/b) | 0/5 |
 | 3 Stabilize | T-301 … T-305 (T-301 SKIP) | 0/5 |
 | 4 Style | T-401 … T-406 | 0/6 |
 | 5 Fallback | T-501 … T-502 (BLOCKED) | 0/2 |
 | 6 Opsional | T-601 … T-603 | 0/3 |
 
-**Total: 36 task** · Selesai: 9/36 (SKIP tidak dihitung selesai)
+**Total: 36 task** · Selesai: 10/36 (SKIP tidak dihitung selesai)

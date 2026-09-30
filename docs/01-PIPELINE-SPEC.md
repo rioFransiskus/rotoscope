@@ -62,18 +62,29 @@ diukur saat implementasi.
 - **In:** `frames/*.png`, `meta.json`; config `segment`, `qc`
 - **Model:** `segment.model` **eksplisit**, default `0.8b` = Sapiens2-seg 0.8B fp16 GPU; `0.4b` =
   Sapiens2-seg 0.4B fp16 GPU (hanya kalau diminta, untuk **seluruh** klip — tidak pernah dicampur).
-  Lewat Hugging Face Transformers, revision checkpoint di-pin (`segment.revision`), `HF_HUB_OFFLINE=1`.
-  Input = image processor default 1024×768 **stretch** (`do_pad=false`). Tanpa bf16 (P-005).
+  Lewat Hugging Face Transformers, revision checkpoint di-pin per model (`segment.revision.<model>`),
+  `HF_HUB_OFFLINE=1` + `local_files_only=True`. Input = image processor default 1024×768 **stretch**
+  (`do_pad=false`). Tanpa bf16 (P-005).
 - **Checkpoint + revision** (run berjalan offline, jadi revision yang di-pin HARUS sudah ada di cache HF):
-  - Default `segment.revision` = commit hash snapshot yang sudah ada di cache dari T-102c; nilainya
-    dicatat di `default.yaml` saat implementasi T-102b.
-  - Unduhan checkpoint = **langkah terpisah sekali jalan** (online), mis. subperintah
-    `python -m rotoscope download`, **bukan** bagian dari run.
+  - `segment.revision` = mapping per model (dua repo HF = dua commit hash). Default = snapshot di cache
+    dari T-102c: `0.8b` `196a627b928676c4429b738ed76f78a21d96c4eb`, `0.4b`
+    `449b3c5335e6722bb94990abdd1aa6e612432f22`.
+  - Saat runtime revision model yang dipakai wajib **commit hash 40-hex**; `null` atau nama branch
+    (mis. `main`) → **berhenti**.
+  - Unduhan checkpoint = **langkah terpisah sekali jalan** (online), **bukan** bagian dari run. Sementara:
+    `python -m rotoscope.segment --download [--seg-model 0.4b]` (dibungkus subperintah `download` di
+    T-104b). Revision `null` → unduh `main` lalu cetak hash-nya untuk di-pin.
   - Revision tidak ada di cache → **berhenti** sebelum cek VRAM, dengan pesan jelas + perintah unduh
     yang harus dijalankan.
 - **Inferensi per frame:** logits → interpolasi ke resolusi kerja (di GPU, seperti
   `post_process_semantic_segmentation`) → pindah ke CPU → **softmax di CPU** (sisa VRAM di run 0.8B
-  hanya ±42 MiB) → `probs` uint8 = round(p × 255) + `classmap` = argmax logits.
+  hanya ±42 MiB) → `probs` uint8 = round(p × 255) + `classmap` = argmax logits. Logits NaN/inf →
+  diganti 0 sebelum softmax, output tetap ditulis, `finite: false` di `frames.jsonl` → gagal QC.
+- **Tulis atomik:** tiap file output (classmap, probs, manifest, qc_report) ditulis ke `<nama>.tmp`
+  lalu `os.replace`. Di Windows `os.replace` bisa gagal sesaat (`PermissionError`, file dikunci
+  antivirus/indexer) → dicoba ulang beberapa kali dengan jeda singkat, lalu error jelas. File `*.tmp`
+  tidak pernah dianggap output dan dihapus di awal run. `frames.jsonl` = append per baris (baris
+  terakhir yang terpotong diabaikan saat dibaca).
 
 **Out:**
 
@@ -98,8 +109,24 @@ diukur saat implementasi.
    VRAM bebas vs dibutuhkan, saran tutup aplikasi lain, atau jalankan ulang dengan `--seg-model 0.4b`.
 2. OOM di tengah run → catat frame + kondisi VRAM, **berhenti**. Tidak ada ganti model otomatis.
 3. Resume: frame dilewati kalau `classmap` valid (terbaca, uint8, ukuran = frame, id < 29) **dan**
-   `probs` valid (terbaca, uint8, shape (29, H, W)). Model di `seg/manifest.json` ≠ model yang diminta →
-   **tolak** dengan pesan; `--restart` menghapus output [2] lama lalu mulai dari awal.
+   `probs` valid (terbaca, uint8, shape (29, H, W)). `seg/manifest.json` ditulis sebelum frame pertama.
+   **Perbedaan apa pun** antara manifest dan run yang diminta — model, model id, revision, precision,
+   processor (size, `do_pad`), `num_labels`, ukuran frame — → **tolak** dengan pesan (daftar field yang
+   beda); output di `seg/` tanpa manifest juga ditolak. `--restart` menghapus output [2] lama (`seg/` +
+   `qc_report.json`) lalu mulai dari awal. Semua frame sudah valid → GPU tidak disentuh, langsung QC.
+
+**Entry point sementara** (sampai `cli.py`, T-104b): `python -m rotoscope.segment [--config PATH]
+[--seg-model 0.8b|0.4b] [--restart] [--limit N] [--qc-only] [--download]`. `--limit N` = pastikan N
+frame pertama valid (QC dilewati kecuali semua frame klip valid); `--qc-only` tanpa GPU/torch, butuh
+semua frame valid.
+
+**Exit code** (dipakai `cli.py`, T-104b):
+
+| kode | arti |
+|---|---|
+| 0 | sukses |
+| 1 | prasyarat gagal: config, revision null / bukan hash / tidak ada di cache, CUDA tidak ada, VRAM bebas kurang, manifest beda, frame hilang, tulis file gagal |
+| 3 | OOM di tengah run (frame + kondisi VRAM dicatat di `seg/frames.jsonl`) |
 
 **QC** — langkah per klip setelah semua frame selesai (butuh median bergulir); bisa dijalankan
 sendiri (`--qc-only`). Foreground = `classmap ≠ 0`.
@@ -107,14 +134,24 @@ sendiri (`--qc-only`). Foreground = `classmap ≠ 0`.
 | Metrik | Kondisi gagal | Default |
 |---|---|---|
 | `area_ratio` | luas foreground < `qc.area_min` atau > `qc.area_max` dari frame | 0.03 / 0.70 |
-| `iou_prev` | IoU foreground dengan frame sebelumnya < `qc.iou_min` | 0.55 |
-| `big_blobs` | jumlah komponen foreground > `qc.blob_min` × area frame melebihi `qc.max_big_blobs` | 0.05 / 1 |
-| `area_vs_median` | area / median area di jendela bergulir `qc.area_median_window` frame < `qc.area_drop_min` | 49 / 0.6 (**sementara**, dikalibrasi di T-102b pada zona kaki hilang MediaPipe T-102a frame 1–7) |
-| `label_agreement_prev` | dilaporkan saja (kelas sama di irisan foreground dengan frame sebelumnya) | – |
-| `finite` | logits mengandung NaN/inf | – |
+| `iou_prev` | IoU foreground dengan frame sebelumnya < `qc.iou_min` (frame pertama: `null`; dua-duanya kosong: 1.0) | 0.55 |
+| `big_blobs` | jumlah komponen foreground 8-arah > `qc.blob_min` × area frame melebihi `qc.max_big_blobs` | 0.05 / 1 |
+| `area_vs_median` | area / median area di jendela **digeser** `qc.area_median_window` (W) frame < `qc.area_drop_min` — lihat definisi di bawah | 49 / 0.63 (**sementara** — T-102b, satu klip: MediaPipe T-102a kaki hilang frame 1–7 maks 0.608, Sapiens2 min 0.652) |
+| `label_agreement_prev` | dilaporkan saja (kelas sama di irisan foreground dengan frame sebelumnya; irisan kosong: `null`) | – |
+| `finite` | logits mengandung NaN/inf (dari `frames.jsonl`; tidak tercatat → `null`, tidak gagal) | – |
 
-`qc_report.json` per frame: semua metrik di atas + `fail_reasons` (list). Frame gagal QC **tidak**
-diganti di [2]; [3] memberinya bobot temporal lebih kecil (D-010, Q3).
+**Definisi `area_vs_median`** (n = jumlah frame klip, frame ke-i berindeks 0, h = (W − 1) / 2): jendela
+selalu W sampel dan memuat frame i — `start = min(max(i − h, 0), n − W)`, jendela = frame
+`[start, start + W)`; di tengah klip jendela berpusat di i, di awal/akhir klip jendela **digeser** (bukan
+dipotong), jadi jumlah sampel tetap W. n < W → seluruh klip. Median area jendela = 0 → `null` (tidak
+gagal; `area_ratio` sudah gagal).
+- **Batas metrik:** zona buruk ≥ separuh jendela (≥ 25 frame, ±1 s pada W = 49) ikut menurunkan median →
+  **tidak tertangkap**.
+- `qc.area_median_window` jangan diubah tanpa kalibrasi ulang `area_drop_min`: celah aman MediaPipe
+  kaki hilang vs Sapiens2 di klip uji = W 25 (0.708, 0.757), W 49 (0.608, 0.652), W 73 tanpa celah.
+
+`qc_report.json` per frame: semua metrik di atas + `fail_reasons` (list nama metrik yang gagal).
+Frame gagal QC **tidak** diganti di [2]; [3] memberinya bobot temporal lebih kecil (D-010, Q3).
 
 ### [2b] `fallback_pose.py` — DITUNDA (`BLOCKED`, D-010)
 Foreground Sapiens2 = 0 frame gagal QC di klip uji. Peran fallback diganti: frame gagal QC diisi dari

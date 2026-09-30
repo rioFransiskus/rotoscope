@@ -30,7 +30,9 @@ segment:
   model_ids:
     "0.8b": "facebook/sapiens2-seg-0.8b"   # id HF yang dipakai di T-102c
     "0.4b": "facebook/sapiens2-seg-0.4b"
-  revision: null             # commit hash checkpoint HF; diisi di T-102b (pin)
+  revision:                  # commit hash snapshot HF per model (pin T-102b); wajib ada di cache HF
+    "0.8b": "196a627b928676c4429b738ed76f78a21d96c4eb"
+    "0.4b": "449b3c5335e6722bb94990abdd1aa6e612432f22"
   precision: "fp16"          # "fp16" | "fp32" — TANPA bf16 (P-005)
   vram_min_free_mib:
     "0.8b": 3300             # peak reserved 3276 MiB (T-102c)
@@ -51,8 +53,9 @@ qc:
   iou_min: 0.55              # IoU foreground vs frame sebelumnya
   blob_min: 0.05             # komponen "besar" = > 5% area frame
   max_big_blobs: 1
-  area_median_window: 49     # frame (±2 s); median BERGULIR, bukan median klip
-  area_drop_min: 0.6         # SEMENTARA — dikalibrasi di T-102b
+  area_median_window: 49     # frame (±2 s); jendela DIGESER, bukan median klip. Jangan diubah tanpa kalibrasi
+                             # ulang area_drop_min (W=25/49/73 memberi celah berbeda; W=73 tanpa celah)
+  area_drop_min: 0.63        # SEMENTARA — T-102b, satu klip: celah aman 0.608 (MediaPipe kaki hilang) – 0.652 (Sapiens2)
 
 # ── GROUPS (dipakai [3] dan [4]) ───────────────────
 # Urutan = id grup (1..G); 0 = background (dicadangkan). Batas di dalam satu grup tidak digambar.
@@ -102,9 +105,9 @@ vectorize:
 |---|---|
 | `paths.work_dir`, `paths.out_dir` | string tidak kosong, tanpa karakter kontrol; relatif → di-resolve terhadap direktori kerja (cwd) saat load; absolut (mis. `D:/…`) boleh. Loader **tidak** membuat folder (tanpa side effect) — stage memanggil `ensure_dir()` |
 | `segment.model` | `"0.8b"` atau `"0.4b"` |
-| `segment.model_ids`, `segment.vram_min_free_mib` | key persis {`0.8b`, `0.4b`} |
+| `segment.model_ids`, `segment.revision`, `segment.vram_min_free_mib` | key persis {`0.8b`, `0.4b`} |
 | `segment.model_ids.*` | wajib diawali `facebook/sapiens2-seg-` — Sapiens v1 (`facebook/sapiens-seg-…`, CC-BY-NC) ditolak |
-| `segment.revision`, `depth.revision` | `null` atau string tidak kosong (stage [2]/[2c] menolak `null` saat runtime — T-102b/T-105) |
+| `segment.revision.*`, `depth.revision` | `null` atau string tidak kosong. Stage [2]/[2c] saat runtime menolak `null` dan nilai selain commit hash 40-hex (T-102b/T-105) |
 | `segment.precision` | `"fp16"` atau `"fp32"` (`bf16` ditolak, P-005) |
 | `segment.vram_min_free_mib.*`, `depth.vram_min_free_mib` | int 0–4096 |
 | `segment.probs_dtype` | `"uint8"` |

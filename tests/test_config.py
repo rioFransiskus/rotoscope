@@ -47,7 +47,10 @@ def default_groups() -> dict[str, list[str]]:
 # ── Default + sinkron (opsi 2a: kode = configs/*.yaml = docs/02) ─
 def test_defaults_without_yaml():
     p = load_pipeline()
-    assert p.segment.model == "0.8b" and p.segment.precision == "fp16" and p.segment.revision is None
+    assert p.segment.model == "0.8b" and p.segment.precision == "fp16"
+    assert dict(p.segment.revision) == {"0.8b": "196a627b928676c4429b738ed76f78a21d96c4eb",
+                                        "0.4b": "449b3c5335e6722bb94990abdd1aa6e612432f22"}
+    assert p.depth.revision is None
     assert dict(p.segment.vram_min_free_mib) == {"0.8b": 3300, "0.4b": 2300}
     assert p.depth.model_id == "depth-anything/Depth-Anything-V2-Small-hf" and p.depth.precision == "fp32"
     assert p.qc.area_median_window == 49 and p.stabilize.mode_k == 3 and p.stabilize.temporal.enabled is False
@@ -127,9 +130,10 @@ def test_groups_replaced_whole():
     assert [n for n, _ in p.groups] == ["body", "hair"]
 
 
-def test_revision_string_allowed(tmp_path):
-    p = load_pipeline(write_yaml(tmp_path, "segment:\n  revision: abc123\ndepth:\n  revision: null\n"))
-    assert p.segment.revision == "abc123" and p.depth.revision is None
+def test_revision_string_or_null_allowed(tmp_path):
+    p = load_pipeline(write_yaml(tmp_path, 'segment:\n  revision:\n    "0.4b": null\ndepth:\n  revision: abc123\n'))
+    assert p.segment.revision["0.4b"] is None and p.depth.revision == "abc123"
+    assert p.segment.revision["0.8b"] == load_pipeline().segment.revision["0.8b"]  # merge per key
 
 
 # ── Validasi pipeline (tabel docs/02) ──────────────
@@ -140,8 +144,10 @@ PIPELINE_INVALID = [
     ({"segment.model_ids": {"0.8b": "facebook/sapiens-seg-0.8b"}}, r"segment\.model_ids\.0\.8b.*sapiens2-seg-"),
     ({"segment.model_ids": {"0.4b": "facebook/sapiens-seg-0.4b-torchscript"}}, r"CC-BY-NC"),
     ({"segment.model_ids": {"1b": "facebook/sapiens2-seg-1b"}}, r"segment\.model_ids\.1b.*tidak dikenal"),
-    ({"segment.revision": ""}, r"segment\.revision"),
-    ({"segment.revision": 123}, r"segment\.revision.*string"),
+    ({"segment.revision": "abc123"}, r"segment\.revision.*mapping"),
+    ({"segment.revision": {"0.8b": ""}}, r"segment\.revision\.0\.8b"),
+    ({"segment.revision": {"0.4b": 123}}, r"segment\.revision\.0\.4b.*string"),
+    ({"segment.revision": {"1b": "abc"}}, r"segment\.revision\.1b.*tidak dikenal"),
     ({"segment.precision": "bf16"}, r"segment\.precision.*P-005"),
     ({"segment.precision": "int8"}, r"segment\.precision"),
     ({"segment.vram_min_free_mib": {"0.4b": 5000}}, r"segment\.vram_min_free_mib\.0\.4b \(5000\)"),

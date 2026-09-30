@@ -14,15 +14,16 @@ Aturan:
   diam-diam memakai yang terakhir).
 - YAML parsial = merge dengan default. `groups` diganti UTUH (bukan digabung per grup).
   Section kosong (mis. `stroke:` tanpa isi) = default section itu.
-- `null` hanya boleh di `segment.revision` / `depth.revision`.
+- `null` hanya boleh di `segment.revision.<model>` / `depth.revision`.
 - `paths.work_dir` / `paths.out_dir`: relatif → terhadap direktori kerja (cwd) saat load.
   Aset style (`texture.brush_image`, `paper.texture_image`): relatif → terhadap root project
   (folder berisi pyproject.toml, dicari dari lokasi paket; editable install). Path absolut boleh.
   Path dengan karakter kontrol = error (di YAML, backslash dalam kutip GANDA adalah escape).
 - Load TANPA side effect: folder tidak dibuat. Stage memanggil ensure_dir().
 
-`segment.revision` / `depth.revision` boleh null di loader. Stage [2] (T-102b) dan [2c] (T-105)
-WAJIB menolak null saat runtime (run offline butuh revision checkpoint yang di-pin) — bukan loader.
+`segment.revision` = mapping per model ({"0.8b": hash, "0.4b": hash}; dua repo HF = dua hash);
+`depth.revision` = satu string. Keduanya boleh null di loader. Stage [2] (T-102b) dan [2c] (T-105)
+WAJIB menolak null (dan selain commit hash 40-hex) saat runtime — bukan loader.
 
 Hash per bagian untuk manifest [2]/[3]/[4]: section_hash(cfg, "groups") = sha256 dari canonical
 JSON (key terurut, float dinormalisasi). Untuk `groups`, urutan grup ikut dihitung (menentukan id),
@@ -117,7 +118,11 @@ class SegmentConfig:
         "0.8b": "facebook/sapiens2-seg-0.8b",
         "0.4b": "facebook/sapiens2-seg-0.4b",
     }))
-    revision: str | None = None
+    # Commit hash snapshot HF per model (dua repo = dua hash), di-pin di T-102b dari cache T-102c.
+    revision: Mapping[str, str | None] = field(default_factory=_frozen({
+        "0.8b": "196a627b928676c4429b738ed76f78a21d96c4eb",
+        "0.4b": "449b3c5335e6722bb94990abdd1aa6e612432f22",
+    }))
     precision: str = "fp16"
     vram_min_free_mib: Mapping[str, int] = field(default_factory=_frozen({"0.8b": 3300, "0.4b": 2300}))
     probs_dtype: str = "uint8"
@@ -138,8 +143,10 @@ class QcConfig:
     iou_min: float = 0.55
     blob_min: float = 0.05
     max_big_blobs: int = 1
+    # Jangan ubah area_median_window tanpa kalibrasi ulang area_drop_min (W=25/49/73 memberi celah
+    # berbeda; W=73 tanpa celah). area_drop_min SEMENTARA (T-102b, satu klip; celah aman 0.608–0.652).
     area_median_window: int = 49
-    area_drop_min: float = 0.6
+    area_drop_min: float = 0.63
 
 
 DEFAULT_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -637,7 +644,7 @@ def _hex(key: str, v: str) -> None:
 
 
 def _validate_pipeline(c: PipelineConfig) -> None:
-    # model_ids / vram_min_free_mib: key persis SEG_MODELS dijamin merge (key lain = tidak dikenal).
+    # model_ids / revision / vram_min_free_mib: key persis SEG_MODELS dijamin merge (key lain = tidak dikenal).
     s = c.segment
     _choice("segment.model", s.model, SEG_MODELS)
     for m, model_id in s.model_ids.items():

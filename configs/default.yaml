@@ -16,7 +16,9 @@ segment:
   model_ids:
     "0.8b": "facebook/sapiens2-seg-0.8b"   # id HF yang dipakai di T-102c
     "0.4b": "facebook/sapiens2-seg-0.4b"
-  revision: null             # commit hash checkpoint HF; diisi di T-102b (pin)
+  revision:                  # commit hash snapshot HF per model (pin T-102b); wajib ada di cache HF
+    "0.8b": "196a627b928676c4429b738ed76f78a21d96c4eb"
+    "0.4b": "449b3c5335e6722bb94990abdd1aa6e612432f22"
   precision: "fp16"          # "fp16" | "fp32" — TANPA bf16 (P-005)
   vram_min_free_mib:
     "0.8b": 3300             # peak reserved 3276 MiB (T-102c)
@@ -37,8 +39,9 @@ qc:
   iou_min: 0.55              # IoU foreground vs frame sebelumnya
   blob_min: 0.05             # komponen "besar" = > 5% area frame
   max_big_blobs: 1
-  area_median_window: 49     # frame (±2 s); median BERGULIR, bukan median klip
-  area_drop_min: 0.6         # SEMENTARA — dikalibrasi di T-102b
+  area_median_window: 49     # frame (±2 s); jendela DIGESER, bukan median klip. Jangan diubah tanpa kalibrasi
+                             # ulang area_drop_min (W=25/49/73 memberi celah berbeda; W=73 tanpa celah)
+  area_drop_min: 0.63        # SEMENTARA — T-102b, satu klip: celah aman 0.608 (MediaPipe kaki hilang) – 0.652 (Sapiens2)
 
 # ── GROUPS (dipakai [3] dan [4]) ───────────────────
 # Urutan = id grup (1..G); 0 = background (dicadangkan). Batas di dalam satu grup tidak digambar.
