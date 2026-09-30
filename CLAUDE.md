@@ -17,10 +17,11 @@ Segmentation → Contour → Stylized stroke. MediaPipe Pose hanya fallback untu
 | # | Modul | Input → Output |
 |---|---|---|
 | 1 | ingest.py | video → work/frames/frame_%05d.png + meta.json |
-| 2 | segment.py | frames → work/masks/*.png + work/qc_report.json |
-| 2b | fallback_pose.py | frame gagal QC → mask sintetik (di-blend, bukan mengganti) |
-| 3 | stabilize.py | masks → work/masks_smooth/*.png (temporal EMA + optical flow) |
-| 4 | vectorize.py | masks_smooth → work/contours/*.json |
+| 2 | segment.py | frames → work/seg/classmap/*.png + work/seg/probs/*.npz (Sapiens2-seg, probabilitas mentah 29 kelas) + work/seg/manifest.json + work/qc_report.json |
+| 2b | fallback_pose.py | DITUNDA (BLOCKED, D-010) — frame gagal QC diberi bobot temporal kecil di stage 3 |
+| 2c | depth.py | frames → work/depth/*.npy (disparity mentah DA-V2 Small) + work/depth/manifest.json |
+| 3 | stabilize.py | seg/probs + depth + qc_report → work/stable/groups/*.png (peta grup) + work/stable/depth_smooth/*.npy (temporal EMA + optical flow, filter pulau + mode filter) |
+| 4 | vectorize.py | stable/ → work/contours/*.json (polyline bertipe: silhouette, silhouette_hole, group_boundary, occlusion) + work/contours/clip_stats.json |
 | 5 | stylize.py | contours + style YAML → work/strokes/*.svg + *.png |
 | 6 | export.py | strokes → out/animation.mp4 + out/svg/*.svg |
 
@@ -35,7 +36,7 @@ Kontrak lengkap per modul: docs/01-PIPELINE-SPEC.md. Parameter style: docs/02-ST
    (contoh: YOLOv8 — D-004). Cek lisensi sebelum menambah dependency apa pun
 3. Semua parameter style dan threshold dibaca dari YAML (configs/). Tidak ada magic number.
    Setiap parameter punya default yang masuk akal (pipeline jalan tanpa YAML)
-4. Randomness wajib deterministic: seed = hash(frame_index, param_seed) — P-007
+4. Randomness wajib deterministic: seed = hash(frame_index, param_seed, track_id) — P-007, D-010
 5. Setiap stage baca dari disk dan tulis ke disk → pipeline resumable, tiap stage bisa
    dijalankan ulang sendiri
 6. GPU/CUDA hanya lewat PyTorch (wheel cu118) untuk Sapiens2-seg dan Depth Anything V2 Small, satu model

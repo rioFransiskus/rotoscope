@@ -187,7 +187,7 @@ Tiga langkah, jadikan refleks:
     atas u2net tapi tidak dipakai sebagai backend final. Style target ditambah garis oklusi →
     backend Sapiens2 (D-009), kelayakan diuji di T-102c
   - **Follow-up (JANGAN dikerjakan tanpa tanya Rio):** keluarkan `rembg` + `onnxruntime` dari
-    requirements
+    requirements → task **T-107** (2026-09-29)
 
 ### T-102c · Uji kelayakan Sapiens2 lokal (seg + pointmap) di GTX 1650 Ti · `DONE`
 - **Kerjakan:** jalankan Sapiens2-seg 0.4B (dan Sapiens2-pointmap 0.4B) lokal pada 283 frame
@@ -540,12 +540,18 @@ Tiga langkah, jadikan refleks:
     Alat sekali pakai: `scripts/sapiens2_probe.py`, `sapiens2_exp.py`, `look_test.py`,
     `sapiens2_groups.json`, `sapiens2_classes.json`
 
-### T-102b · `segment.py` · `TODO`
-- **Kerjakan:** backend Sapiens2 (hasil T-102c) → mask foreground → threshold → morphological
-  open+close → ambil connected component terbesar. Simpan class map bagian tubuh (+ pointmap kalau
-  dipakai) ke disk
-- **Done when:** `work/masks/` terisi mask biner + class map (+ pointmap kalau dipakai), subjek
-  terpisah bersih dari background
+### T-102b · `segment.py` · `WIP`
+- **Kerjakan:** kontrak stage [2] `docs/01` (D-010): Sapiens2-seg `segment.model` eksplisit (default
+  0.8B fp16) → `seg/classmap/*.png` (argmax, uint8) + `seg/probs/*.npz` (29 kelas, uint8, deflate,
+  resolusi kerja; softmax di CPU) + `seg/manifest.json` + `seg/frames.jsonl`. Cek VRAM bebas sebelum load
+  (3300 / 2300 MiB) → berhenti dengan pesan jelas; OOM → berhenti tanpa ganti model; resume per frame;
+  manifest model beda → tolak kecuali `--restart`. Cek `argmax(probs)` vs `classmap`: laporkan % beda,
+  bukan gagal keras. QC per klip (`qc_report.json`, termasuk `area_vs_median` median bergulir, `--qc-only`)
+  — **T-301 digabung ke sini**. Nama kelas → data paket `src/rotoscope/data/sapiens2_classes.json`
+- **Butuh dulu:** T-104a (config loader)
+- **Done when:** `seg/` + `qc_report.json` terisi untuk klip uji; ukuran `probs` diukur di 20 frame
+  pertama (tetap format ini kecuali > 3 GB per klip); default `qc.area_drop_min` dikalibrasi pada zona kaki
+  hilang MediaPipe T-102a frame 1–7; `tests/test_segment.py` lolos
 - **⚠️ Kritis:** rembg/u2net ditolak (D-008), jangan dipakai
 - **Update log:**
   - [2026-09-25] Dulu T-102. Backend ditentukan T-102a — D-008
@@ -560,28 +566,85 @@ Tiga langkah, jadikan refleks:
       valid); fallback 0.4B fp16 untuk SELURUH klip, tidak dicampur
     - data yang disimpan untuk stabilize (T-302 harus menstabilkan peta grup, bukan hanya mask biner):
       mis. probabilitas per grup, selain class map
+  - [2026-09-29] sesi 1: kontrak pipeline ditulis ulang — `docs/01` (diagram, kontrak [2]/[2c]/[3]/[4]/[5],
+    stack, struktur repo, urutan build), `docs/02` (parameter pipeline `default.yaml` + validasi), tabel
+    Arsitektur `CLAUDE.md`, D-010. Keputusan Rio: probabilitas 29 kelas uint8 npz (Q1-A); grup di
+    `default.yaml` (Q2-A); fallback pose ditunda, QC memberi bobot ke temporal (Q3-B); JSON bertipe +
+    anchor + `track_id`, siluet termasuk lubang (Q4-B); model seg eksplisit, tanpa ganti otomatis. Task
+    baru T-104a/b, T-105, T-106, T-107, T-201a/b, T-305; T-301 digabung ke sini. Status → WIP (sesi
+    berikutnya: implementasi, setelah T-104a)
 
 ### T-103 · `export.py` naif · `TODO`
-- **Kerjakan:** PNG sequence → MP4 via ffmpeg, `-r 24 -pix_fmt yuv420p`
+- **Kerjakan:** PNG sequence → MP4 via ffmpeg, `-r 24 -pix_fmt yuv420p`. Input Phase 1 = foreground
+  `stable/groups/*.png` (grup ≠ 0) sebagai siluet blok hitam-putih
 - **Done when:** ada `out/animation.mp4` berisi siluet hitam-putih yang bergerak
 - **Update log:**
+  - [2026-09-29] Input diganti dari `masks/*.png` ke `stable/groups/*.png` — D-010
 
-### T-104 · `cli.py` + config loader · `TODO`
-- **Kerjakan:** CLI satu perintah jalankan pipeline, loader YAML + validasi range, defaults
-  masuk akal (jalan tanpa YAML)
+### T-104a · `config.py` — loader YAML + validasi · `TODO`
+- **Kerjakan:** loader `configs/default.yaml` + `configs/styles/*.yaml`, default lengkap (jalan tanpa
+  YAML), validasi range + aturan grup (`docs/02`), `paths.work_dir` bisa di drive lain
+- **Done when:** config tanpa YAML = default `docs/02`; nilai di luar range / grup tidak valid → error
+  jelas; `tests/test_config.py` lolos
+- **Kenapa duluan:** T-102b dan stage lain membaca parameternya dari sini
+- **Update log:**
+  - [2026-09-29] Dipecah dari T-104 (loader dibutuhkan sebelum implementasi T-102b) — D-010
+
+### T-104b · `cli.py` · `TODO`
+- **Kerjakan:** CLI satu perintah jalankan pipeline (stage GPU [2] dan [2c] sebagai proses sendiri),
+  tiap stage juga bisa dijalankan sendiri; flag `--seg-model`, `--restart`, `--qc-only`, `--config`
 - **Done when:** `python -m rotoscope run samples/test.mp4` menghasilkan MP4
 - **🎯 Milestone Phase 1:** pipeline end-to-end jalan
 - **Update log:**
+  - [2026-09-29] Dipecah dari T-104 (config loader → T-104a) — D-010
+
+### T-105 · `depth.py` — Depth Anything V2 Small · `TODO`
+- **Kerjakan:** kontrak stage [2c] `docs/01`: DA-V2 Small fp32 GPU (proses sendiri, revision di-pin,
+  hanya varian Small) → `depth/*.npy` disparity mentah float16 resolusi kerja + `depth/manifest.json` +
+  `depth/frames.jsonl`; cek VRAM ≥ 500 MiB bebas; resume per frame
+- **Done when:** `depth/` terisi untuk klip uji, 0 NaN/inf; `tests/test_depth.py` lolos
+- **Update log:**
+  - [2026-09-29] Task baru — D-010
+
+### T-106 · `stabilize.py` spasial saja · `TODO`
+- **Kerjakan:** kontrak stage [3] `docs/01` dengan `stabilize.temporal.enabled: false`: probabilitas
+  kelas → grup → argmax → filter pulau N = 30 (peta grup) → mode filter K = 3 → `stable/groups/*.png`;
+  kedalaman dinormalisasi per frame → `stable/depth_smooth/*.npy`; `stable/manifest.json` (hash grup)
+- **Done when:** `stable/` terisi; hash grup berubah → output basi terdeteksi; `tests/test_stabilize.py` lolos
+- **Kenapa sekarang:** Phase 2 butuh input [3]; temporal ditambahkan di T-302/T-303
+- **Update log:**
+  - [2026-09-29] Task baru — D-010
+
+### T-107 · Keluarkan rembg + onnxruntime dari requirements dan venv · `TODO`
+- **Kerjakan:** hapus `rembg[cpu]` + `onnxruntime` dari `requirements.txt`, uninstall dari venv,
+  perbarui `requirements-lock.txt`, `pip check` bersih, catatan stack `CLAUDE.md` / `docs/01`
+- **Done when:** tidak ada rembg / onnxruntime di venv dan requirements; `scripts/smoke_test.py`
+  disesuaikan + lolos, test lain lolos
+- **Update log:**
+  - [2026-09-29] Task baru — follow-up D-008 (T-102a)
 
 ---
 
 # PHASE 2 — Vectorize + stylize basic
 
-### T-201 · Contour extraction · `TODO`
-- **Kerjakan:** `cv2.findContours` mode `RETR_EXTERNAL` → `approxPolyDP` dengan
-  `simplify_epsilon` dari config → buang blob < `min_contour_area`
-- **Done when:** `work/contours/*.json` berisi array titik per frame
+### T-201a · Siluet + lubang + batas grup · `TODO`
+- **Kerjakan:** kontrak stage [4] `docs/01`: `cv2.findContours` mode `RETR_CCOMP` pada foreground
+  `stable/groups` → `silhouette` (kontur luar ≥ `min_region_area`) + `silhouette_hole` (lubang ≥
+  `min_hole_area`; ruang negatif tertutup wajib digambar); batas antar pasangan grup → `group_boundary`
+  (polyline terbuka); filter komponen garis M = 5 sebelum thinning, tracing, `min_stroke_px`
+- **Done when:** `work/contours/*.json` berisi polyline bertipe sesuai skema `docs/01`
 - **Update log:**
+  - [2026-09-29] Dipecah dari T-201; siluet termasuk lubang (bukan `RETR_EXTERNAL` saja);
+    `approxPolyDP` pindah ke stage [5] — D-010
+
+### T-201b · Garis oklusi kedalaman · `TODO`
+- **Kerjakan:** kontrak stage [4] `docs/01`: dari `stable/depth_smooth` apa adanya (tanpa log kedua) →
+  |grad| (Gaussian σ) → NMS → hysteresis T_high / T_low persentil per klip → hanya di dalam grup, jarak ≥
+  D → skeleton ≥ L → `occlusion`; threshold per klip disimpan di `contours/clip_stats.json` (dipakai
+  `--preview`)
+- **Done when:** garis oklusi kaki menyilang (frame 73–92) muncul tanpa "bayangan" duplikat siluet
+- **Update log:**
+  - [2026-09-29] Dipecah dari T-201 (log T-201 lama di bawah) — D-010
   - [2026-09-29] Syarat dari T-102c (D-009, known issue): garis kedalaman DA mentah menghasilkan
     "bayangan" (duplikat sejajar siluet/batas seg + bercak tebal; `work/t102c/look/diag_sources.png`,
     frame 120: 4234 px garis DA vs 11808 px garis seg). Pembersihan wajib: tepi tipis (NMS searah
@@ -589,58 +652,85 @@ Tiga langkah, jadikan refleks:
     Titik awal dari look test (`scripts/look_test.py`): |grad log d| (Gaussian σ 1 px), T_high p95 /
     T_low p90 per klip, D = 7 px, L = 30 px (skeleton). Komponen DA ±94 px di area tangan (frame 90) tidak
     bisa dibedakan dari garis sah hanya dengan ukuran → evaluasi lagi di sini / T-302
+  - [2026-09-29] Catatan T-102b sesi 1: garis dihitung dari `depth_smooth` (ternormalisasi di [3]), bukan
+    disparity mentah; nilai T_high/T_low look test (atas |grad log d|) tidak langsung berlaku, persentil
+    p95/p90 menyesuaikan diri; D / L / persentil dikalibrasi ulang di T-305 — D-010
 
-### T-202 · Resample + point correspondence · `TODO`
-- **Kerjakan:** interpolasi arc-length ke N titik tetap → rotasi urutan titik ke anchor
-  anatomis (mis. titik tertinggi)
-- **Done when:** titik ke-0 konsisten posisinya antar frame
+### T-202 · Anchor + orientasi + `track_id` · `TODO`
+- **Kerjakan:** aturan anchor `docs/01` stage [4]: `silhouette` searah jarum jam, `silhouette_hole`
+  berlawanan, anchor = titik terdekat ke anchor track yang sama di frame sebelumnya (track baru: titik
+  tertinggi hair ∪ face / titik tertinggi lubang); garis terbuka dinormalkan arahnya; `track_id` dari
+  pencocokan dengan frame sebelumnya (`vectorize.track.max_match_dist_px`, kalibrasi di sini). Resample
+  ke N titik dari anchor dikerjakan di [5]
+- **Done when:** titik ke-0 dan `track_id` konsisten antar frame
 - **⚠️ Pitfall P-004:** tanpa ini garis akan tampak "berputar"
 - **Update log:**
+  - [2026-09-29] Scope: anchor untuk semua tipe + `track_id` (seed jitter), resample pindah ke [5] — D-010
 
 ### T-203 · `stylize.py` garis polos · `TODO`
-- **Kerjakan:** Catmull-Rom → cubic Bezier, render stroke tebal seragam, warna solid
+- **Kerjakan:** `approxPolyDP` → Catmull-Rom → resample dari anchor, render stroke tebal seragam,
+  warna solid. Satu renderer untuk semua `type`, override `stroke.by_type`
 - **Done when:** output sudah berupa outline, bukan siluet blok
 - **Update log:**
   - [2026-09-27] Keputusan tertunda: tambah parameter `output_width` (mis. 1080) terpisah dari
     `working_width`. Output digambar ulang dari vector (D-001) → resolusi output tidak terikat
     sumber (video test 480 px). Tebal garis & jitter harus relatif terhadap ukuran output, bukan px
     absolut. Ini mengubah kontrak stage [5] → bahas & catat di decision log sebelum implementasi
+  - [2026-09-29] Satu renderer + parameter per tipe; simplify/resample pindah dari [4] ke [5] — D-010.
+    `output_width` tetap harus diputuskan sebelum implementasi
 
 ### T-204 · Flag `--preview N` · `TODO`
-- **Kerjakan:** render hanya N frame untuk iterasi cepat
+- **Kerjakan:** render hanya N frame untuk iterasi cepat. Threshold per klip dibaca dari
+  `contours/clip_stats.json`, bukan dihitung dari N frame preview
 - **Done when:** preview 10 frame selesai < 30 detik
 - **Kenapa sekarang:** tanpa ini Phase 3–4 akan menyiksa
 - **🎯 Milestone Phase 2:** outline keluar
 - **Update log:**
+  - [2026-09-29] Threshold dari `clip_stats.json` — D-010
 
 ---
 
 # PHASE 3 — Stabilize (stage tersulit)
 
-### T-301 · QC metrics · `TODO`
+### T-301 · QC metrics · `SKIP`
 - **Kerjakan:** hitung `area_ratio`, `iou_prev`, `component_count` per frame →
   `work/qc_report.json` + flag frame gagal
 - **Done when:** report bisa menunjuk frame mana yang bermasalah
 - **Update log:**
+  - [2026-09-29] SKIP — digabung ke T-102b: QC dihitung di akhir stage [2] (termasuk `area_vs_median`)
+    — D-010
 
-### T-302 · Temporal EMA pada mask · `TODO`
-- **Kerjakan:** EMA alpha dari config, re-threshold + morphological cleanup
-- **Done when:** flicker acak berkurang terukur (bandingkan `iou_prev` rata-rata)
+### T-302 · Temporal EMA pada probabilitas grup + kedalaman · `TODO`
+- **Kerjakan:** nyalakan `stabilize.temporal`: EMA pada probabilitas grup (bukan mask biner) dengan bobot
+  `qc_fail_weight` untuk frame gagal QC; pilih + uji metode normalisasi kedalaman per frame
+  (`stabilize.depth.normalize`) lalu EMA kedalaman. Saran: EMA dua arah (maju + mundur) karena offline →
+  tanpa lag. Kalibrasi `qc_fail_weight`
+- **Done when:** flicker acak berkurang terukur (`iou_prev` + `label_agreement_prev` peta grup rata-rata)
 - **Update log:**
+  - [2026-09-29] Objek diganti: probabilitas grup + kedalaman ternormalisasi (bukan mask biner) — D-010
 
 ### T-303 · Optical flow warp · `TODO`
-- **Kerjakan:** `cv2.calcOpticalFlowFarneback` → warp mask frame sebelumnya ke frame
-  sekarang → blend dengan bobot `optical_flow_blend`
+- **Kerjakan:** `cv2.calcOpticalFlowFarneback` pada `frames/` → warp probabilitas grup + kedalaman
+  frame sebelumnya ke frame sekarang → blend dengan bobot `optical_flow_blend`
 - **Done when:** boiling turun signifikan tanpa lag terlihat
 - **Catatan:** ini mitigasi paling efektif untuk P-001
 - **Update log:**
+  - [2026-09-29] Objek diganti: probabilitas grup + kedalaman ternormalisasi — D-010
 
 ### T-304 · Kalibrasi `boil_preserve` · `TODO`
 - **Kerjakan:** render 3–4 varian nilai berbeda, bandingkan side-by-side, pilih
 - **Done when:** ada nilai default yang kamu setujui secara artistik
 - **Catatan:** ini penilaian mata, bukan metrik. Tidak bisa didelegasikan ke Claude Code
+- **Update log:**
+
+### T-305 · Kalibrasi ulang post-processing pada data stabil · `TODO`
+- **Kerjakan:** cek ulang N (filter pulau kini di peta GRUP setelah temporal, di T-102c di peta KELAS
+  sebelum grup), K, M, D, L, persentil `hi_pct`/`lo_pct` dan `vectorize.min_hole_area` pada output
+  [3] dengan temporal aktif; jendela uji frame 73–92 + 183–202 (seperti T-102c)
+- **Done when:** default di `configs/default.yaml` + `docs/02` diperbarui dengan data, disetujui Rio
 - **🎯 Milestone Phase 3:** flicker terkendali
 - **Update log:**
+  - [2026-09-29] Task baru — D-010
 
 ---
 
@@ -652,10 +742,12 @@ Tiga langkah, jadikan refleks:
 - **Update log:**
 
 ### T-402 · Jitter deterministic · `TODO`
-- **Kerjakan:** Perlin noise per titik, seed = `hash(frame_index, param_seed)`,
+- **Kerjakan:** Perlin noise per titik, seed = `hash(frame_index, param_seed, track_id)`,
   `temporal_drift` untuk perubahan antar frame
 - **⚠️ Pitfall P-007:** random murni = tidak reproducible, tidak bisa di-debug
 - **Update log:**
+  - [2026-09-29] Seed ditambah `track_id` (bukan indeks stroke) supaya pola getar tidak melompat saat
+    urutan stroke berubah — D-010
 
 ### T-403 · Multipass stroke · `TODO`
 - **Kerjakan:** garis tumpang tindih dengan offset + opacity falloff
@@ -678,21 +770,25 @@ Tiga langkah, jadikan refleks:
 
 ---
 
-# PHASE 5 — Fallback pose
+# PHASE 5 — Fallback pose (DITUNDA, D-010)
 
-### T-501 · `fallback_pose.py` · `TODO`
+### T-501 · `fallback_pose.py` · `BLOCKED`
 - **Kerjakan:** MediaPipe Pose 33 landmark → mask sintetik dari capsule/polygon
   (torso, lengan, kaki, kepala)
 - **⚠️ Cek dulu:** mediapipe 1.x — pastikan API Pose yang dipakai masih ada (legacy `mp.solutions`
   vs Tasks API `PoseLandmarker`)
+- **Dibuka lagi kalau:** klip nyata gagal QC dan temporal berbobot QC (T-302) tidak cukup
 - **Update log:**
+  - [2026-09-29] BLOCKED — foreground Sapiens2 0 frame gagal QC di klip uji; frame gagal QC diisi dari
+    frame tetangga lewat temporal berbobot di [3] (Q3-B) — D-010
 
-### T-502 · Integrasi blend + QC · `TODO`
+### T-502 · Integrasi blend + QC · `BLOCKED`
 - **Kerjakan:** panggil fallback hanya untuk frame gagal QC, blend dengan mask asli
   (jangan ganti total), catat frame mana yang pakai fallback
 - **Done when:** frame motion-blur tidak lagi rusak, transisi tidak melompat
 - **🎯 Milestone Phase 5:** pipeline tahan input buruk
 - **Update log:**
+  - [2026-09-29] BLOCKED — ikut T-501 — D-010
 
 ---
 
@@ -723,11 +819,11 @@ Tiga langkah, jadikan refleks:
 | Phase | Task | Selesai |
 |---|---|---|
 | 0 Setup | T-001 … T-005 | 5/5 |
-| 1 Skeleton | T-101 … T-104 (T-102 → a/b/c) | 3/6 |
-| 2 Vectorize | T-201 … T-204 | 0/4 |
-| 3 Stabilize | T-301 … T-304 | 0/4 |
+| 1 Skeleton | T-101 … T-107 (T-102 → a/b/c, T-104 → a/b) | 3/10 |
+| 2 Vectorize | T-201 … T-204 (T-201 → a/b) | 0/5 |
+| 3 Stabilize | T-301 … T-305 (T-301 SKIP) | 0/5 |
 | 4 Style | T-401 … T-406 | 0/6 |
-| 5 Fallback | T-501 … T-502 | 0/2 |
+| 5 Fallback | T-501 … T-502 (BLOCKED) | 0/2 |
 | 6 Opsional | T-601 … T-603 | 0/3 |
 
-**Total: 30 task** · Selesai: 8/30 (SKIP tidak dihitung selesai)
+**Total: 36 task** · Selesai: 8/36 (SKIP tidak dihitung selesai)

@@ -104,7 +104,7 @@ cross_iou (mean / median / min): mediapipe vs u2net 0.805 / 0.832 / 0.451; media
 **Hasil T-102c** di bawah (seg 0.8B fp16 + Depth Anything V2 Small; pointmap dibuang)
 **Konteks:** Siluet saja kehilangan keterbacaan pose saat lengan/kaki menempel ke badan (review
 visual Rio, T-102a). Mask MediaPipe tidak menyimpan batas antar anggota tubuh.
-**Keputusan:**
+**Keputusan (keputusan awal 2026-09-28 — digantikan Keputusan final di bawah):**
 - **Sapiens2-seg 0.4B** (29 kelas bagian tubuh) untuk batas anggota tubuh + mask foreground.
   Lolos uji demo visual Rio (2026-09-28)
 - **Sapiens2-pointmap 0.4B** untuk batas oklusi di area berpakaian — **BELUM diuji**. Dievaluasi
@@ -216,6 +216,67 @@ Kelas sama 0.8B vs 0.4B per frame: mean 99.33%, min 97.50%.
   dengan ukuran → dievaluasi lagi di T-201/T-302
 - Benda yang dipegang: ditunda (tidak ada kelasnya di Sapiens2)
 
+### D-010 — Kontrak pipeline baru (Sapiens2-seg + DA-V2 Small)
+**Tanggal:** 2026-09-29
+**Konteks:** D-009 mengganti backend ke Sapiens2-seg 0.8B + Depth Anything V2 Small dan menambah garis
+oklusi ke style target. Kontrak lama (`masks/*.png` biner → `masks_smooth` → kontur `RETR_EXTERNAL`) tidak
+menyimpan batas antar grup, kedalaman, atau data untuk menstabilkan peta grup (known issue D-009).
+Ditulis ulang di T-102b sesi 1, berdasarkan metode yang terbukti di T-102c (`scripts/sapiens2_exp.py`,
+`scripts/look_test.py`). Kontrak lengkap: `01-PIPELINE-SPEC.md`; parameter: `02-STYLE-PARAMS.md`.
+**Keputusan (Rio):**
+- **Alur:** [1] ingest → [2] segment → [2c] depth → [3] stabilize → [4] vectorize → [5] stylize →
+  [6] export. [2b] fallback pose ditunda
+- **[2] hanya output mentah:** `seg/classmap` (argmax uint8) + `seg/probs` + `seg/manifest.json` + QC.
+  Semua pembersihan spasial dan temporal di [3], supaya stabilisasi bekerja dari probabilitas. Softmax
+  di CPU (sisa VRAM run 0.8B hanya ±42 MiB). `argmax(probs)` vs `classmap` dilaporkan sebagai % beda
+  (kuantisasi uint8), bukan gagal keras
+- **GPU:** satu model di GPU pada satu waktu; [2] dan [2c] masing-masing proses sendiri. Cek VRAM bebas
+  sebelum load: seg 0.8B 3300 MiB, 0.4B 2300 MiB, DA 500 MiB → kurang = berhenti dengan pesan jelas.
+  Revision checkpoint HF di-pin di YAML
+- **Model seg eksplisit** (`segment.model: 0.8b`). VRAM kurang → berhenti (saran: tutup aplikasi lain,
+  atau `--seg-model 0.4b`). OOM di tengah run → berhenti, tanpa ganti model otomatis. Manifest mencatat
+  model; resume menolak model berbeda kecuali `--restart`. Tidak pernah dicampur dalam satu klip (D-009)
+- **[3]:** probabilitas kelas → grup → temporal (EMA + optical flow, bobot QC) → argmax → filter pulau
+  N = 30 pada peta **grup** → mode filter K = 3. Kedalaman dinormalisasi **per frame** (disparity DA
+  hanya benar sampai skala + offset per frame) lalu temporal → `depth_smooth`; metode dipilih di T-302.
+  EMA dua arah = saran untuk T-302. Parameter temporal pindah dari style YAML ke `stabilize:` di
+  `default.yaml`
+- **[4]:** siluet = batas foreground **termasuk lubang** (`RETR_CCOMP`; ruang negatif tertutup wajib
+  digambar, filter `min_hole_area`) + batas grup + garis oklusi dari `depth_smooth` apa adanya (tanpa log
+  kedua; NMS + hysteresis persentil per klip, jarak ≥ D, skeleton ≥ L). Filter komponen M sebelum
+  thinning + `min_stroke_px` setelah tracing. Threshold per klip di `contours/clip_stats.json` (dipakai
+  `--preview`)
+- **[5]:** satu renderer untuk semua jenis garis, override per tipe (`stroke.by_type`); simplify +
+  resample pindah dari [4] ke [5]. Seed jitter = `hash(frame_index, param_seed, track_id)` (P-007)
+- **Q1 — probabilitas [2]:** 29 kelas, uint8 = round(p × 255), npz deflate, resolusi kerja. Definisi grup
+  bisa berubah tanpa menjalankan ulang [2] (±1.6 jam per klip). Ukuran diukur di 20 frame pertama
+  T-102b; tetap format ini kecuali > 3 GB per klip
+- **Q2 — grup:** bagian `groups:` di `configs/default.yaml`, divalidasi saat load (nama kelas valid, tiap
+  kelas tepat satu grup, kelas tak tercantum = error, `background` dicadangkan, ≤ 255 grup). Hash grup di
+  `stable/manifest.json`. `scripts/sapiens2_classes.json` → data paket `src/rotoscope/data/`
+- **Q3 — fallback pose:** ditunda (T-501/T-502 `BLOCKED`). Frame gagal QC diberi bobot temporal kecil di
+  [3]. QC baru `area_vs_median` (median bergulir, default dikalibrasi di T-102b)
+- **Q4 — skema JSON [4]:** stroke bertipe `silhouette` / `silhouette_hole` (tertutup) + `group_boundary` /
+  `occlusion` (terbuka), dengan `anchor` (tertutup) dan `track_id` (semua; pencocokan dengan frame
+  sebelumnya). Orientasi: siluet searah jarum jam, lubang berlawanan; garis terbuka dinormalkan arahnya
+- **Q5 — urutan build:** Phase 1 = T-104a (config) → T-102b → T-105 (depth) → T-106 (stabilize spasial,
+  temporal off) → T-103 → T-104b (cli); Phase 2 = T-201a/T-201b/T-202/T-203/T-204; Phase 3 = T-302/T-303/
+  T-304/T-305 (kalibrasi ulang N/K/M/D/L/persentil/`min_hole_area`). T-301 digabung ke T-102b. T-107 =
+  keluarkan rembg + onnxruntime
+- **Disk:** ±1.0–1.9 GB per klip *est.* (probabilitas tanpa kompresi 4.3 GB) → `paths.work_dir` bisa di
+  drive lain (C: sisa ±54 GB)
+**Alternatif ditolak:**
+- Q1: probabilitas per grup (grup berubah → [2] jalan ulang ±1.6 jam; grup sudah berubah 2× di T-102c);
+  top-3 kelas (massa hilang di titik temu ≥ 3 kelas, tepat di zona glitch tangan); float16 (2× ukuran,
+  kompresi jelek)
+- Q2: file grup terpisah (satu file lagi untuk dilacak)
+- Q3: fallback pose tetap Phase 5 (mask pose tanpa grup, tidak bisa diuji — 0 frame gagal); hapus total
+  (kehilangan cadangan D-002)
+- Q4: semua polyline terbuka seperti look test (siluet terpotong, urutan stroke berubah → jitter
+  melompat, P-004); korespondensi titik lewat optical flow (berat, ditunda)
+- P6: model `auto` (klip bisa diam-diam turun ke 0.4B karena VRAM terpakai aplikasi lain)
+- Pembersihan spasial di [2] (stabilisasi dari label yang sudah dibulatkan)
+
 ---
 
 ## Pitfall yang sudah diketahui
@@ -224,19 +285,23 @@ Kelas sama 0.8B vs 0.4B per frame: mean 99.33%, min 97.50%.
 Segmentasi per-frame pada video low-quality menghasilkan kontur yang "mendidih".
 Sedikit boil = hand-drawn feel (diinginkan). Boil tak terkendali = terlihat rusak.
 **Mitigasi:** stage `stabilize` (EMA + optical flow warp). Alokasikan waktu terbanyak di sini.
-Parameter `temporal.boil_preserve` mengontrol seberapa banyak getaran dipertahankan.
+Parameter `stabilize.temporal.boil_preserve` (`default.yaml`, D-010) mengontrol seberapa banyak getaran dipertahankan.
 
 ### P-002 — Motion blur pada tangan/kaki
 Saat subjek menari cepat, limb blur → segmentasi gagal atau limb menyatu ke badan.
-**Mitigasi:** fallback pose (D-002). Terima bahwa frame tercepat tidak akan sebersih
-frame statis. Referensi B kebetulan pose-nya tenang.
+**Mitigasi (D-010):** frame gagal QC diberi bobot temporal kecil di [3]
+(`stabilize.temporal.qc_fail_weight`), sehingga diisi dari frame tetangga. Fallback pose ditunda
+(T-501/T-502 `BLOCKED`). Terima bahwa frame tercepat tidak akan sebersih frame statis. Referensi B
+kebetulan pose-nya tenang.
 **Catatan (2026-09-25):** model card MediaPipe SelfieMulticlass juga menyebut kualitas mask turun
 pada gerakan cepat, noise, backlit, dan occluder besar — fallback tetap dibutuhkan apa pun
 backend yang dipilih di D-008.
 
 ### P-003 — Perubahan topologi kontur
 Saat lengan menyilang badan, jumlah kontur berubah → garis "meletus" antar frame.
-**Mitigasi:** `RETR_EXTERNAL` + ambil komponen terbesar saja. Deteksi di QC via `component_count`.
+**Mitigasi (D-010):** siluet `RETR_CCOMP` (kontur luar + lubang) dengan `track_id` (pencocokan
+dengan frame sebelumnya, [4]) + temporal pada probabilitas grup di [3]. Deteksi di QC via `big_blobs`.
+Mitigasi lama (`RETR_EXTERNAL` + komponen terbesar saja) tidak berlaku lagi.
 
 ### P-004 — Point correspondence drift
 Kalau titik ke-0 kontur tidak konsisten posisinya antar frame, garis akan tampak
@@ -253,7 +318,9 @@ Butuh CUDA 12.x + cuDNN 9 dengan versi yang cocok persis. Sumber error setup yan
 
 ### P-007 — Jitter non-deterministic
 Kalau jitter pakai random murni, render ulang menghasilkan animasi berbeda → tidak bisa
-di-debug, tidak bisa direproduksi. **Fix:** seed dari `hash(frame_index, param_seed)`.
+di-debug, tidak bisa direproduksi. **Fix:** seed dari `hash(frame_index, param_seed, track_id)`
+(hash stabil antar proses, mis. crc32; `track_id` ditambahkan di D-010 supaya pola getar tidak melompat
+saat urutan stroke berubah).
 
 ### P-008 — Claude Code: PATH tidak propagasi setelah install
 `claude` tidak dikenali setelah install di terminal yang sama.
