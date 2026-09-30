@@ -692,7 +692,7 @@ Tiga langkah, jadikan refleks:
     input terukur 518×924, kalimat resume/NaN baru, isi manifest/frames.jsonl, entry point + exit code.
     `docs/04` D-010: catatan "Hasil T-105"
 
-### T-106 · `stabilize.py` spasial saja · `TODO`
+### T-106 · `stabilize.py` spasial saja · `DONE`
 - **Kerjakan:** kontrak stage [3] `docs/01` dengan `stabilize.temporal.enabled: false`: probabilitas
   kelas → grup → argmax → filter pulau N = 30 (peta grup) → mode filter K = 3 → `stable/groups/*.png`;
   kedalaman dinormalisasi per frame → `stable/depth_smooth/*.npy`; `stable/manifest.json` (hash grup)
@@ -700,6 +700,38 @@ Tiga langkah, jadikan refleks:
 - **Kenapa sekarang:** Phase 2 butuh input [3]; temporal ditambahkan di T-302/T-303
 - **Update log:**
   - [2026-09-29] Task baru — D-010
+  - [2026-09-30] WIP — mulai. Rencana (probabilitas grup + aturan seri, filter pulau + mode filter pada peta
+    grup, normalisasi kedalaman `log_median_iqr` + 2 parameter baru, `stable/manifest.json` + perilaku basi,
+    resume, entry point, uji regresi vs T-102c, daftar test) menunggu approval Rio
+  - [2026-09-30] implementasi + run klip uji. Keputusan Rio: (1) seri eksak argmax grup → grup dari
+    `seg/classmap` kalau ikut seri, selain itu id terkecil (`seg/classmap` jadi input [3]; piksel seri dicatat per
+    frame); (2) parameter baru `stabilize.depth.log_eps` 1e-6 (1e-12–0.01) + `iqr_min` 0.01 SEMENTARA (1e-3–1,
+    T-302) di `config.py` / `default.yaml` / `docs/02` + validasi; (3) manifest beda → aturan umum: stage GPU
+    ([2]/[2c]) tolak + `--restart`; stage CPU murah deterministik ([3]/[4]) output basi dihapus + dihitung ulang
+    otomatis dengan peringatan (field lama → baru); output tanpa manifest tetap ditolak; (4) `stable/frames.jsonl`
+    masuk kontrak [3].
+    - Kode: `src/rotoscope/stabilize.py` (entry point sementara `python -m rotoscope.stabilize [--config]
+      [--restart] [--limit N]`, exit 0/1), `tests/test_stabilize.py` (46 test), `tests/test_config.py` (+4 kasus
+      validasi). Filter pulau + mode filter = algoritma T-102c, dijalankan di peta GRUP. Total 324 test lolos, 2 skip (GPU).
+    - `--limit 20`: 0.10 s/frame (baca 0.03, grup 0.07, depth 0.01, tulis 0.01). Output: groups PNG ±6.6 KB/frame
+      (±2.4 MB per 360 frame), depth_smooth npy 820 KB/frame (±295 MB per 360 frame).
+    - Full run: resume melanjutkan dari `frame_00020` (263 frame, 32.1 s, 0.119 s/frame, p95 0.138) → ±43 s per
+      klip 360 frame. Seri 5–43 px/frame, pulau berubah 0–128 px, mode berubah 9–88 px. depth_smooth semua finite,
+      283/283; per frame min −20.2…−2.8, median −13.2…−1.6 (median klip −3.7, termasuk background jauh), maks
+      0.50…2.56; IQR log foreground 0.077–0.384 (tidak ada clamp, tidak ada frame fg kosong, depth_finite 283/283).
+    - Regresi vs T-102c (pulau N=30 di peta KELAS `work/seg/classmap` → grup → mode K=3), script sekali pakai di
+      scratchpad: piksel sama mean **99.989%**, min **99.932%** (frame 232); di foreground (A ∪ B) mean 99.935%, min
+      99.636%; IoU foreground min 0.9966. **100% piksel beda berada ≤ 2 px dari batas grup** (0 beda di dalam area);
+      rata-rata 45 px/frame; komponen beda terbesar 67 px (frame 233, bg → torso di tepi bawah), median komponen
+      terbesar per frame 6 px. Video: `work/t106/compare_f073-092.mp4`, `work/t106/compare_f183-202.mp4`,
+      `work/t106/compare_f225-240.mp4` (zona beda terbesar, frame 232–233; permintaan Rio)
+      (+ `work/t106/regress_t102c.json`). Status tetap WIP, menunggu penilaian visual Rio
+  - [2026-09-30] DONE — penilaian visual Rio: garis grup T-106 setara T-102c di ketiga video, tanpa bentuk aneh di
+    frame 232–233; cek |grad| `stable/depth_smooth` di foreground (p99, tanpa threshold, seperti panel 4 T-102c)
+    frame 73–92 (`work/t106/depth_grad_f073-092.mp4`): batas kaki kanan–kiri masih terlihat. `docs/01`: prinsip #4
+    (aturan manifest beda GPU vs CPU) + rincian [3] (input `seg/classmap`, aturan seri, pulau/mode, normalisasi +
+    background, `stable/frames.jsonl`, resume, manifest basi, entry point, waktu + disk terukur). `docs/04` D-010:
+    catatan "Hasil T-106"
 
 ### T-107 · Keluarkan rembg + onnxruntime dari requirements dan venv · `TODO`
 - **Kerjakan:** hapus `rembg[cpu]` + `onnxruntime` dari `requirements.txt`, uninstall dari venv,
@@ -905,7 +937,7 @@ Tiga langkah, jadikan refleks:
 | Phase | Task | Selesai |
 |---|---|---|
 | 0 Setup | T-001 … T-005 | 5/5 |
-| 1 Skeleton | T-101 … T-107 (T-102 → a/b/c, T-104 → a/b) | 6/10 |
+| 1 Skeleton | T-101 … T-107 (T-102 → a/b/c, T-104 → a/b) | 7/10 |
 | 2 Vectorize | T-201 … T-204 (T-201 → a/b) | 0/5 |
 | 3 Stabilize | T-301 … T-305 (T-301 SKIP) | 0/5 |
 | 4 Style | T-401 … T-406 | 0/6 |

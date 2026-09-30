@@ -80,6 +80,8 @@ stabilize:
   mode_k: 3                  # K — mode filter peta grup, background ikut
   depth:
     normalize: "log_median_iqr"  # SEMENTARA — metode dipilih + diuji di T-302
+    log_eps: 1.0e-6          # log(max(d, eps)) — hanya menahan disparity ≤ 0 (min klip uji 0.64)
+    iqr_min: 0.01            # SEMENTARA — batas bawah pembagi IQR (log) foreground, dikalibrasi di T-302
     temporal: true           # hanya berlaku kalau temporal.enabled
 
 # ── VECTORIZE [4] ──────────────────────────────────
@@ -124,6 +126,8 @@ vectorize:
 | `stabilize.mode_k` | int ganjil ≥ 1 (1 = mati) |
 | `stabilize.temporal.enabled`, `stabilize.depth.temporal` | bool |
 | `stabilize.depth.normalize` | nilai dari daftar metode yang diimplementasi — sekarang hanya `"log_median_iqr"`; diperluas di T-302 (kandidat: affine) |
+| `stabilize.depth.log_eps` | 1e-12 ≤ x ≤ 0.01 |
+| `stabilize.depth.iqr_min` | 1e-3 ≤ x ≤ 1 (dengan batas `log_eps`, `depth_smooth` dijamin muat float16) |
 | `vectorize.min_region_area`, `min_hole_area` | int ≥ 0 |
 | `vectorize.line_min_px`, `min_stroke_px` | int ≥ 1 |
 | `vectorize.depth_lines.blur_sigma` | ≥ 0 (0 = tanpa blur) |

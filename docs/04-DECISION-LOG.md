@@ -302,6 +302,24 @@ Ditulis ulang di T-102b sesi 1, berdasarkan metode yang terbukti di T-102c (`scr
   lolos, `qc_report.json` dari `--qc-only` identik, classmap + probs frame 0–1 (`--limit 2` ke work_dir
   sementara) identik bit per bit dengan `work/seg/`
 
+**Hasil T-106 (2026-09-30)** — `src/rotoscope/stabilize.py` (spasial, temporal mati), klip uji 283 frame 480×854:
+- **Aturan manifest beda (Rio, berlaku umum):** stage GPU ([2], [2c]) **tolak** + `--restart` (hasil ±1.6 jam
+  terlalu mahal untuk terhapus tanpa sengaja); stage CPU murah, deterministik, tanpa data manual ([3], [4])
+  → output basi **dihapus + dihitung ulang otomatis** dengan peringatan (field lama → baru), `--restart` tetap
+  ada; output **tanpa manifest** tetap ditolak. Dicatat di prinsip #4 `docs/01`
+- Seri eksak argmax grup (kuantisasi uint8) → grup dari `seg/classmap` kalau ikut seri, selain itu id terkecil;
+  `seg/classmap` jadi input [3]. Klip uji 5–43 px seri per frame
+- Parameter baru `stabilize.depth.log_eps` = 1e-6 dan `stabilize.depth.iqr_min` = 0.01 (**sementara**, T-302);
+  range menjamin `depth_smooth` muat float16. Background memakai transformasi yang sama (kontinu, finite).
+  `stable/frames.jsonl` masuk kontrak [3]
+- **0.12 s/frame** (±43 s per 360 frame); groups ±6.6 KB/frame, depth_smooth 820 KB/frame. depth_smooth finite
+  283/283, IQR log foreground 0.077–0.384 (tanpa clamp)
+- **Regresi vs T-102c** (pulau N = 30 di peta KELAS → grup → mode K = 3): piksel sama mean 99.989%, min 99.932%;
+  100% beda ≤ 2 px dari batas grup (0 di dalam area), komponen beda terbesar 67 px. Penilaian visual Rio:
+  garis grup setara T-102c (frame 73–92, 183–202, 225–240); |grad| `depth_smooth` frame 73–92 masih
+  menunjukkan batas kaki kanan–kiri (input T-201b). Filter pulau di peta grup = default; kalibrasi N/K tetap
+  di T-305 (dengan temporal)
+
 ---
 
 ## Pitfall yang sudah diketahui

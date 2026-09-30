@@ -71,6 +71,8 @@ PRECISIONS = ("fp16", "fp32")                   # tanpa bf16 (Turing, P-005)
 PROBS_DTYPES = ("uint8",)
 VRAM_MAX_MIB = 4096
 NORMALIZE_METHODS = ("log_median_iqr",)         # diperluas di T-302 (kandidat: affine)
+LOG_EPS_MIN, LOG_EPS_MAX = 1e-12, 0.01          # stabilize.depth.log_eps
+IQR_MIN_MIN, IQR_MIN_MAX = 1e-3, 1.0            # stabilize.depth.iqr_min
 STROKE_TYPES = ("silhouette", "silhouette_hole", "group_boundary", "occlusion")
 STROKE_CAPS = ("round", "butt", "square")
 TEMPORAL_SEED_MODES = ("frame", "fixed")
@@ -173,6 +175,8 @@ class TemporalConfig:
 @dataclass(frozen=True)
 class StabilizeDepthConfig:
     normalize: str = "log_median_iqr"
+    log_eps: float = 1.0e-6
+    iqr_min: float = 0.01
     temporal: bool = True
 
 
@@ -683,6 +687,10 @@ def _validate_pipeline(c: PipelineConfig) -> None:
     _at_least("stabilize.island_min_px", c.stabilize.island_min_px, 0)
     _odd("stabilize.mode_k", c.stabilize.mode_k, 1)
     _choice("stabilize.depth.normalize", c.stabilize.depth.normalize, NORMALIZE_METHODS)
+    # Batas range menjamin depth_smooth muat float16: |log d − median| ≤ log(65504) − log(1e-12) ≈ 38.7,
+    # dibagi ≥ 1e-3 → ≤ 38 700 < 65504.
+    _between("stabilize.depth.log_eps", c.stabilize.depth.log_eps, LOG_EPS_MIN, LOG_EPS_MAX)
+    _between("stabilize.depth.iqr_min", c.stabilize.depth.iqr_min, IQR_MIN_MIN, IQR_MIN_MAX)
 
     v = c.vectorize
     _at_least("vectorize.min_region_area", v.min_region_area, 0)

@@ -39,7 +39,13 @@ Semua path relatif terhadap `paths.work_dir` (default `work/`) dan `paths.out_di
 3. **Satu model di GPU pada satu waktu; tiap stage GPU ([2], [2c]) = proses sendiri.** Proses yang
    selesai pasti melepas CUDA context (`torch.cuda.empty_cache()` tidak).
 4. **Resume per frame:** frame dengan output valid dilewati. Manifest tiap stage mencatat model /
-   parameter; output yang dibuat dengan model / parameter berbeda dianggap basi.
+   parameter; output yang dibuat dengan model / parameter berbeda dianggap basi. Perilaku saat manifest
+   beda (T-106):
+   - **Stage GPU ([2], [2c]):** **tolak** + `--restart` — menghapus hasil ±1.6 jam tanpa sengaja terlalu mahal.
+   - **Stage CPU murah, deterministik, tanpa data manual ([3], [4]):** output basi **dihapus lalu dihitung
+     ulang otomatis**, dengan peringatan yang menyebut field yang berubah (hash lama → baru). `--restart`
+     tetap ada untuk memaksa hitung ulang.
+   - Output **tanpa manifest** tetap **ditolak** (asal-usulnya tidak diketahui), bukan dihapus.
 5. **Semua parameter di YAML** (`configs/default.yaml` untuk pipeline, `configs/styles/*.yaml`
    untuk style), default = hasil T-102c. Daftar + range: `02-STYLE-PARAMS.md`.
 6. **Deterministic:** seed jitter = `hash(frame_index, param_seed, track_id)` (P-007).
@@ -194,39 +200,70 @@ dan temporal fill tidak cukup. D-002 (pose hanya fallback, bukan primary) tetap 
   [--restart] [--limit N] [--download]`. Exit code sama dengan [2] (0 / 1 / 3).
 
 ### [3] `stabilize.py` — stage tersulit, alokasikan waktu paling banyak (CPU)
-- **In:** `seg/probs/`, `seg/manifest.json`, `depth/`, `frames/` (untuk optical flow),
-  `qc_report.json`; config `groups`, `stabilize`
+- **In:** `seg/probs/`, `seg/classmap/` (tie-break seri, T-106), `seg/manifest.json`, `depth/`,
+  `depth/manifest.json`, `depth/frames.jsonl` (status `finite`), `frames/` (untuk optical flow, T-303),
+  `qc_report.json` (bobot temporal, T-302 — tidak dibaca selama temporal mati); config `groups`, `stabilize`
 - **Langkah:**
-  1. Probabilitas kelas → **probabilitas grup** (jumlah per grup, float32). Definisi grup:
-     `groups:` di `configs/default.yaml` (lihat 02).
+  1. Probabilitas kelas → **probabilitas grup** (jumlah per grup / 255, float32). Definisi grup:
+     `groups:` di `configs/default.yaml` (lihat 02). Tanpa temporal, argmax dihitung dari jumlah uint8
+     per grup (integer, eksak — sama dengan argmax float32). `classes` di `seg/manifest.json` wajib sama
+     persis dengan `sapiens2_classes.json` (urutan kelas menentukan pemetaan ke grup).
   2. **Temporal** (kalau `stabilize.temporal.enabled`): EMA (rata-rata bergerak berbobot) + warp
      optical flow Farnebäck (`cv2.calcOpticalFlowFarneback`, gerakan per piksel antar frame) pada
      probabilitas grup. Frame gagal QC diberi bobot `stabilize.temporal.qc_fail_weight`. Formula +
      arah (satu arah vs dua arah maju–mundur, disarankan dua arah karena offline) → T-302/T-303.
-  3. argmax → peta grup.
-  4. **Filter pulau** pada peta GRUP: komponen 8-arah sebuah grup (termasuk background) <
-     `stabilize.island_min_px` (N = 30) → grup mayoritas di cincin 1 px sekelilingnya (satu lintasan).
-     ⚠️ Di T-102c filter ini dijalankan pada peta KELAS sebelum dijadikan grup → dicek ulang di T-305.
-  5. **Mode filter** peta grup K×K (`stabilize.mode_k`, K = 3; background ikut dihitung; seri
-     dimenangkan grup asli).
+  3. argmax → peta grup. **Seri eksak** → grup dari `seg/classmap` (argmax logits tanpa pembulatan)
+     kalau grup itu ikut seri; selain itu id terkecil. Jumlah piksel seri dicatat per frame (klip uji
+     5–43 px/frame). Setelah temporal aktif (T-302) seri eksak jarang, tapi aturan tetap berlaku.
+  4. **Filter pulau** pada peta GRUP: komponen 8-arah sebuah grup (termasuk background, jadi lubang
+     kecil di badan ikut terisi) < `stabilize.island_min_px` (N = 30) → grup mayoritas di cincin 1 px
+     sekelilingnya. Satu lintasan: cincin dibaca dari peta sebelum filter (urutan tidak berpengaruh).
+     Seri mayoritas → id terkecil. Komponen yang menyentuh tepi gambar diperlakukan sama; cincinnya
+     dipotong di tepi (tanpa piksel virtual). Cincin kosong (komponen = seluruh gambar) → tidak diubah.
+     N = 0 → mati. ⚠️ Di T-102c filter ini dijalankan pada peta KELAS sebelum dijadikan grup → dicek ulang
+     di T-305 (T-106: hasil setara, lihat D-010 "Hasil T-106").
+  5. **Mode filter** peta grup K×K (`stabilize.mode_k`, K = 3): hitungan per grup = box filter tanpa
+     normalisasi (`BORDER_REPLICATE`) + 0.5 untuk grup asli piksel; background ikut dihitung. Seri →
+     grup asli; seri antara grup lain → id terkecil. K = 1 → mati.
   6. **Kedalaman:** normalisasi **per frame** (disparity DA hanya benar sampai skala + offset per
      frame; kedalaman mentah tidak boleh langsung di-EMA), lalu temporal (kalau
      `stabilize.depth.temporal`). Metode normalisasi dipilih + diuji di T-302. Kandidat:
      - **affine:** (disparity − median foreground) / IQR foreground — menghilangkan skala **dan**
        offset per frame;
-     - **log:** (log disparity − median foreground) / IQR — menghilangkan skala saja, **tidak**
-       offset. Kalau dipakai, wajib `eps` untuk nilai ≤ 0 (log(max(d, eps))).
+     - **log** (`log_median_iqr`, **diimplementasi T-106**): `(log max(d, log_eps) − median) /
+       max(IQR, iqr_min)` — menghilangkan skala saja, **tidak** offset. Median + IQR (p75 − p25) dari
+       foreground = peta grup bersih ≠ 0 frame itu; foreground kosong → seluruh frame
+       (`region: "frame"` di log). IQR < `iqr_min` → pembagi di-clamp (`iqr_clamped` di log).
+     - **Background** memakai transformasi yang sama (nilai kontinu + finite): NaN merusak blur/Sobel di
+       [4], nilai konstan membuat lompatan palsu di siluet. Range `log_eps` / `iqr_min` (02) menjamin hasil
+       muat float16; tidak finite → berhenti dengan error.
+     - Frame `finite: false` di `depth/frames.jsonl` disalin ke `stable/frames.jsonl` (`depth_finite`),
+       tanpa perlakuan khusus selama temporal mati.
 - Optical flow tidak di-cache (±1.2 GB/klip) — dihitung ulang (±20–50 ms/frame *est.*).
 - Phase 1–2: `stabilize.temporal.enabled: false` (hanya langkah 1, 3–6 tanpa temporal).
 - ⚠️ Jangan over-smooth. Sedikit boil = hand-drawn feel (`boil_preserve`), bukan nol (P-001).
 
 | path | isi | dtype | resolusi | disk / klip |
 |---|---|---|---|---|
-| `stable/groups/frame_%05d.png` | id grup: 0 = background, 1..G = urutan `groups:` di YAML | uint8 | kerja | ±5 MB *est.* |
-| `stable/depth_smooth/frame_%05d.npy` | kedalaman ternormalisasi per frame (+ temporal) | float16 | kerja | 295 MB |
-| `stable/manifest.json` | parameter, hash definisi grup, referensi `seg/manifest.json` + `depth/manifest.json` | – | – | kecil |
+| `stable/groups/frame_%05d.png` | id grup: 0 = background, 1..G = urutan `groups:` di YAML | uint8 | kerja | ±2.4 MB (±6.6 KB/frame, terukur T-106) |
+| `stable/depth_smooth/frame_%05d.npy` | kedalaman ternormalisasi per frame (+ temporal) | float16 | kerja | 295 MB (820 KB/frame) |
+| `stable/manifest.json` | section `stabilize` + `stabilize_hash`, `groups` + `groups_hash`, referensi `seg/manifest.json` (model, model id, revision, precision, processor, `num_labels`, frame_size, classes, `created_utc`) + `depth/manifest.json` (model id, revision, lisensi, precision, processor, ukuran input, output, frame_size, `created_utc`), frame_size | – | – | kecil |
+| `stable/frames.jsonl` | log per frame: waktu per langkah, piksel seri, piksel berubah di filter pulau / mode, luas foreground, `depth_finite`, statistik normalisasi (region, median + IQR log, clamp) + min / median / maks `depth_smooth` | – | – | kecil |
 
-Hash grup / parameter berubah → output [3] dan [4] basi (dijalankan ulang; [2] tidak).
+- **Tulis atomik + `*.tmp`:** aturan sama dengan [2] (helper `stage_common.py`).
+- **Resume:** frame dilewati kalau `groups` valid (PNG uint8, ukuran = frame, id ≤ G) **dan**
+  `depth_smooth` valid (float16, ukuran = frame, semua finite); salah satu tidak valid → keduanya ditulis
+  ulang. Input frame terpilih (probs, classmap, depth) wajib ada sebelum mulai, dicek isinya saat dibaca;
+  kurang / rusak → berhenti dengan pesan + stage yang harus dijalankan. Manifest input: `frame_size` =
+  `meta.json`, kelas = `sapiens2_classes.json`.
+- **Manifest beda** (hash `stabilize` — seluruh section, termasuk parameter temporal yang sedang mati —,
+  hash grup, atau referensi input berubah, termasuk `created_utc` setelah `--restart` di [2]/[2c]) →
+  output [3] **basi: `stable/` dihapus + dihitung ulang otomatis** dengan peringatan (prinsip #4). [4] ikut
+  basi; [2] tidak. Output tanpa manifest → ditolak. `--restart` menghapus `stable/` saja.
+- `stabilize.temporal.enabled: true` → berhenti (belum diimplementasi, T-302/T-303).
+- **Entry point sementara** (sampai `cli.py`, T-104b): `python -m rotoscope.stabilize [--config PATH]
+  [--restart] [--limit N]`. Exit code sama dengan [2]: 0 sukses, 1 prasyarat gagal (3 tidak dipakai —
+  tanpa GPU).
 
 ### [4] `vectorize.py` (CPU)
 - **In:** `stable/groups/`, `stable/depth_smooth/`, `stable/manifest.json`; config `groups`, `vectorize`
@@ -338,7 +375,8 @@ C: sisa ±54 GB → arahkan `paths.work_dir` ke drive lain kalau banyak klip dis
 | [2] | seg 0.8B fp16 | 3276 MiB (cek ≥ 3300 bebas) | ±95 mnt (15.85 s/frame) |
 | [2] fallback | seg 0.4B fp16 | 2258 MiB (cek ≥ 2300 bebas) | ±48 mnt (7.99 s/frame) |
 | [2c] | DA-V2 Small fp32 | 424 MiB (cek ≥ 500 bebas) | ±1 mnt (0.185 s/frame) |
-| [3]–[5] | CPU | – | belum diukur |
+| [3] spasial | CPU | – | ±43 s (0.12 s/frame, T-106) |
+| [4]–[5] | CPU | – | belum diukur |
 
 ---
 
