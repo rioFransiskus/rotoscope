@@ -9,11 +9,13 @@ import malas di dalam fungsi yang membutuhkannya.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
 import sys
 import time
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -125,6 +127,113 @@ def last_frame_records(frames_log: Path) -> dict[str, dict]:
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+# ── Identitas klip (T-108) ─────────────────────────
+CLIP_KEY = "clip"
+HASH_SHORT = 12
+
+
+def clip_identity_from_bytes(meta_bytes: bytes) -> dict:
+    """Identitas klip = sha256 byte meta.json + source_path. Ingest ulang video + parameter yang sama
+    menghasilkan meta.json byte-identik (test_ingest); parameter ingest berbeda → hash berbeda.
+    Batas: meta.json tidak memuat ukuran/hash file video — video lain yang menimpa path yang sama
+    dengan fps/durasi/ukuran identik tidak terdeteksi."""
+    meta = json.loads(meta_bytes.decode("utf-8"))
+    return {"meta_sha256": hashlib.sha256(meta_bytes).hexdigest(), "source_path": str(meta["source_path"])}
+
+
+def clip_identity(work_dir: Path) -> dict:
+    meta_path = work_dir / META_FILENAME
+    if not meta_path.is_file():
+        raise StageError(f"{meta_path} tidak ada — jalankan stage [1] ingest dulu")
+    return clip_identity_from_bytes(meta_path.read_bytes())
+
+
+def describe_identity(ident: dict | None) -> str:
+    if not ident:
+        return "(tanpa identitas)"
+    return f"{ident.get('source_path')} (meta {str(ident.get('meta_sha256'))[:HASH_SHORT]})"
+
+
+def identity_diff(old: dict | None, new: dict) -> list[str]:
+    """Baris 'lama → baru' per field identitas yang berbeda (hash dipendekkan)."""
+    old = old or {}
+    out = []
+    for k in ("source_path", "meta_sha256"):
+        a, b = old.get(k), new.get(k)
+        if a != b:
+            if k == "meta_sha256":
+                a, b = (a[:HASH_SHORT] if a else a), (b[:HASH_SHORT] if b else b)
+            out.append(f"{k}: {a} → {b}")
+    return out
+
+
+def require_same_clip(manifest: dict, current: dict, *, stage: str, out_dir: Path, cmd: str) -> None:
+    """Tolak output stage GPU milik klip lain / tanpa identitas (stage [2]/[2c]; --qc-only juga).
+    `cmd` = perintah stage, mis. "python -m rotoscope.segment"."""
+    old = manifest.get(CLIP_KEY)
+    if not isinstance(old, dict) or not old.get("meta_sha256"):
+        raise StageError(
+            f"output {stage} di {out_dir} tidak memuat identitas klip (manifest lama) — tidak diketahui milik "
+            f"klip mana. Klip saat ini: {describe_identity(current)}.\n"
+            f"  - kalau output itu memang milik klip ini: {cmd} --adopt (mencatat identitas tanpa inferensi ulang)\n"
+            f"  - kalau bukan / ragu: {cmd} --restart")
+    if old["meta_sha256"] != current["meta_sha256"]:
+        raise StageError(
+            f"output {stage} di {out_dir} milik klip LAIN:\n"
+            f"  klip lama (output): {describe_identity(old)}\n"
+            f"  klip baru (meta.json): {describe_identity(current)}\n"
+            f"Satu-satunya jalan: {cmd} --restart (menghapus output lama). --adopt tidak berlaku untuk "
+            f"identitas berbeda.")
+
+
+def adopt_identity(*, stage: str, manifest_path: Path, frames_log: Path, work_dir: Path, size: dict,
+                   names: tuple[str, ...], frame_valid: Callable[[str], bool], orphans: list[Path],
+                   cmd: str, log: Callable[[str], None] = print) -> dict:
+    """--adopt: catat identitas klip saat ini ke manifest yang ADA tanpa inferensi ulang.
+
+    Ini PERNYATAAN pengguna bahwa output milik klip ini. Cek kewajaran (frame_size, setiap frame klip valid,
+    tanpa file yatim) tidak bisa membedakan klip lain dengan frame_size dan frame_count yang sama.
+    Ringkasan dicetak SEBELUM menulis. Return {"adopted": bool, "identity": dict}.
+    """
+    if not manifest_path.is_file():
+        raise StageError(f"{manifest_path} tidak ada — tidak ada yang di-adopt. Jalankan stage {stage} dulu")
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as e:
+        raise StageError(f"gagal membaca {manifest_path} ({e}) — jalankan {cmd} --restart") from None
+    current = clip_identity(work_dir)
+    old = manifest.get(CLIP_KEY)
+    if isinstance(old, dict) and old.get("meta_sha256"):
+        if old["meta_sha256"] == current["meta_sha256"]:
+            log(f"{stage} --adopt: manifest sudah memuat identitas klip ini — tidak ada yang diubah")
+            return {"adopted": False, "identity": current}
+        raise StageError(
+            f"manifest {stage} sudah memuat identitas klip LAIN — --adopt ditolak:\n"
+            f"  klip lama (output): {describe_identity(old)}\n  klip baru (meta.json): {describe_identity(current)}\n"
+            f"Satu-satunya jalan: {cmd} --restart")
+    if manifest.get("frame_size") != size:
+        raise StageError(f"{stage} --adopt ditolak: frame_size manifest {manifest.get('frame_size')} ≠ "
+                         f"meta.json {size}")
+    invalid = [n for n in names if not frame_valid(n)]
+    if invalid:
+        raise StageError(f"{stage} --adopt ditolak: {len(invalid)}/{len(names)} frame belum/rusak, mis. "
+                         f"{invalid[0]} — output tidak lengkap, gunakan {cmd} --restart")
+    if orphans:
+        raise StageError(f"{stage} --adopt ditolak: {len(orphans)} file output di luar daftar frame klip, mis. "
+                         f"{orphans[0].name} — output milik klip lain? Gunakan {cmd} --restart")
+    log(f"{stage} --adopt: mencatat identitas klip ini ke {manifest_path} (tanpa inferensi)\n"
+        f"  source_path : {current['source_path']}\n"
+        f"  meta_sha256 : {current['meta_sha256'][:HASH_SHORT]}\n"
+        f"  frame_count : {len(names)} ({len(names)} frame valid, frame_size {size['width']}x{size['height']})\n"
+        f"  PERNYATAAN Anda: output itu milik klip ini — cek kewajaran tidak bisa membedakan klip lain "
+        f"dengan frame_size dan frame_count sama")
+    adopted_utc = utc_now()
+    write_json_atomic(manifest_path, {**manifest, CLIP_KEY: current, "adopted_utc": adopted_utc})
+    append_jsonl(frames_log, {"event": "adopt", "time_utc": adopted_utc, "clip": current,
+                              "n_frames": len(names)})
+    return {"adopted": True, "identity": current}
 
 
 # ── Frame input ────────────────────────────────────

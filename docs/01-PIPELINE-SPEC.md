@@ -46,9 +46,55 @@ Semua path relatif terhadap `paths.work_dir` (default `work/`) dan `paths.out_di
      ulang otomatis**, dengan peringatan yang menyebut field yang berubah (hash lama → baru). `--restart`
      tetap ada untuk memaksa hitung ulang.
    - Output **tanpa manifest** tetap **ditolak** (asal-usulnya tidak diketahui), bukan dihapus.
+   - **Identitas klip** (T-108, di bawah): output milik klip lain / tanpa identitas diperlakukan lebih keras
+     daripada parameter beda — lihat "Identitas klip".
 5. **Semua parameter di YAML** (`configs/default.yaml` untuk pipeline, `configs/styles/*.yaml`
    untuk style), default = hasil T-102c. Daftar + range: `02-STYLE-PARAMS.md`.
 6. **Deterministic:** seed jitter = `hash(frame_index, param_seed, track_id)` (P-007).
+
+### Identitas klip (T-108, D-010)
+
+Satu `work_dir` = satu klip. Supaya klip lain yang di-ingest ke `work_dir` yang sama tidak membuat resume
+memakai output klip lama tanpa error, manifest [2], [2c], [3] (dan export sejak T-103) memuat field `clip`:
+
+```json
+"clip": {"meta_sha256": "<sha256 byte meta.json>", "source_path": "<meta.json source_path>"}
+```
+
+- **Definisi:** helper `stage_common.clip_identity` (`clip_identity_from_bytes` untuk byte yang sudah dibaca).
+  Perbandingan memakai `meta_sha256`; `source_path` untuk pesan. `meta.json` ditulis ingest tanpa timestamp
+  (13 field), jadi ingest ulang video + parameter yang sama menghasilkan byte identik (test
+  `test_meta_json_is_byte_deterministic`), sedangkan `target_fps` / `working_width` / `source_path` berbeda →
+  identitas berbeda. Bentuk `clip` sama dengan manifest export lama, jadi manifest export tidak jadi basi.
+- **Perilaku saat identitas berbeda:**
+  - **[2], [2c] (GPU):** **tolak** (exit 1) SEBELUM `resolve_revision` / load backend; pesan menyebut klip lama
+    (`source_path` + hash pendek) vs klip baru. Berlaku juga untuk `--limit` dan `--qc-only` ([2]). Satu-satunya
+    jalan: `--restart`. `--restart` melewati cek (output lama memang dihapus).
+  - **Manifest [2]/[2c] lama tanpa `clip`:** ditolak dengan saran `--adopt` (output memang milik klip ini) atau
+    `--restart`.
+  - **[3] (CPU):** input [2]/[2c] milik klip lain → **berhenti** (exit 1; saran `--restart` stage itu atau ingest
+    klip yang benar); input tanpa `clip` → berhenti (saran `--adopt` / `--restart`). Hitung ulang otomatis
+    dengan peringatan hanya kalau manifest [3] SENDIRI yang beda (termasuk `clip` — klip berubah setelah
+    [2]/[2c] dijalankan ulang — atau manifest [3] lama tanpa `clip`, dihitung ulang sekali).
+  - **[6]:** `stable/manifest.json` tanpa `clip` / milik klip lain → berhenti, jalankan ulang [3]. Pengaman
+    "MP4 milik sumber lain" tidak berubah.
+- **`--adopt` ([2], [2c]; migrasi manifest lama tanpa `clip`):** mencatat identitas `meta.json` saat ini ke
+  manifest yang ada TANPA inferensi dan tanpa GPU/model (field lain, termasuk `created_utc`, tidak berubah;
+  ditambah `clip` dan `adopted_utc`; satu record `adopt` di `frames.jsonl`). Ringkasan (`source_path`,
+  `frame_count`, hash pendek, jumlah frame valid) dicetak SEBELUM menulis. Cek kewajaran: `frame_size`
+  manifest = `meta.json`, semua frame klip valid, tanpa file output di luar daftar frame. Manifest yang sudah
+  memuat identitas sama → no-op; identitas beda → ditolak. Tidak bisa digabung dengan `--restart` / `--limit` /
+  `--qc-only` / `--download` (exit 1). [3] tidak butuh `--adopt`.
+
+**Batas yang diketahui:**
+- (a) File video dipindah / di-ingest dari path lain → `source_path` berubah → identitas berbeda → [2]/[2c]
+  hanya bisa `--restart`; `--adopt` ditolak.
+- (b) `--adopt` adalah **pernyataan pengguna** bahwa output milik klip ini. Cek kewajaran tidak bisa
+  membedakan klip lain yang ber-`frame_size` dan `frame_count` sama.
+- (c) `meta.json` tidak memuat ukuran / hash file video: video lain dengan 13 field yang sama (fps, durasi,
+  ukuran, jumlah frame, rotasi, audio) di path yang sama tidak terdeteksi.
+- (d) Determinisme `meta.json` hanya terbukti pada mesin + build ffmpeg yang sama; update ffmpeg lalu ingest
+  ulang bisa mengubah identitas (belum terbukti) → konsekuensinya `--restart` / hitung ulang, bukan hasil salah.
 
 ---
 
@@ -98,7 +144,7 @@ diukur saat implementasi.
 |---|---|---|---|---|
 | `seg/classmap/frame_%05d.png` | id kelas 0–28 (argmax) | uint8 | kerja | ±5–10 MB *est.* |
 | `seg/probs/frame_%05d.npz` | array `probs` shape (29, H, W), round(p × 255), `np.savez_compressed` (deflate) | uint8 | kerja | mentah 4.28 GB; terkompresi 0.1–0.5 GB *est.* |
-| `seg/manifest.json` | model (`0.8b`/`0.4b`), model id, revision, precision, processor (size, `do_pad`), `num_labels`, nama 29 kelas | – | – | < 10 KB |
+| `seg/manifest.json` | model (`0.8b`/`0.4b`), model id, revision, precision, processor (size, `do_pad`), `num_labels`, nama 29 kelas, `clip` (identitas klip, T-108), `adopted_utc` (hanya kalau lewat `--adopt`) | – | – | < 10 KB |
 | `seg/frames.jsonl` | log per frame: waktu, peak VRAM reserved/allocated, finite, % beda argmax | – | – | < 200 KB |
 | `qc_report.json` | QC per frame + ringkasan (tabel di bawah) | – | – | < 200 KB |
 
@@ -120,11 +166,14 @@ diukur saat implementasi.
    processor (size, `do_pad`), `num_labels`, ukuran frame — → **tolak** dengan pesan (daftar field yang
    beda); output di `seg/` tanpa manifest juga ditolak. `--restart` menghapus output [2] lama (`seg/` +
    `qc_report.json`) lalu mulai dari awal. Semua frame sudah valid → GPU tidak disentuh, langsung QC.
+4. **Identitas klip (T-108):** manifest memuat `clip`; klip lain / manifest tanpa `clip` → tolak SEBELUM
+   `resolve_revision` / load backend (juga `--limit`, `--qc-only`) — lihat "Identitas klip" di Prinsip.
 
 **Entry point sementara** (sampai `cli.py`, T-104b): `python -m rotoscope.segment [--config PATH]
-[--seg-model 0.8b|0.4b] [--restart] [--limit N] [--qc-only] [--download]`. `--limit N` = pastikan N
-frame pertama valid (QC dilewati kecuali semua frame klip valid); `--qc-only` tanpa GPU/torch, butuh
-semua frame valid.
+[--seg-model 0.8b|0.4b] [--restart] [--limit N] [--qc-only] [--download] [--adopt]`. `--limit N` =
+pastikan N frame pertama valid (QC dilewati kecuali semua frame klip valid); `--qc-only` tanpa GPU/torch,
+butuh semua frame valid. `--adopt` = catat identitas klip ke manifest lama tanpa inferensi (terukur klip
+uji 283 frame: 8.45 s); tidak bisa digabung dengan `--restart` / `--limit` / `--qc-only` / `--download`.
 
 **Exit code** (dipakai `cli.py`, T-104b):
 
@@ -186,7 +235,7 @@ dan temporal fill tidak cukup. D-002 (pose hanya fallback, bukan primary) tetap 
 | path | isi | dtype | resolusi | disk / klip |
 |---|---|---|---|---|
 | `depth/frame_%05d.npy` | disparity relatif mentah | float16 | kerja | 295 MB (820 KB/frame, terukur T-105) |
-| `depth/manifest.json` | model id, revision, lisensi, precision, processor, ukuran input processor, jenis output, ukuran frame | – | – | kecil |
+| `depth/manifest.json` | model id, revision, lisensi, precision, processor, ukuran input processor, jenis output, ukuran frame, `clip` (identitas klip, T-108), `adopted_utc` (hanya kalau lewat `--adopt`) | – | – | kecil |
 | `depth/frames.jsonl` | log per frame: waktu, peak VRAM, finite + jumlah piksel NaN/inf, disparity min / median / max | – | – | kecil |
 
 - float16 aman: langkah kuantisasi ±0.0006 relatif (T-102c), jauh di bawah threshold garis.
@@ -196,8 +245,12 @@ dan temporal fill tidak cukup. D-002 (pose hanya fallback, bukan primary) tetap 
   `frames.jsonl`. File tidak finite di disk = rusak → diproses ulang.
 - **Manifest:** perbedaan apa pun (model id, revision, lisensi, precision, processor, ukuran input, jenis
   output, ukuran frame) → **tolak**; output tanpa manifest juga ditolak. `--restart` hanya menghapus `depth/`.
+- **Identitas klip (T-108):** sama dengan [2] — klip lain / manifest tanpa `clip` → tolak SEBELUM
+  `resolve_revision` / load backend (juga `--limit`); jalan: `--restart`, atau `--adopt` untuk manifest lama
+  tanpa `clip`. Semua frame valid + identitas cocok → model tidak dimuat (terukur klip uji: 0 diproses, 8.5 s).
 - **Entry point sementara** (sampai `cli.py`, T-104b): `python -m rotoscope.depth [--config PATH]
-  [--restart] [--limit N] [--download]`. Exit code sama dengan [2] (0 / 1 / 3).
+  [--restart] [--limit N] [--download] [--adopt]`. Exit code sama dengan [2] (0 / 1 / 3). `--adopt`: lihat
+  [2] (0.70 s pada klip uji).
 
 ### [3] `stabilize.py` — stage tersulit, alokasikan waktu paling banyak (CPU)
 - **In:** `seg/probs/`, `seg/classmap/` (tie-break seri, T-106), `seg/manifest.json`, `depth/`,
@@ -247,7 +300,7 @@ dan temporal fill tidak cukup. D-002 (pose hanya fallback, bukan primary) tetap 
 |---|---|---|---|---|
 | `stable/groups/frame_%05d.png` | id grup: 0 = background, 1..G = urutan `groups:` di YAML | uint8 | kerja | ±2.4 MB (±6.6 KB/frame, terukur T-106) |
 | `stable/depth_smooth/frame_%05d.npy` | kedalaman ternormalisasi per frame (+ temporal) | float16 | kerja | 295 MB (820 KB/frame) |
-| `stable/manifest.json` | section `stabilize` + `stabilize_hash`, `groups` + `groups_hash`, referensi `seg/manifest.json` (model, model id, revision, precision, processor, `num_labels`, frame_size, classes, `created_utc`) + `depth/manifest.json` (model id, revision, lisensi, precision, processor, ukuran input, output, frame_size, `created_utc`), frame_size | – | – | kecil |
+| `stable/manifest.json` | section `stabilize` + `stabilize_hash`, `groups` + `groups_hash`, referensi `seg/manifest.json` (model, model id, revision, precision, processor, `num_labels`, frame_size, classes, `created_utc`) + `depth/manifest.json` (model id, revision, lisensi, precision, processor, ukuran input, output, frame_size, `created_utc`), frame_size, `clip` (identitas klip, T-108) | – | – | kecil |
 | `stable/frames.jsonl` | log per frame: waktu per langkah, piksel seri, piksel berubah di filter pulau / mode, luas foreground, `depth_finite`, statistik normalisasi (region, median + IQR log, clamp) + min / median / maks `depth_smooth` | – | – | kecil |
 
 - **Tulis atomik + `*.tmp`:** aturan sama dengan [2] (helper `stage_common.py`).
@@ -255,11 +308,15 @@ dan temporal fill tidak cukup. D-002 (pose hanya fallback, bukan primary) tetap 
   `depth_smooth` valid (float16, ukuran = frame, semua finite); salah satu tidak valid → keduanya ditulis
   ulang. Input frame terpilih (probs, classmap, depth) wajib ada sebelum mulai, dicek isinya saat dibaca;
   kurang / rusak → berhenti dengan pesan + stage yang harus dijalankan. Manifest input: `frame_size` =
-  `meta.json`, kelas = `sapiens2_classes.json`.
+  `meta.json`, kelas = `sapiens2_classes.json`. **Identitas klip (T-108):** `clip` di `seg/manifest.json` dan
+  `depth/manifest.json` wajib sama dengan `meta.json` saat ini — milik klip lain → berhenti (saran
+  `--restart` stage itu / ingest klip yang benar); tanpa `clip` → berhenti (saran `--adopt` / `--restart`).
 - **Manifest beda** (hash `stabilize` — seluruh section, termasuk parameter temporal yang sedang mati —,
-  hash grup, atau referensi input berubah, termasuk `created_utc` setelah `--restart` di [2]/[2c]) →
-  output [3] **basi: `stable/` dihapus + dihitung ulang otomatis** dengan peringatan (prinsip #4). [4] ikut
-  basi; [2] tidak. Output tanpa manifest → ditolak. `--restart` menghapus `stable/` saja.
+  hash grup, `clip`, atau referensi input berubah, termasuk `created_utc` setelah `--restart` di [2]/[2c]) →
+  output [3] **basi: `stable/` dihapus + dihitung ulang otomatis** dengan peringatan (prinsip #4). Manifest
+  [3] lama tanpa `clip` → basi sekali (dihitung ulang; output byte-identik pada klip uji, 566 file). [4] ikut
+  basi; [2] tidak. Output tanpa manifest → ditolak. `--restart` menghapus `stable/` saja. [3] tidak punya
+  `--adopt`.
 - `stabilize.temporal.enabled: true` → berhenti (belum diimplementasi, T-302/T-303).
 - **Entry point sementara** (sampai `cli.py`, T-104b): `python -m rotoscope.stabilize [--config PATH]
   [--restart] [--limit N]`. Exit code sama dengan [2]: 0 sukses, 1 prasyarat gagal (3 tidak dipakai —
@@ -378,8 +435,10 @@ dan temporal fill tidak cukup. D-002 (pose hanya fallback, bukan primary) tetap 
 - **Entry point sementara** (sampai `cli.py`, T-104b): `python -m rotoscope.export [--config PATH] [--restart]
   [--limit N]`; `--limit N` → `<nama>.limitN.mp4` (preview; tanpa manifest, tanpa pengaman, tidak menyentuh
   hasil utama). Exit code: 0 sukses, 1 prasyarat gagal (3 tidak dipakai — tanpa GPU).
-- Terukur klip uji (283 frame, 480×854, crf 18): 2.4 s, 497.6 KiB (509 571 B). **Known issue:** manifest
-  [2]/[2c]/[3] belum memuat identitas klip (T-108; `docs/04` D-010).
+- **Identitas klip (T-108):** `stable/manifest.json` tanpa `clip` / milik klip lain → berhenti (jalankan ulang
+  [3]; output basi dihitung ulang otomatis). Field `clip` manifest export memakai helper bersama
+  `stage_common.clip_identity_from_bytes` (bentuk sama dengan sebelumnya).
+- Terukur klip uji (283 frame, 480×854, crf 18): 2.4 s, 497.6 KiB (509 571 B).
 
 ### Anggaran disk per klip (360 frame, *est.*)
 

@@ -54,8 +54,8 @@ from rotoscope.config import (
 )
 from rotoscope.ingest import META_FILENAME
 from rotoscope.stage_common import (
-    EXIT_OK, EXIT_PRECONDITION, StageError, _replace_with_retry, reconfigure_stdio, utc_now,
-    write_json_atomic,
+    CLIP_KEY, EXIT_OK, EXIT_PRECONDITION, StageError, _replace_with_retry, clip_identity_from_bytes,
+    describe_identity, reconfigure_stdio, utc_now, write_json_atomic,
 )
 
 # ── Layout output (docs/01 [6]) ────────────────────
@@ -339,10 +339,16 @@ def run_export(cfg: PipelineConfig, *, restart: bool = False, limit: int | None 
     meta_bytes = meta_path.read_bytes()
     meta = json.loads(meta_bytes.decode("utf-8"))
     fps = float(meta["target_fps"])
-    source_path = str(meta["source_path"])
+    identity = clip_identity_from_bytes(meta_bytes)
+    source_path = identity["source_path"]
     names = list(clip.names[:limit] if limit else clip.names)
 
     stable_m = stab._read_manifest(clip.manifest_path, "[3] stabilize")
+    stable_clip = stable_m.get(CLIP_KEY)
+    if not isinstance(stable_clip, dict) or stable_clip.get("meta_sha256") != identity["meta_sha256"]:
+        raise StageError(f"stable/manifest.json milik klip lain / tanpa identitas klip "
+                         f"({describe_identity(stable_clip)}; meta.json saat ini = {describe_identity(identity)}) — "
+                         f"jalankan ulang stage [3] stabilize (output basi dihitung ulang otomatis)")
     if stable_m.get("frame_size") != {"width": clip.width, "height": clip.height}:
         raise StageError(f"stable/manifest.json: frame_size {stable_m.get('frame_size')} ≠ meta.json — "
                          f"jalankan ulang stage [3] stabilize dengan --restart")
@@ -370,7 +376,7 @@ def run_export(cfg: PipelineConfig, *, restart: bool = False, limit: int | None 
     size = (clip.width + clip.width % 2, clip.height + clip.height % 2)
     manifest = {
         "stage": "export", "source": ex.source, "export": to_dict(ex), "export_hash": export_hash(cfg),
-        "clip": {"meta_sha256": hashlib.sha256(meta_bytes).hexdigest(), "source_path": source_path},
+        CLIP_KEY: identity,
         "stable": {k: stable_m.get(k) for k in ("stabilize_hash", "groups_hash", "created_utc")},
         "frame_count": len(names), "frame_size": {"width": clip.width, "height": clip.height},
         "encoded_size": {"width": size[0], "height": size[1]}, "fps": fps,

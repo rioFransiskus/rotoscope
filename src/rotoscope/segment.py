@@ -20,8 +20,13 @@ cache HF. Unduhan = langkah terpisah: python -m rotoscope.segment --download [--
 Uji manual (entry point sementara sampai cli.py, T-104b):
     python -m rotoscope.segment [--config PATH] [--seg-model 0.8b|0.4b] [--restart] [--limit N]
     python -m rotoscope.segment --qc-only
+    python -m rotoscope.segment --adopt          (catat identitas klip ke manifest lama, tanpa inferensi)
     python -m rotoscope.segment --download [--seg-model 0.4b]
 Exit code: 0 sukses, 1 prasyarat gagal, 3 OOM di tengah run.
+
+Identitas klip (T-108): manifest memuat `clip` (sha256 meta.json + source_path). Output klip lain / manifest
+tanpa identitas → ditolak SEBELUM model dimuat (juga untuk --limit dan --qc-only); jalan: --restart
+(identitas berbeda) atau --adopt (manifest lama tanpa identitas).
 """
 
 from __future__ import annotations
@@ -50,9 +55,10 @@ from rotoscope.config import (
 from rotoscope.ingest import FRAMES_DIRNAME
 from rotoscope.stage_common import (  # noqa: F401 — sebagian di-export ulang (seg.MIB, seg.read_jsonl, …)
     COMMIT_HASH_RE, DOWNLOAD_REVISION_FALLBACK, EXIT_OK, EXIT_OOM, EXIT_PRECONDITION, HF_OFFLINE_ENV, MIB,
-    REPLACE_DELAY_S, REPLACE_RETRIES, TMP_SUFFIX, BackendOOM, StageError, StageOOMError, append_jsonl, clean_tmp,
-    hf_offline_active, last_frame_records, load_frame_list, read_jsonl, read_rgb, reconfigure_stdio,
-    require_frames, set_offline, vram_state, write_bytes_atomic, write_json_atomic,
+    REPLACE_DELAY_S, REPLACE_RETRIES, TMP_SUFFIX, BackendOOM, StageError, StageOOMError, adopt_identity,
+    append_jsonl, clean_tmp, clip_identity, hf_offline_active, last_frame_records, load_frame_list, read_jsonl,
+    read_rgb, reconfigure_stdio, require_frames, require_same_clip, set_offline, vram_state, write_bytes_atomic,
+    write_json_atomic,
 )
 from rotoscope.stage_common import ensure_cached as _ensure_cached
 from rotoscope.stage_common import is_oom as _is_oom
@@ -82,6 +88,7 @@ QC_METRICS = ("area_ratio", "iou_prev", "big_blobs", "area_vs_median", "finite")
 # Alias error bersama (stage_common): prasyarat gagal → exit 1, OOM di tengah run → exit 3.
 SegmentError = StageError
 SegmentOOMError = StageOOMError
+STAGE_CMD = "python -m rotoscope.segment"
 
 
 # ── Backend ────────────────────────────────────────
@@ -349,6 +356,7 @@ def load_clip(work_dir: Path) -> Clip:
 def build_manifest(info: ModelInfo, clip: Clip, classes: Sequence[str]) -> dict:
     return {"stage": "segment", **asdict(info),
             "frame_size": {"width": clip.width, "height": clip.height},
+            "clip": clip_identity(clip.work_dir),
             "classes": list(classes),
             "probs": {"key": PROBS_KEY, "dtype": "uint8", "scale": PROBS_SCALE, "shape": "(num_labels, H, W)",
                       "format": "npz deflate (np.savez_compressed)"},
@@ -369,6 +377,34 @@ def _clean_tmp(clip: Clip) -> None:
     clip.qc_report_path.with_name(clip.qc_report_path.name + TMP_SUFFIX).unlink(missing_ok=True)
 
 
+def _require_same_clip(clip: Clip, manifest: dict | None = None) -> None:
+    """Manifest [2] yang ada harus milik klip ini (meta.json saat ini). Tanpa manifest: tidak ada yang dicek."""
+    if manifest is None:
+        if not clip.manifest_path.is_file():
+            return
+        manifest = json.loads(clip.manifest_path.read_text(encoding="utf-8"))
+    require_same_clip(manifest, clip_identity(clip.work_dir), stage="[2]", out_dir=clip.seg_dir, cmd=STAGE_CMD)
+
+
+def adopt_segment(cfg: PipelineConfig, *, log: Callable[[str], None] = print) -> dict:
+    """--adopt: catat identitas klip saat ini ke seg/manifest.json yang ada. Tanpa GPU/model/inferensi."""
+    clip = load_clip(cfg.paths.work_dir)
+    num = 0  # manifest tidak ada → adopt_identity yang menolak dengan pesan jelas
+    if clip.manifest_path.is_file():
+        try:
+            num = int(json.loads(clip.manifest_path.read_text(encoding="utf-8"))["num_labels"])
+        except (OSError, ValueError, KeyError, TypeError):
+            raise SegmentError(f"{clip.manifest_path} tidak terbaca / tanpa num_labels — jalankan "
+                               f"{STAGE_CMD} --restart") from None
+    stems = {Path(n).stem for n in clip.names}
+    orphans = [p for d, suffix in ((clip.classmap_dir, CLASSMAP_SUFFIX), (clip.probs_dir, PROBS_SUFFIX))
+               for p in sorted(d.glob("frame_*" + suffix)) if p.stem not in stems]
+    return adopt_identity(stage="[2]", manifest_path=clip.manifest_path, frames_log=clip.frames_log,
+                          work_dir=clip.work_dir, size={"width": clip.width, "height": clip.height},
+                          names=clip.names, frame_valid=lambda n: clip.frame_valid(n, num), orphans=orphans,
+                          cmd=STAGE_CMD, log=log)
+
+
 def restart_outputs(clip: Clip) -> None:
     """--restart: hapus output [2] lama (seg/ + qc_report.json)."""
     if clip.seg_dir.exists():
@@ -387,8 +423,10 @@ def run_segment(cfg: PipelineConfig, *, restart: bool = False, limit: int | None
     set_offline()  # sebelum transformers/huggingface_hub di-import (import malas di backend)
     if limit is not None and limit < 1:
         raise SegmentError(f"--limit harus ≥ 1, dapat {limit}")
-    resolve_revision(cfg)
     clip = load_clip(cfg.paths.work_dir)
+    if not restart:  # identitas dicek SEBELUM resolve_revision / load backend; --limit ikut dicek
+        _require_same_clip(clip)
+    resolve_revision(cfg)
     selected = clip.names[:limit] if limit else clip.names
     require_frames(clip.work_dir, selected)
 
@@ -605,6 +643,7 @@ def run_qc(cfg: PipelineConfig, *, log: Callable[[str], None] = print) -> dict:
     if not clip.manifest_path.is_file():
         raise SegmentError(f"{clip.manifest_path} tidak ada — jalankan stage [2] dulu")
     manifest = json.loads(clip.manifest_path.read_text(encoding="utf-8"))
+    _require_same_clip(clip, manifest)  # --qc-only ikut cek identitas
     size = {"width": clip.width, "height": clip.height}
     if manifest.get("frame_size") != size:
         raise SegmentError(f"ukuran frame manifest {manifest.get('frame_size')} ≠ meta.json {size} — "
@@ -663,6 +702,9 @@ def main(argv: list[str] | None = None, backend_factory: BackendFactory | None =
     p.add_argument("--limit", type=int, default=None, help="hanya N frame pertama")
     p.add_argument("--qc-only", action="store_true", help="hanya QC (tanpa GPU), butuh semua frame valid")
     p.add_argument("--download", action="store_true", help="unduh checkpoint (online) lalu keluar")
+    p.add_argument("--adopt", action="store_true",
+                   help="catat identitas klip saat ini ke manifest [2] yang ada (tanpa inferensi) lalu keluar; "
+                        "pernyataan Anda bahwa output itu milik klip ini")
     args = p.parse_args(argv)
     reconfigure_stdio()  # stdout cp1252 (diarahkan ke file di Windows) tidak boleh membuat print crash
 
@@ -675,9 +717,15 @@ def main(argv: list[str] | None = None, backend_factory: BackendFactory | None =
         p.error("--download tidak bisa digabung dengan --restart/--limit")
 
     try:
+        if args.adopt and (args.restart or args.limit is not None or args.qc_only or args.download):
+            raise SegmentError("--adopt tidak bisa digabung dengan --restart/--limit/--qc-only/--download")
         path = args.config if args.config is not None else (DEFAULT_CONFIG if DEFAULT_CONFIG.is_file() else None)
         cfg = load_pipeline(path, overrides={"segment.model": args.seg_model} if args.seg_model else None)
-        if args.download:
+        if args.adopt:
+            t0 = time.perf_counter()
+            adopt_segment(cfg, log=log)
+            log(f"selesai: --adopt ({time.perf_counter() - t0:.2f} s)")
+        elif args.download:
             download(cfg, log=log)
         elif args.qc_only:
             run_qc(cfg, log=log)

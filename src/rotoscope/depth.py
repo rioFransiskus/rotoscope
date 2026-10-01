@@ -22,8 +22,13 @@ id (config + backend), backbone hidden_size 384 (ViT-S), dan front-matter `licen
 
 Uji manual (entry point sementara sampai cli.py, T-104b):
     python -m rotoscope.depth [--config PATH] [--restart] [--limit N]
+    python -m rotoscope.depth --adopt            (catat identitas klip ke manifest lama, tanpa inferensi)
     python -m rotoscope.depth --download
 Exit code: 0 sukses, 1 prasyarat gagal, 3 OOM di tengah run.
+
+Identitas klip (T-108): manifest memuat `clip` (sha256 meta.json + source_path). Output klip lain / manifest
+tanpa identitas → ditolak SEBELUM model dimuat (juga untuk --limit); jalan: --restart (identitas berbeda)
+atau --adopt (manifest lama tanpa identitas).
 """
 
 from __future__ import annotations
@@ -47,9 +52,9 @@ from rotoscope.config import DEPTH_MODEL_ID_REQUIRED, ConfigError, PipelineConfi
 from rotoscope.ingest import FRAMES_DIRNAME
 from rotoscope.stage_common import (
     COMMIT_HASH_RE, DOWNLOAD_REVISION_FALLBACK, EXIT_OK, EXIT_OOM, EXIT_PRECONDITION, MIB, BackendOOM,
-    StageError, StageOOMError, append_jsonl, cached_file, clean_tmp, ensure_cached, hf_offline_active, is_oom,
-    load_frame_list, read_rgb, reconfigure_stdio, require_frames, set_offline, utc_now, vram_state,
-    write_bytes_atomic, write_json_atomic,
+    StageError, StageOOMError, adopt_identity, append_jsonl, cached_file, clean_tmp, clip_identity, ensure_cached,
+    hf_offline_active, is_oom, load_frame_list, read_rgb, reconfigure_stdio, require_frames, require_same_clip,
+    set_offline, utc_now, vram_state, write_bytes_atomic, write_json_atomic,
 )
 
 # ── Layout output (docs/01 [2c]) ───────────────────
@@ -79,6 +84,7 @@ DEFAULT_CONFIG = Path("configs") / "default.yaml"
 
 # Alias error bersama (stage_common): prasyarat gagal → exit 1, OOM di tengah run → exit 3.
 DepthError = StageError
+STAGE_CMD = "python -m rotoscope.depth"
 DepthOOMError = StageOOMError
 
 
@@ -341,7 +347,27 @@ def load_clip(work_dir: Path) -> Clip:
 
 def build_manifest(info: ModelInfo, clip: Clip) -> dict:
     return {"stage": "depth", **asdict(info), "output": dict(OUTPUT_INFO),
-            "frame_size": {"width": clip.width, "height": clip.height}, "created_utc": utc_now()}
+            "frame_size": {"width": clip.width, "height": clip.height},
+            "clip": clip_identity(clip.work_dir), "created_utc": utc_now()}
+
+
+def _require_same_clip(clip: Clip) -> None:
+    """Manifest [2c] yang ada harus milik klip ini (meta.json saat ini). Tanpa manifest: tidak ada yang dicek."""
+    if clip.manifest_path.is_file():
+        manifest = json.loads(clip.manifest_path.read_text(encoding="utf-8"))
+        require_same_clip(manifest, clip_identity(clip.work_dir), stage="[2c]", out_dir=clip.depth_dir,
+                          cmd=STAGE_CMD)
+
+
+def adopt_depth(cfg: PipelineConfig, *, log: Callable[[str], None] = print) -> dict:
+    """--adopt: catat identitas klip saat ini ke depth/manifest.json yang ada. Tanpa GPU/model/inferensi."""
+    clip = load_clip(cfg.paths.work_dir)
+    stems = {Path(n).stem for n in clip.names}
+    orphans = ([p for p in sorted(clip.depth_dir.glob("frame_*" + DEPTH_SUFFIX)) if p.stem not in stems]
+               if clip.depth_dir.is_dir() else [])
+    return adopt_identity(stage="[2c]", manifest_path=clip.manifest_path, frames_log=clip.frames_log,
+                          work_dir=clip.work_dir, size={"width": clip.width, "height": clip.height},
+                          names=clip.names, frame_valid=clip.frame_valid, orphans=orphans, cmd=STAGE_CMD, log=log)
 
 
 def manifest_diff(old: dict, new: dict) -> list[str]:
@@ -369,9 +395,11 @@ def run_depth(cfg: PipelineConfig, *, restart: bool = False, limit: int | None =
     set_offline()  # sebelum transformers/huggingface_hub di-import (import malas di backend)
     if limit is not None and limit < 1:
         raise DepthError(f"--limit harus ≥ 1, dapat {limit}")
+    clip = load_clip(cfg.paths.work_dir)
+    if not restart:  # identitas dicek SEBELUM require_small / resolve_revision / load backend; --limit ikut dicek
+        _require_same_clip(clip)
     require_small(cfg.depth.model_id)
     resolve_revision(cfg)
-    clip = load_clip(cfg.paths.work_dir)
     selected = clip.names[:limit] if limit else clip.names
     require_frames(clip.work_dir, selected)
 
@@ -493,6 +521,9 @@ def main(argv: list[str] | None = None, backend_factory: BackendFactory | None =
     p.add_argument("--restart", action="store_true", help="hapus output [2c] lama (depth/) lalu mulai dari awal")
     p.add_argument("--limit", type=int, default=None, help="hanya N frame pertama")
     p.add_argument("--download", action="store_true", help="unduh checkpoint + model card (online) lalu keluar")
+    p.add_argument("--adopt", action="store_true",
+                   help="catat identitas klip saat ini ke manifest [2c] yang ada (tanpa inferensi) lalu keluar; "
+                        "pernyataan Anda bahwa output itu milik klip ini")
     args = p.parse_args(argv)
     reconfigure_stdio()  # stdout cp1252 (diarahkan ke file di Windows) tidak boleh membuat print crash
 
@@ -503,9 +534,15 @@ def main(argv: list[str] | None = None, backend_factory: BackendFactory | None =
         p.error("--download tidak bisa digabung dengan --restart/--limit")
 
     try:
+        if args.adopt and (args.restart or args.limit is not None or args.download):
+            raise DepthError("--adopt tidak bisa digabung dengan --restart/--limit/--download")
         path = args.config if args.config is not None else (DEFAULT_CONFIG if DEFAULT_CONFIG.is_file() else None)
         cfg = load_pipeline(path)
-        if args.download:
+        if args.adopt:
+            t0 = time.perf_counter()
+            adopt_depth(cfg, log=log)
+            log(f"selesai: --adopt ({time.perf_counter() - t0:.2f} s)")
+        elif args.download:
             download(cfg, log=log)
         else:
             t0 = time.perf_counter()

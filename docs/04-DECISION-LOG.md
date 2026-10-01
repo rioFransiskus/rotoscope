@@ -332,10 +332,29 @@ Ditulis ulang di T-102b sesi 1, berdasarkan metode yang terbukti di T-102c (`scr
   sumber tanpa audio = **error**
 - **Penyimpangan disetujui:** file tujuan tanpa manifest ditolak (`--restart` menimpa); pengaman sumber lain
   tidak bisa dilewati `--restart`
-- **Known issue (→ T-108):** manifest [2]/[2c]/[3] tidak memuat identitas klip. Kalau klip lain di-ingest ke
-  `work_dir` yang sama, resume [2] menganggap output klip lama valid → hasil salah **tanpa error**. Mitigasi
-  sementara: `work_dir` per klip (mis. `work/<stem>/`, dicatat di T-104b); perbaikan: T-108 (GPU tolak, CPU
-  hitung ulang)
+- **Known issue (→ T-108) — DISELESAIKAN di T-108 (2026-10-01):** manifest [2]/[2c]/[3] tidak memuat identitas
+  klip. Kalau klip lain di-ingest ke `work_dir` yang sama, resume [2] menganggap output klip lama valid → hasil
+  salah **tanpa error**. Mitigasi sementara: `work_dir` per klip (mis. `work/<stem>/`, dicatat di T-104b);
+  perbaikan: lihat "Hasil T-108"
+
+**Hasil T-108 (2026-10-01)** — identitas klip di manifest [2]/[2c]/[3] (`stage_common.py`, `segment.py`,
+`depth.py`, `stabilize.py`, `export.py`), klip uji 283 frame:
+- **Identitas** = `{meta_sha256 (byte meta.json), source_path}` di field `clip`; `meta.json` terbukti
+  byte-deterministik (ingest ulang sama → identik; `target_fps` / `working_width` / `source_path` beda → beda).
+  Bentuk sama dengan manifest export T-103, jadi manifest export lama tetap valid
+- **Perilaku (Rio, revisi Tahap 1):** identitas beda → [2]/[2c] tolak sebelum `resolve_revision` / load backend
+  (juga `--limit`, `--qc-only`), satu-satunya jalan `--restart` (`--adopt` ikut ditolak); [3] berhenti kalau
+  input [2]/[2c] milik klip lain / tanpa identitas, hitung ulang otomatis hanya kalau manifest [3] sendiri
+  yang beda; export berhenti kalau `stable/manifest.json` tanpa / beda identitas
+- **`--adopt`** ([2], [2c]): migrasi manifest lama tanpa inferensi (pernyataan pengguna; cek kewajaran:
+  `frame_size`, semua frame valid, tanpa file yatim). Klip uji: 8.45 s ([2]) + 0.70 s ([2c]); field lain manifest
+  tidak berubah (hanya `clip` + `adopted_utc`)
+- **Verifikasi:** [3] hitung ulang setelah adopt → 566 file `groups` + `depth_smooth` sha256 IDENTIK; export
+  di-encode ulang sekali (hanya `stable.created_utc`), lalu dilewati; `segment --qc-only` dan `depth` pada data
+  asli lolos (exit 0, model tidak dimuat); simulasi klip lain di salinan work_dir + test ingest nyata klip
+  kedua: [2]/[2c] exit 1, [3] berhenti lalu hitung ulang setelah input searah, export tidak menimpa MP4 sumber lain
+- **Batas yang diketahui** (rinci di `docs/01` "Identitas klip"): path video berubah = `--restart`; `--adopt`
+  = pernyataan pengguna; `meta.json` tanpa ukuran/hash file video; determinisme hanya terbukti pada satu build ffmpeg
 
 ---
 

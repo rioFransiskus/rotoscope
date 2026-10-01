@@ -16,9 +16,10 @@ CPU saja, tanpa torch. Per frame:
      kontinu + finite, tanpa lompatan palsu di siluet).
 (Langkah 2 = temporal, belum ada.)
 
-Manifest berbeda (grup / parameter stabilize / input [2]/[2c] berubah) → output lama BASI: dihapus dan
-dihitung ulang otomatis dengan peringatan (stage CPU murah + deterministik). Output tanpa manifest →
-ditolak. --restart = paksa hitung ulang.
+Manifest berbeda (grup / parameter stabilize / input [2]/[2c] / identitas klip berubah) → output lama BASI:
+dihapus dan dihitung ulang otomatis dengan peringatan (stage CPU murah + deterministik). Manifest lama tanpa
+`clip` juga basi (dihitung ulang sekali). Output tanpa manifest → ditolak. --restart = paksa hitung ulang.
+Input [2]/[2c] yang milik klip lain / tanpa identitas → ditolak (load_inputs); [3] tidak punya --adopt.
 
 Uji manual (entry point sementara sampai cli.py, T-104b):
     python -m rotoscope.stabilize [--config PATH] [--restart] [--limit N]
@@ -46,8 +47,8 @@ from rotoscope.config import (
     ConfigError, PipelineConfig, ensure_dir, load_class_names, load_pipeline, section_hash, to_dict,
 )
 from rotoscope.stage_common import (
-    EXIT_OK, EXIT_PRECONDITION, StageError, append_jsonl, clean_tmp, last_frame_records, load_frame_list,
-    reconfigure_stdio, utc_now, write_bytes_atomic, write_json_atomic,
+    CLIP_KEY, EXIT_OK, EXIT_PRECONDITION, StageError, append_jsonl, clean_tmp, clip_identity, describe_identity,
+    last_frame_records, load_frame_list, reconfigure_stdio, utc_now, write_bytes_atomic, write_json_atomic,
 )
 
 # ── Layout output (docs/01 [3]) ────────────────────
@@ -68,7 +69,7 @@ OUTPUT_INFO = {
 }
 
 # Kunci manifest yang harus sama untuk resume; beda → output basi (dihapus + dihitung ulang).
-MANIFEST_MATCH_KEYS = ("stabilize_hash", "groups_hash", "seg", "depth", "frame_size")
+MANIFEST_MATCH_KEYS = ("stabilize_hash", "groups_hash", "seg", "depth", "frame_size", CLIP_KEY)
 SEG_REF_KEYS = ("model", "model_id", "revision", "precision", "processor", "num_labels", "frame_size",
                 "classes", "created_utc")
 DEPTH_REF_KEYS = ("model_id", "revision", "license", "precision", "processor", "input_size", "output",
@@ -293,6 +294,18 @@ def load_inputs(clip: Clip) -> tuple[dict, dict]:
     seg_m = _read_manifest(clip.seg_clip.manifest_path, "[2] segment")
     dep_m = _read_manifest(clip.depth_clip.manifest_path, "[2c] depth")
     size = {"width": clip.width, "height": clip.height}
+    current = clip_identity(clip.work_dir)
+    for label, m, stage, cmd in (("seg/manifest.json", seg_m, "[2]", "python -m rotoscope.segment"),
+                                 ("depth/manifest.json", dep_m, "[2c]", "python -m rotoscope.depth")):
+        old = m.get(CLIP_KEY)
+        if not isinstance(old, dict) or not old.get("meta_sha256"):
+            raise StageError(f"{label} tidak memuat identitas klip (manifest lama) — tidak diketahui milik klip "
+                             f"mana. Kalau output {stage} memang milik klip ini: {cmd} --adopt; "
+                             f"kalau bukan / ragu: {cmd} --restart")
+        if old["meta_sha256"] != current["meta_sha256"]:
+            raise StageError(f"{label} milik klip LAIN: output {stage} = {describe_identity(old)}, meta.json "
+                             f"saat ini = {describe_identity(current)}. Jalankan {cmd} --restart, atau ingest "
+                             f"klip yang benar ke work_dir ini")
     for label, m in (("seg/manifest.json", seg_m), ("depth/manifest.json", dep_m)):
         if m.get("frame_size") != size:
             raise StageError(f"{label}: frame_size {m.get('frame_size')} ≠ meta.json {size} — jalankan ulang "
@@ -339,6 +352,7 @@ def build_manifest(cfg: PipelineConfig, clip: Clip, seg_m: dict, dep_m: dict) ->
             "seg": {k: seg_m.get(k) for k in SEG_REF_KEYS},
             "depth": {k: dep_m.get(k) for k in DEPTH_REF_KEYS},
             "frame_size": {"width": clip.width, "height": clip.height},
+            CLIP_KEY: clip_identity(clip.work_dir),
             "outputs": dict(OUTPUT_INFO), "created_utc": utc_now()}
 
 
@@ -353,6 +367,8 @@ def manifest_diff(old: dict, new: dict) -> list[str]:
         a, b = old.get(k), new.get(k)
         if a == b:
             continue
+        if isinstance(b, dict) and not isinstance(a, dict):
+            a = {}  # field baru (mis. clip di manifest lama): tampilkan per sub-field, bukan repr dict
         if isinstance(a, dict) and isinstance(b, dict):
             out += [f"{k}.{s}: {_short(a.get(s))} → {_short(b.get(s))}"
                     for s in sorted(set(a) | set(b)) if a.get(s) != b.get(s)]

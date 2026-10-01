@@ -13,7 +13,7 @@ import pytest
 from rotoscope import export as ex
 from rotoscope import stabilize as stab
 from rotoscope.config import load_pipeline, section_hash
-from rotoscope.stage_common import EXIT_OK, EXIT_PRECONDITION, StageError
+from rotoscope.stage_common import EXIT_OK, EXIT_PRECONDITION, StageError, clip_identity
 
 pytestmark = pytest.mark.skipif(
     shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
@@ -56,10 +56,18 @@ def make_clip(tmp_path: Path, *, w: int = W, h: int = H, n: int = N, source_name
         "working_height": h, "has_audio": has_audio, "frame_index_start": 0}), encoding="utf-8")
     (work / "stable" / "manifest.json").write_text(json.dumps({
         "stabilize_hash": "s" * 64, "groups_hash": section_hash(cfg, "groups"),
-        "frame_size": {"width": w, "height": h}, "created_utc": "2026-10-01T00:00:00+00:00"}), encoding="utf-8")
+        "frame_size": {"width": w, "height": h}, "clip": clip_identity(work),
+        "created_utc": "2026-10-01T00:00:00+00:00"}), encoding="utf-8")
     for i in range(n):
         stab.write_groups(work / "stable" / "groups" / f"frame_{i:05d}.png", gmap_for(i, w, h))
     return cfg, work, out
+
+
+def resync_stable_clip(work: Path) -> None:
+    """Simulasi [3] dijalankan ulang setelah meta.json berubah: identitas klip di stable/manifest.json."""
+    path = work / "stable" / "manifest.json"
+    m = json.loads(path.read_text(encoding="utf-8"))
+    path.write_text(json.dumps({**m, "clip": clip_identity(work)}), encoding="utf-8")
 
 
 def decode_frames(path: Path, w: int, h: int) -> np.ndarray:
@@ -180,6 +188,7 @@ def test_stale_when_meta_changes_same_source(tmp_path):
     assert ex.run_export(cfg, log=lambda m: None)["skipped"] is True
     meta["extra"] = 1  # isi berbeda → identitas klip beda → basi
     (work / "meta.json").write_text(json.dumps(meta), encoding="utf-8")
+    resync_stable_clip(work)
     run = ex.run_export(cfg, log=lambda m: None)
     assert not run["skipped"] and any("clip.meta_sha256" in s for s in run["stale"])
 
@@ -191,6 +200,7 @@ def test_refuses_to_overwrite_other_clip_result(tmp_path):
     meta = json.loads((work / "meta.json").read_text(encoding="utf-8"))
     meta["source_path"] = str(tmp_path / "klip_lain.mp4")
     (work / "meta.json").write_text(json.dumps(meta), encoding="utf-8")
+    resync_stable_clip(work)
     for restart in (False, True):
         with pytest.raises(StageError, match=r"video sumber LAIN.*export\.filename"):
             ex.run_export(cfg, restart=restart, log=lambda m: None)

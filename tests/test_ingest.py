@@ -122,6 +122,21 @@ def test_meta_json_has_required_fields(tmp_path):
     assert not (tmp_path / "work" / "meta.json.tmp").exists()
 
 
+def test_meta_json_is_byte_deterministic(tmp_path):
+    """Dasar identitas klip (T-108): ingest ulang video + parameter yang sama → meta.json byte-identik
+    (juga di work_dir lain); parameter ingest berbeda → byte berbeda."""
+    video = make_video(tmp_path / "in.mp4", 320, 240, duration=1)
+    ingest(video, tmp_path / "w1")
+    ingest(video, tmp_path / "w1")                      # ingest ulang di work_dir yang sama
+    ingest(video, tmp_path / "w2")                      # work_dir lain
+    first = (tmp_path / "w1" / "meta.json").read_bytes()
+    assert first == (tmp_path / "w2" / "meta.json").read_bytes()
+    ingest(video, tmp_path / "w3", target_fps=12)
+    assert (tmp_path / "w3" / "meta.json").read_bytes() != first
+    ingest(video, tmp_path / "w4", working_width=160)
+    assert (tmp_path / "w4" / "meta.json").read_bytes() != first
+
+
 def test_has_audio_detected(tmp_path):
     video = tmp_path / "av.mp4"
     _ffmpeg(

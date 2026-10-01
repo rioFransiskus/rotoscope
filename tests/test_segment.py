@@ -39,7 +39,8 @@ def make_work(tmp_path: Path, n: int = N_FRAMES, h: int = H, w: int = W) -> Path
         bgr = np.zeros((h, w, 3), np.uint8)
         bgr[4:h - 4, 3 + i % 3:w - 3, 2] = 255
         cv2.imwrite(str(frames / f"frame_{i:05d}.png"), bgr)
-    meta = {"frame_count": n, "working_width": w, "working_height": h, "frame_index_start": 0}
+    meta = {"source_path": "C:/clips/a.mp4", "frame_count": n, "working_width": w, "working_height": h,
+            "frame_index_start": 0}
     (work / "meta.json").write_text(json.dumps(meta), encoding="utf-8")
     return work
 

@@ -50,17 +50,19 @@ def make_work(tmp_path: Path, n: int = N_FRAMES, h: int = H, w: int = W) -> Path
     (work / "seg" / "classmap").mkdir(parents=True)
     (work / "seg" / "probs").mkdir(parents=True)
     (work / "depth").mkdir(parents=True)
-    (work / "meta.json").write_text(json.dumps({"frame_count": n, "working_width": w, "working_height": h,
+    (work / "meta.json").write_text(json.dumps({"source_path": "C:/clips/a.mp4", "frame_count": n,
+                                                "working_width": w, "working_height": h,
                                                 "frame_index_start": 0}), encoding="utf-8")
     size = {"width": w, "height": h}
+    ident = stage_common.clip_identity(work)
     (work / "seg" / "manifest.json").write_text(json.dumps(
         {"stage": "segment", "model": "0.8b", "model_id": "facebook/sapiens2-seg-0.8b", "revision": "a" * 40,
          "precision": "fp16", "processor": {}, "num_labels": len(CLASSES), "frame_size": size,
-         "classes": list(CLASSES), "created_utc": "t0"}), encoding="utf-8")
+         "clip": ident, "classes": list(CLASSES), "created_utc": "t0"}), encoding="utf-8")
     (work / "depth" / "manifest.json").write_text(json.dumps(
         {"stage": "depth", "model_id": "depth-anything/Depth-Anything-V2-Small-hf", "revision": "b" * 40,
          "license": "apache-2.0", "precision": "fp32", "processor": {}, "input_size": {}, "output": {},
-         "frame_size": size, "created_utc": "t0"}), encoding="utf-8")
+         "frame_size": size, "clip": ident, "created_utc": "t0"}), encoding="utf-8")
     for i in range(n):
         name = f"frame_{i:05d}"
         cm = subject_classmap(i, h, w)

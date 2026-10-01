@@ -667,17 +667,38 @@ Tiga langkah, jadikan refleks:
       di blok YAML, `normalize` = `log_median_iqr` saja (T-302), baris baru bool / `model_ids` (prefiks
       `facebook/sapiens2-seg-`) / key `0.8b`/`0.4b` / `revision`, aturan path aset relatif root project
 
-### T-108 · Identitas klip di manifest [2]/[2c]/[3] · `TODO`
+### T-108 · Identitas klip di manifest [2]/[2c]/[3] · `DONE`
 - **Kerjakan:** identitas klip (sha256 isi `meta.json` + `source_path`, seperti manifest export T-103) masuk
   manifest [2]/[2c]/[3]. Klip berbeda di `work_dir` yang sama → stage GPU ([2], [2c]) **tolak** dengan pesan
   jelas; stage CPU ([3]) hitung ulang otomatis dengan peringatan (aturan manifest beda, prinsip #4 `docs/01`)
-- **Done when:** ingest klip B ke `work_dir` berisi output klip A → [2]/[2c] berhenti dengan pesan (exit 1),
-  [3] menghitung ulang; test per stage; `docs/01` kontrak [2]/[2c]/[3] diperbarui
+- **Done when:** ingest klip B ke `work_dir` berisi output klip A → [2]/[2c] berhenti dengan pesan (exit 1);
+  [3] berhenti kalau input [2]/[2c] milik klip lain (atau tanpa identitas), dan menghitung ulang otomatis
+  hanya kalau manifest [3] sendiri yang beda; `--adopt` ([2]/[2c]) memigrasi manifest lama tanpa inferensi;
+  test per stage (termasuk ingest nyata klip kedua); `docs/01` kontrak [2]/[2c]/[3] diperbarui
 - **Kenapa:** manifest [2]/[2c]/[3] tidak memuat identitas klip. Kalau klip lain di-ingest ke `work_dir` yang
   sama, resume [2] menganggap output klip lama valid → hasil salah tanpa error (known issue, `docs/04` D-010)
 - **Sebelum:** T-104b (cli.py). Mitigasi sementara: `work_dir` per klip
 - **Update log:**
   - [2026-10-01] Task baru — temuan Rio saat T-103 (manifest export sudah memuat identitas klip)
+  - [2026-10-01] WIP — Tahap 1 (rencana) disetujui Rio dengan revisi (identitas beda → hanya `--restart`;
+    `--adopt` = pernyataan pengguna; cek identitas sebelum `resolve_revision`/load backend)
+  - [2026-10-01] Tahap 2 selesai: `meta.json` terbukti byte-deterministik (`test_ingest`; 13 field, tanpa ukuran/hash
+    file sumber); helper identitas di `stage_common.py` (`clip_identity`, `require_same_clip`, `adopt_identity`);
+    `clip` di manifest [2]/[2c]/[3]; `--adopt` di segment/depth; export memakai helper + cek `stable` manifest;
+    `tests/test_clip_identity.py` baru. 410 test lolos
+  - [2026-10-01] Tahap 3 pada klip uji (283 frame): `segment --adopt` 8.45 s, `depth --adopt` 0.70 s (tanpa
+    inferensi); [3] hitung ulang otomatis + peringatan, 566 file `groups`/`depth_smooth` sha256 IDENTIK dengan
+    sebelumnya; export encode ulang sekali (`stable.created_utc` berubah; `clip` export lama kompatibel), run
+    berikutnya dilewati. Simulasi klip lain di salinan work_dir: [2]/[2c] exit 1 (juga `--limit`, `--qc-only`,
+    `--adopt`), [3] menolak input klip lain lalu hitung ulang setelah input searah, export menolak menimpa hasil
+    sumber lain (exit 1, MP4 utuh). Cadangan manifest lama: `work/_backup_T108/`. Status tetap WIP
+  - [2026-10-01] Pengecekan tambahan (Rio): jalur positif pada data asli — `segment --qc-only` exit 0 (0/283
+    gagal) dan `depth` exit 0 (283 dilewati, 0 diproses, model tidak dimuat); diff manifest vs cadangan: hanya
+    `clip` + `adopted_utc` bertambah. Simulasi Tahap 3 membuat "klip lain" dengan menyunting `meta.json`
+    (skrip) → ditambah test ingest nyata klip kedua (`test_real_second_ingest_into_workdir_with_clip_a_outputs`).
+    411 test lolos
+  - [2026-10-01] DONE — `docs/01` (Identitas klip + Batas yang diketahui, kontrak [2]/[2c]/[3]/[6], tabel manifest),
+    `docs/04` D-010 "Hasil T-108"
 
 ### T-104b · `cli.py` · `TODO`
 - **Kerjakan:** CLI satu perintah jalankan pipeline (stage GPU [2] dan [2c] sebagai proses sendiri),
@@ -689,6 +710,9 @@ Tiga langkah, jadikan refleks:
   - [2026-10-01] Catatan dari T-103: `work_dir` per klip (mis. `work/<stem>/`) — `work_dir` tunggal membuat klip
     saling menimpa dan manifest [2]/[2c]/[3] belum membedakan klip (T-108). `export.filename` default
     `{source}.mp4` sudah aman untuk beberapa klip di `out/`
+  - [2026-10-01] Catatan dari T-108: manifest [2]/[2c]/[3] kini memuat identitas klip; `cli.py` wajib meneruskan
+    `--adopt` ke stage [2] dan [2c] (`segment.adopt_segment` / `depth.adopt_depth`; tolak kombinasi dengan
+    `--restart` / `--limit` / `--qc-only` / `--download`, exit 1)
 
 ### T-105 · `depth.py` — Depth Anything V2 Small · `DONE`
 - **Kerjakan:** kontrak stage [2c] `docs/01`: DA-V2 Small fp32 GPU (proses sendiri, revision di-pin,
@@ -974,11 +998,11 @@ Tiga langkah, jadikan refleks:
 | Phase | Task | Selesai |
 |---|---|---|
 | 0 Setup | T-001 … T-005 | 5/5 |
-| 1 Skeleton | T-101 … T-108 (T-102 → a/b/c, T-104 → a/b) | 8/11 |
+| 1 Skeleton | T-101 … T-108 (T-102 → a/b/c, T-104 → a/b) | 9/11 |
 | 2 Vectorize | T-201 … T-204 (T-201 → a/b) | 0/5 |
 | 3 Stabilize | T-301 … T-305 (T-301 SKIP) | 0/5 |
 | 4 Style | T-401 … T-406 | 0/6 |
 | 5 Fallback | T-501 … T-502 (BLOCKED) | 0/2 |
 | 6 Opsional | T-601 … T-603 | 0/3 |
 
-**Total: 37 task** · Selesai: 12/37 (SKIP tidak dihitung selesai)
+**Total: 37 task** · Selesai: 13/37 (SKIP tidak dihitung selesai)
