@@ -4,8 +4,8 @@ Semua parameter di bawah **wajib exposed lewat YAML**, tidak boleh hardcoded.
 Ini requirement inti project: kontrol tekstur dan style garis.
 
 Dua jenis file (D-010):
-- `configs/default.yaml` — parameter **pipeline** (stage [2]–[4]): paths, segment, depth, qc, groups,
-  stabilize, vectorize. Default = hasil T-102c (D-009).
+- `configs/default.yaml` — parameter **pipeline** (stage [2]–[4] + export [6]): paths, segment, depth, qc,
+  groups, stabilize, vectorize, export. Default = hasil T-102c (D-009).
 - `configs/styles/*.yaml` — parameter **style** (stage [5]). Ganti style = jalankan ulang [5] saja.
 
 Nilai bertanda **sementara** belum dikalibrasi; task kalibrasinya disebut di kolom catatan.
@@ -99,6 +99,18 @@ vectorize:
     min_len_px: 30           # L — panjang skeleton minimum
   track:
     max_match_dist_px: 12    # SEMENTARA — jarak rata-rata maks pencocokan track_id, dikalibrasi di T-202
+
+# ── EXPORT [6] ─────────────────────────────────────
+export:
+  source: "silhouette"       # "silhouette" (stable/groups, Phase 1) | "strokes" (stage [5], Phase 2 — belum ada)
+  crf: 18                    # libx264, 0 (lossless) – 51; makin kecil makin tajam + besar
+  preset: "medium"           # preset x264: ultrafast … veryslow
+  foreground_color: "#000000"   # siluet (hanya source "silhouette")
+  background_color: "#ffffff"   # latar kertas; juga warna pad 1 px kalau dimensi ganjil
+  audio: false               # true = audio video sumber (aac, -shortest); error kalau sumber tanpa audio.
+                             # Audio meme biasanya milik pihak ketiga → default tanpa audio; tambahkan audio
+                             # berlisensi di editor platform (TikTok/CapCut)
+  filename: "{source}.mp4"   # di paths.out_dir; {source} = nama video sumber (disanitasi). Hasil klip lain tidak ditimpa
 ```
 
 ### Validasi `default.yaml` (saat load, error jelas kalau gagal)
@@ -135,6 +147,12 @@ vectorize:
 | `vectorize.depth_lines.erode_px` | int ganjil ≥ 1 |
 | `vectorize.depth_lines.min_dist_px`, `min_len_px` | ≥ 0 |
 | `vectorize.track.max_match_dist_px` | > 0 |
+| `export.source` | `"silhouette"` atau `"strokes"` (`strokes` diterima loader, tetapi stage [6] menolak sampai Phase 2) |
+| `export.crf` | int 0–51 |
+| `export.preset` | preset x264: `ultrafast`, `superfast`, `veryfast`, `faster`, `fast`, `medium`, `slow`, `slower`, `veryslow` |
+| `export.foreground_color`, `export.background_color` | `#rrggbb`; keduanya harus berbeda (tanpa membedakan huruf besar/kecil) |
+| `export.audio` | bool |
+| `export.filename` | berakhiran `.mp4`; hanya nama file (tanpa `<>:"/\|?*`, tanpa awalan `.`); satu-satunya placeholder `{source}` |
 
 **Aturan grup:**
 1. Setiap nama kelas ada di daftar 29 kelas Sapiens2 (`src/rotoscope/data/sapiens2_classes.json`)

@@ -81,6 +81,12 @@ TEXTURE_MODE_BRUSH = "brush_stamp"
 RESAMPLE_POINTS_MIN = 4
 RENDER_SS_MAX = 8
 HEX_COLOR_RE = re.compile(r"#[0-9a-fA-F]{6}")
+EXPORT_SOURCES = ("silhouette", "strokes")      # "strokes" = Phase 2 (stage [5]); export menolak sampai ada
+X264_PRESETS = ("ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow")
+CRF_MAX = 51
+EXPORT_FILENAME_PLACEHOLDER = "{source}"
+EXPORT_FILENAME_SUFFIX = ".mp4"
+EXPORT_FILENAME_BAD_CHARS = '<>:"/\\|?*'
 
 CLASSES_DIR = "data"
 CLASSES_FILENAME = "sapiens2_classes.json"
@@ -91,7 +97,7 @@ _SUGGEST_CUTOFF = 0.6
 
 # Key yang pindah file / section (D-010) → pesan khusus, bukan sekadar "tidak dikenal".
 _STYLE_SECTIONS = ("shape", "stroke", "jitter", "multipass", "texture", "paper", "render")
-_PIPELINE_SECTIONS = ("paths", "segment", "depth", "qc", "groups", "stabilize", "vectorize")
+_PIPELINE_SECTIONS = ("paths", "segment", "depth", "qc", "groups", "stabilize", "vectorize", "export")
 _MOVED_IN_PIPELINE = {
     s: "ini parameter style — taruh di configs/styles/*.yaml" for s in _STYLE_SECTIONS
 }
@@ -214,6 +220,17 @@ class VectorizeConfig:
 
 
 @dataclass(frozen=True)
+class ExportConfig:
+    source: str = "silhouette"
+    crf: int = 18
+    preset: str = "medium"
+    foreground_color: str = "#000000"
+    background_color: str = "#ffffff"
+    audio: bool = False
+    filename: str = "{source}.mp4"
+
+
+@dataclass(frozen=True)
 class PipelineConfig:
     paths: PathsConfig = field(default_factory=PathsConfig)
     segment: SegmentConfig = field(default_factory=SegmentConfig)
@@ -222,6 +239,7 @@ class PipelineConfig:
     groups: tuple[tuple[str, tuple[str, ...]], ...] = DEFAULT_GROUPS
     stabilize: StabilizeConfig = field(default_factory=StabilizeConfig)
     vectorize: VectorizeConfig = field(default_factory=VectorizeConfig)
+    export: ExportConfig = field(default_factory=ExportConfig)
 
 
 # ── Style: configs/styles/*.yaml ───────────────────
@@ -706,6 +724,28 @@ def _validate_pipeline(c: PipelineConfig) -> None:
     _at_least("vectorize.depth_lines.min_dist_px", dl.min_dist_px, 0)
     _at_least("vectorize.depth_lines.min_len_px", dl.min_len_px, 0)
     _at_least("vectorize.track.max_match_dist_px", v.track.max_match_dist_px, 0, strict=True)
+
+    e = c.export
+    _choice("export.source", e.source, EXPORT_SOURCES)
+    _between("export.crf", e.crf, 0, CRF_MAX)
+    _choice("export.preset", e.preset, X264_PRESETS)
+    _hex("export.foreground_color", e.foreground_color)
+    _hex("export.background_color", e.background_color)
+    if e.foreground_color.lower() == e.background_color.lower():
+        raise ConfigError(f"export.foreground_color ({_fmt(e.foreground_color)}) harus ≠ export.background_color "
+                          f"— siluet tidak akan terlihat")
+    _export_filename("export.filename", e.filename)
+
+
+def _export_filename(key: str, v: str) -> None:
+    if not v.lower().endswith(EXPORT_FILENAME_SUFFIX):
+        _fail(key, v, f"harus berakhiran {EXPORT_FILENAME_SUFFIX!r}")
+    stem = v[:-len(EXPORT_FILENAME_SUFFIX)].replace(EXPORT_FILENAME_PLACEHOLDER, "x")
+    if not stem or stem.startswith(".") or "{" in stem or "}" in stem:
+        _fail(key, v, f"nama tidak valid — satu-satunya placeholder: {EXPORT_FILENAME_PLACEHOLDER}")
+    bad = [ch for ch in stem if ch in EXPORT_FILENAME_BAD_CHARS or ord(ch) < 0x20]
+    if bad:
+        _fail(key, v, f"hanya nama file (bukan path), tanpa karakter {bad[0]!r} — folder = paths.out_dir")
 
 
 def _validate_style(c: StyleConfig) -> None:

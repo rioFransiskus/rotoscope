@@ -608,12 +608,34 @@ Tiga langkah, jadikan refleks:
     `docs/04` D-010: catatan "Hasil T-102b". `--qc-only` ulang: 0/283 gagal (area_vs_median min 0.652 ≥
     0.63); 216 test lolos, 1 skip (GPU)
 
-### T-103 · `export.py` naif · `TODO`
+### T-103 · `export.py` naif · `DONE`
 - **Kerjakan:** PNG sequence → MP4 via ffmpeg, `-r 24 -pix_fmt yuv420p`. Input Phase 1 = foreground
   `stable/groups/*.png` (grup ≠ 0) sebagai siluet blok hitam-putih
-- **Done when:** ada `out/animation.mp4` berisi siluet hitam-putih yang bergerak
+- **Done when:** ada `out/<nama video sumber>.mp4` (`export.filename` = `{source}.mp4`) berisi siluet hitam-putih
+  yang bergerak
 - **Update log:**
   - [2026-09-29] Input diganti dari `masks/*.png` ke `stable/groups/*.png` — D-010
+  - [2026-10-01] WIP — mulai. Rencana (sumber frame silhouette/strokes lewat satu jalur encode, pipe rawvideo
+    ke ffmpeg, parameter `export.*` baru, audio default mati, nama file per klip, manifest + basi, verifikasi
+    ffprobe, entry point, daftar test) menunggu approval Rio
+  - [2026-10-01] Rencana disetujui + keputusan Rio: `export.filename` default `"{source}.mp4"`; file tujuan
+    milik video sumber LAIN → ditolak; `audio: true` tanpa audio di sumber → error; manifest wajib memuat
+    identitas klip (sha256 `meta.json` + `source_path`)
+  - [2026-10-01] Implementasi + run klip uji. `src/rotoscope/export.py` (satu jalur encode lewat
+    `FrameSource`; Phase 1 = `SilhouetteSource`), blok `export:` di `config.py` / `default.yaml` / `docs/02`
+    (+ validasi), `tests/test_export.py` (31 test, ffmpeg nyata) + 14 kasus validasi di `test_config.py`.
+    - **Klip uji (283 frame, 480×854):** `out/test.mp4` 497.6 KiB (509 571 B), encode + ffprobe 2.4 s.
+      ffprobe: 283 frame, 24 fps, h264, yuv420p, 480×854, 11.792 s, 0 stream audio. Run ulang → dilewati
+      (up-to-date). `export.audio: true` (file uji dihapus lagi) → 1 stream aac, 283 frame, 688.2 KiB.
+    - **Semua test:** 369 lolos, 2 skip (GPU).
+    - **Penyimpangan kecil dari rencana (keamanan):** file tujuan ada TANPA manifest → ditolak (`--restart`
+      menimpa), bukan ditimpa dengan peringatan — asalnya tak diketahui, sejalan dengan pengaman klip lain.
+      `--restart` tidak melewati pengaman klip lain. `filename` tidak ikut hash parameter (hanya nama).
+    - **Status tetap WIP** — menunggu Rio menonton `out/test.mp4`
+  - [2026-10-01] DONE — Rio menonton `out/test.mp4`: sesuai. Dua penyimpangan (file tujuan tanpa manifest
+    ditolak; pengaman sumber lain tidak bisa dilewati `--restart`) disetujui. `docs/01` [6]: rincian yang
+    ditetapkan; `docs/04` D-010: catatan "Hasil T-103" (keputusan audio + nama file + known issue identitas
+    klip → T-108)
 
 ### T-104a · `config.py` — loader YAML + validasi · `DONE`
 - **Kerjakan:** loader `configs/default.yaml` + `configs/styles/*.yaml`, default lengkap (jalan tanpa
@@ -645,6 +667,18 @@ Tiga langkah, jadikan refleks:
       di blok YAML, `normalize` = `log_median_iqr` saja (T-302), baris baru bool / `model_ids` (prefiks
       `facebook/sapiens2-seg-`) / key `0.8b`/`0.4b` / `revision`, aturan path aset relatif root project
 
+### T-108 · Identitas klip di manifest [2]/[2c]/[3] · `TODO`
+- **Kerjakan:** identitas klip (sha256 isi `meta.json` + `source_path`, seperti manifest export T-103) masuk
+  manifest [2]/[2c]/[3]. Klip berbeda di `work_dir` yang sama → stage GPU ([2], [2c]) **tolak** dengan pesan
+  jelas; stage CPU ([3]) hitung ulang otomatis dengan peringatan (aturan manifest beda, prinsip #4 `docs/01`)
+- **Done when:** ingest klip B ke `work_dir` berisi output klip A → [2]/[2c] berhenti dengan pesan (exit 1),
+  [3] menghitung ulang; test per stage; `docs/01` kontrak [2]/[2c]/[3] diperbarui
+- **Kenapa:** manifest [2]/[2c]/[3] tidak memuat identitas klip. Kalau klip lain di-ingest ke `work_dir` yang
+  sama, resume [2] menganggap output klip lama valid → hasil salah tanpa error (known issue, `docs/04` D-010)
+- **Sebelum:** T-104b (cli.py). Mitigasi sementara: `work_dir` per klip
+- **Update log:**
+  - [2026-10-01] Task baru — temuan Rio saat T-103 (manifest export sudah memuat identitas klip)
+
 ### T-104b · `cli.py` · `TODO`
 - **Kerjakan:** CLI satu perintah jalankan pipeline (stage GPU [2] dan [2c] sebagai proses sendiri),
   tiap stage juga bisa dijalankan sendiri; flag `--seg-model`, `--restart`, `--qc-only`, `--config`
@@ -652,6 +686,9 @@ Tiga langkah, jadikan refleks:
 - **🎯 Milestone Phase 1:** pipeline end-to-end jalan
 - **Update log:**
   - [2026-09-29] Dipecah dari T-104 (config loader → T-104a) — D-010
+  - [2026-10-01] Catatan dari T-103: `work_dir` per klip (mis. `work/<stem>/`) — `work_dir` tunggal membuat klip
+    saling menimpa dan manifest [2]/[2c]/[3] belum membedakan klip (T-108). `export.filename` default
+    `{source}.mp4` sudah aman untuk beberapa klip di `out/`
 
 ### T-105 · `depth.py` — Depth Anything V2 Small · `DONE`
 - **Kerjakan:** kontrak stage [2c] `docs/01`: DA-V2 Small fp32 GPU (proses sendiri, revision di-pin,
@@ -937,11 +974,11 @@ Tiga langkah, jadikan refleks:
 | Phase | Task | Selesai |
 |---|---|---|
 | 0 Setup | T-001 … T-005 | 5/5 |
-| 1 Skeleton | T-101 … T-107 (T-102 → a/b/c, T-104 → a/b) | 7/10 |
+| 1 Skeleton | T-101 … T-108 (T-102 → a/b/c, T-104 → a/b) | 8/11 |
 | 2 Vectorize | T-201 … T-204 (T-201 → a/b) | 0/5 |
 | 3 Stabilize | T-301 … T-305 (T-301 SKIP) | 0/5 |
 | 4 Style | T-401 … T-406 | 0/6 |
 | 5 Fallback | T-501 … T-502 (BLOCKED) | 0/2 |
 | 6 Opsional | T-601 … T-603 | 0/3 |
 
-**Total: 36 task** · Selesai: 11/36 (SKIP tidak dihitung selesai)
+**Total: 37 task** · Selesai: 12/37 (SKIP tidak dihitung selesai)

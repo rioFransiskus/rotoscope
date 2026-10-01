@@ -351,9 +351,35 @@ dan temporal fill tidak cukup. D-002 (pose hanya fallback, bukan primary) tetap 
 - ⚠️ `output_width` (resolusi output terpisah dari resolusi kerja, satuan tebal/jitter relatif) →
   diputuskan sebelum T-203.
 
-### [6] `export.py`
-- SVG: copy `strokes/*.svg` ke `out/svg/`
-- MP4: raster PNG → video via ffmpeg, `-r 24`, `-pix_fmt yuv420p`
+### [6] `export.py` (CPU)
+- **SVG** (Phase 2): copy `strokes/*.svg` ke `out/svg/` — belum diimplementasi
+- **MP4** (T-103, naif): `out/<nama>.mp4`, `<nama>` = `export.filename` (default `"{source}.mp4"`; `{source}` =
+  nama video sumber dari `meta.json`, disanitasi). Satu jalur encode untuk semua sumber gambar
+  (`export.source`): `"silhouette"` (Phase 1) = `stable/groups/*.png`, grup ≠ 0 → `foreground_color` di atas
+  `background_color`; `"strokes"` (Phase 2) = `strokes/*.png` apa adanya — ditolak sampai ada.
+- **Encode:** frame RGB mentah di-pipe ke stdin ffmpeg (tanpa PNG sementara) → libx264, `-crf` / `-preset`
+  dari YAML, `-pix_fmt yuv420p`, `-r` = `target_fps` `meta.json`, `+faststart`. Dimensi ganjil dipad 1 px warna
+  latar (yuv420p butuh genap). Tulis `<nama>.mp4.tmp` → verifikasi → `os.replace` (retry Windows) — MP4 lama
+  tidak rusak oleh run gagal.
+- **Verifikasi ffprobe** (sebelum `os.replace`): jumlah frame = `frame_count`, fps, codec h264, pix_fmt
+  yuv420p, ukuran = resolusi kerja (setelah pad genap), durasi ±1 frame, jumlah stream audio = `export.audio`.
+- **Audio** (`export.audio`, default `false`): audio meme hampir selalu milik pihak ketiga (musik) → default
+  tanpa audio; tambahkan audio dari library berlisensi di editor platform (TikTok/CapCut). `true` = audio video
+  sumber (aac, `-shortest`); sumber tanpa audio (`has_audio` false) atau file sumber hilang = **error**.
+- **Manifest** `out/<nama>.export.json`: hash parameter `export` (kecuali `filename`), identitas klip
+  (sha256 `meta.json` + `source_path`), referensi `stable/manifest.json` (`stabilize_hash`, `groups_hash`,
+  `created_utc`), jumlah frame, ukuran, fps, audio (ukuran + mtime file sumber), hasil ffprobe.
+- **Basi / pengaman** (stage CPU murah + deterministik, prinsip #4):
+  - manifest cocok + MP4 lolos ffprobe → **dilewati**; parameter / input berubah (termasuk `meta.json` klip
+    yang sama) → **di-encode ulang otomatis** dengan peringatan (field lama → baru);
+  - file tujuan ada dan manifest menunjuk video sumber **LAIN** → **ditolak** (ubah `export.filename`, atau
+    pindah / hapus file itu); `--restart` **tidak** melewati pengaman ini;
+  - file tujuan ada **tanpa manifest** → **ditolak** (asal tidak diketahui); `--restart` menimpa.
+- **Entry point sementara** (sampai `cli.py`, T-104b): `python -m rotoscope.export [--config PATH] [--restart]
+  [--limit N]`; `--limit N` → `<nama>.limitN.mp4` (preview; tanpa manifest, tanpa pengaman, tidak menyentuh
+  hasil utama). Exit code: 0 sukses, 1 prasyarat gagal (3 tidak dipakai — tanpa GPU).
+- Terukur klip uji (283 frame, 480×854, crf 18): 2.4 s, 497.6 KiB (509 571 B). **Known issue:** manifest
+  [2]/[2c]/[3] belum memuat identitas klip (T-108; `docs/04` D-010).
 
 ### Anggaran disk per klip (360 frame, *est.*)
 

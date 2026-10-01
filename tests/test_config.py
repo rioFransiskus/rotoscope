@@ -199,6 +199,20 @@ PIPELINE_INVALID = [
     ({"vectorize.depth_lines.min_dist_px": -1}, r"min_dist_px"),
     ({"vectorize.depth_lines.min_len_px": -1}, r"min_len_px"),
     ({"vectorize.track.max_match_dist_px": 0}, r"vectorize\.track\.max_match_dist_px"),
+    ({"export.source": "svg"}, r"export\.source \('svg'\)"),
+    ({"export.crf": 52}, r"export\.crf"),
+    ({"export.crf": -1}, r"export\.crf"),
+    ({"export.crf": 18.5}, r"export\.crf.*int"),
+    ({"export.preset": "turbo"}, r"export\.preset"),
+    ({"export.foreground_color": "black"}, r"export\.foreground_color.*#rrggbb"),
+    ({"export.background_color": "#fff"}, r"export\.background_color.*#rrggbb"),
+    ({"export.background_color": "#000000"}, r"export\.foreground_color.*≠.*export\.background_color"),
+    ({"export.background_color": "#000000", "export.foreground_color": "#000000"}, r"siluet tidak akan terlihat"),
+    ({"export.audio": "false"}, r"export\.audio.*bool"),
+    ({"export.filename": "clip.avi"}, r"export\.filename.*\.mp4"),
+    ({"export.filename": "sub/{source}.mp4"}, r"export\.filename.*path"),
+    ({"export.filename": "{name}.mp4"}, r"export\.filename.*placeholder"),
+    ({"export.filename": ".mp4"}, r"export\.filename"),
 ]
 
 

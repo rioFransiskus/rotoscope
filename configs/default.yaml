@@ -1,4 +1,4 @@
-# Parameter pipeline (stage [2]–[4]). Nilai = default kode (src/rotoscope/config.py) = docs/02.
+# Parameter pipeline (stage [2]–[4] + export [6]).Nilai = default kode (src/rotoscope/config.py) = docs/02.
 # Ubah default: ubah ketiganya (dicek tests/test_config.py). Untuk eksperimen, salin file ini.
 
 # ── PATHS ──────────────────────────────────────────
@@ -85,3 +85,15 @@ vectorize:
     min_len_px: 30           # L — panjang skeleton minimum
   track:
     max_match_dist_px: 12    # SEMENTARA — jarak rata-rata maks pencocokan track_id, dikalibrasi di T-202
+
+# ── EXPORT [6] ─────────────────────────────────────
+export:
+  source: "silhouette"       # "silhouette" (stable/groups, Phase 1) | "strokes" (stage [5], Phase 2 — belum ada)
+  crf: 18                    # libx264, 0 (lossless) – 51; makin kecil makin tajam + besar
+  preset: "medium"           # preset x264: ultrafast … veryslow
+  foreground_color: "#000000"   # siluet (hanya source "silhouette")
+  background_color: "#ffffff"   # latar kertas; juga warna pad 1 px kalau dimensi ganjil
+  audio: false               # true = audio video sumber (aac, -shortest); error kalau sumber tanpa audio.
+                             # Audio meme biasanya milik pihak ketiga → default tanpa audio; tambahkan audio
+                             # berlisensi di editor platform (TikTok/CapCut)
+  filename: "{source}.mp4"   # di paths.out_dir; {source} = nama video sumber (disanitasi). Hasil klip lain tidak ditimpa

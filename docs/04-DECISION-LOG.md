@@ -320,6 +320,23 @@ Ditulis ulang di T-102b sesi 1, berdasarkan metode yang terbukti di T-102c (`scr
   menunjukkan batas kaki kanan–kiri (input T-201b). Filter pulau di peta grup = default; kalibrasi N/K tetap
   di T-305 (dengan temporal)
 
+**Hasil T-103 (2026-10-01)** — `src/rotoscope/export.py` (naif, siluet), klip uji 283 frame 480×854:
+- Satu jalur encode (`FrameSource`): Phase 1 `SilhouetteSource` (`stable/groups`, grup ≠ 0 = foreground);
+  Phase 2 cukup menambah sumber `strokes`. Frame di-pipe `rawvideo` ke ffmpeg (tanpa PNG sementara), libx264
+  yuv420p, tulis `.tmp` → verifikasi ffprobe → `os.replace`. Klip uji: 497.6 KiB, 2.4 s, ffprobe sesuai
+- **Nama file (Rio):** `export.filename` default `"{source}.mp4"` (nama video sumber, disanitasi), bukan
+  `animation.mp4`; file tujuan milik video sumber LAIN **ditolak** (hasil klip lain tidak pernah ditimpa).
+  Manifest `<nama>.export.json` memuat identitas klip (sha256 `meta.json` + `source_path`); input berbeda → basi
+- **Audio (Rio):** `export.audio` default **false** — audio meme hampir selalu milik pihak ketiga (musik);
+  tambahkan audio dari library berlisensi di editor platform (TikTok/CapCut). `true` → aac, `-shortest`;
+  sumber tanpa audio = **error**
+- **Penyimpangan disetujui:** file tujuan tanpa manifest ditolak (`--restart` menimpa); pengaman sumber lain
+  tidak bisa dilewati `--restart`
+- **Known issue (→ T-108):** manifest [2]/[2c]/[3] tidak memuat identitas klip. Kalau klip lain di-ingest ke
+  `work_dir` yang sama, resume [2] menganggap output klip lama valid → hasil salah **tanpa error**. Mitigasi
+  sementara: `work_dir` per klip (mis. `work/<stem>/`, dicatat di T-104b); perbaikan: T-108 (GPU tolak, CPU
+  hitung ulang)
+
 ---
 
 ## Pitfall yang sudah diketahui
