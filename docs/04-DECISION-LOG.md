@@ -334,8 +334,8 @@ Ditulis ulang di T-102b sesi 1, berdasarkan metode yang terbukti di T-102c (`scr
   tidak bisa dilewati `--restart`
 - **Known issue (→ T-108) — DISELESAIKAN di T-108 (2026-10-01):** manifest [2]/[2c]/[3] tidak memuat identitas
   klip. Kalau klip lain di-ingest ke `work_dir` yang sama, resume [2] menganggap output klip lama valid → hasil
-  salah **tanpa error**. Mitigasi sementara: `work_dir` per klip (mis. `work/<stem>/`, dicatat di T-104b);
-  perbaikan: lihat "Hasil T-108"
+  salah **tanpa error**. Mitigasi sementara: `work_dir` per klip (dicatat di T-104b; layout akhir
+  `work/clips/<stem>/`, lihat "Hasil T-104b"); perbaikan: lihat "Hasil T-108"
 
 **Hasil T-108 (2026-10-01)** — identitas klip di manifest [2]/[2c]/[3] (`stage_common.py`, `segment.py`,
 `depth.py`, `stabilize.py`, `export.py`), klip uji 283 frame:
@@ -355,6 +355,32 @@ Ditulis ulang di T-102b sesi 1, berdasarkan metode yang terbukti di T-102c (`scr
   kedua: [2]/[2c] exit 1, [3] berhenti lalu hitung ulang setelah input searah, export tidak menimpa MP4 sumber lain
 - **Batas yang diketahui** (rinci di `docs/01` "Identitas klip"): path video berubah = `--restart`; `--adopt`
   = pernyataan pengguna; `meta.json` tanpa ukuran/hash file video; determinisme hanya terbukti pada satu build ffmpeg
+
+**Hasil T-104b (2026-10-01)** — `src/rotoscope/cli.py` + `__main__.py` (`python -m rotoscope run|ingest|segment|depth|
+stabilize|export|download`), 🎯 **milestone Phase 1 tercapai**. Rincian: `docs/01` bagian "CLI".
+- **Folder kerja per klip** `<paths.work_dir>/clips/<stem>/` (bukan `work/<stem>/`; keputusan Rio): `stem` = fungsi
+  sanitasi `{source}` export; `clips/` memisahkan data klip dari folder eksperimen di `work/` sehingga tanpa daftar
+  nama dicadangkan. `--work-dir` ditambahkan ke `main()` segment / depth / stabilize / export (menang atas config;
+  `paths.out_dir` tetap) — alternatif ditolak: YAML sementara, env var, `python -c`
+- **Pre-flight CPU-only sebelum apa pun:** file video, bentrok folder kerja, bentrok target export (pengaman export
+  tidak bisa dilewati `--restart`, jadi klip bernama sama tidak boleh gagal setelah ±78 mnt GPU); pesan tidak
+  menyarankan `--restart`
+- **Ingest selalu ulang** (opsi A, Rio) — opsi B (lewati kalau `meta.json` cocok) ditolak karena melebarkan
+  batas (c) identitas klip (video lain di path yang sama tidak terdeteksi); ingest hanya detik dan byte-deterministik
+- **Restart = graf dependensi** (`run --restart-from`; depth tidak bergantung pada segment) dan **`--yes` wajib untuk
+  setiap penghapusan hasil GPU** lewat cli (±78 mnt per klip 283 frame); tanpa `--yes`: tampilkan jumlah file + estimasi
+  waktu GPU, exit 1. Opsi ditolak: `run --restart` polos (satu salah ketik menghapus semuanya), restart hanya di
+  subperintah stage (stage hilir yang basi mudah terlupa)
+- **Ditolak (Rio):** parameter YAML `cli.qc_fail_warn_ratio` — frame gagal QC cukup satu peringatan, run lanjut
+- **Tanpa fallback model otomatis** (D-009): `--seg-model` hanya diteruskan; VRAM kurang → exit 1 dan berhenti
+- **Proses:** stage GPU = subprocess (stdout/stderr diwariskan), induk tanpa torch/CUDA (diuji), anak di-terminate
+  saat induk di-Ctrl+C / exception; pesan error stage memakai perintah CLI lengkap (`… --restart --yes`)
+- **Terukur** (klip 5 s `samples/test_short.mp4`, 119 frame, 0.8b): `run` dari nol 1943.8 s (segment 1897.1 s,
+  16.2 s/frame, peak 3276 MiB reserved; depth 32.8 s, 424 MiB; stabilize 12.0 s; export 1.0 s); `run` ulang dan
+  `run samples/test.mp4` → semua dilewati, exit 0 (±21 s / ±32 s, tanpa GPU kerja)
+- **Batas yang diketahui:** memindahkan file video = `source_path` berubah → bentrok folder kerja (hapus folder klip
+  lama sendiri atau `--restart-from ingest --yes` tidak membantu karena pre-flight menolak lebih dulu); nama video
+  sama di folder berbeda = ganti nama salah satunya
 
 ---
 

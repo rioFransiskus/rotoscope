@@ -25,8 +25,10 @@ TANPA audio; tambahkan audio dari library berlisensi di editor platform (TikTok/
 audio video sumber dimasukkan (aac, -shortest); sumber tanpa audio (meta.has_audio false) atau file
 sumber hilang = ERROR, bukan diam-diam tanpa audio.
 
-Uji manual (entry point sementara sampai cli.py, T-104b):
-    python -m rotoscope.export [--config PATH] [--restart] [--limit N]
+CLI final (T-104b): python -m rotoscope export <video> [--config PATH] [--restart] [--limit N]; atau seluruh
+pipeline: python -m rotoscope run <video>. cli.py memanggil main() ini in-process dengan --work-dir <folder klip>
+(paths.out_dir tetap dari config):
+    python -m rotoscope.export [--config PATH] [--work-dir DIR] [--restart] [--limit N]
 --limit N → <nama>.limitN.mp4 (preview N frame pertama; tanpa manifest, tanpa pengaman, tidak menyentuh
 hasil utama). Exit code: 0 sukses, 1 prasyarat gagal (3 = OOM tidak dipakai di stage CPU).
 """
@@ -54,8 +56,8 @@ from rotoscope.config import (
 )
 from rotoscope.ingest import META_FILENAME
 from rotoscope.stage_common import (
-    CLIP_KEY, EXIT_OK, EXIT_PRECONDITION, StageError, _replace_with_retry, clip_identity_from_bytes,
-    describe_identity, reconfigure_stdio, utc_now, write_json_atomic,
+    CLIP_KEY, EXIT_OK, EXIT_PRECONDITION, StageError, _replace_with_retry, add_work_dir_arg, cli_cmd,
+    clip_identity_from_bytes, describe_identity, reconfigure_stdio, utc_now, work_dir_overrides, write_json_atomic,
 )
 
 # ── Layout output (docs/01 [6]) ────────────────────
@@ -351,7 +353,7 @@ def run_export(cfg: PipelineConfig, *, restart: bool = False, limit: int | None 
                          f"jalankan ulang stage [3] stabilize (output basi dihitung ulang otomatis)")
     if stable_m.get("frame_size") != {"width": clip.width, "height": clip.height}:
         raise StageError(f"stable/manifest.json: frame_size {stable_m.get('frame_size')} ≠ meta.json — "
-                         f"jalankan ulang stage [3] stabilize dengan --restart")
+                         f"jalankan ulang stage [3]: {cli_cmd('stabilize', work_dir)} --restart")
     if stable_m.get("groups_hash") != section_hash(cfg, "groups"):
         raise StageError("definisi groups di config ≠ stable/manifest.json — jalankan stage [3] stabilize "
                          "(output basi dihitung ulang otomatis)")
@@ -394,7 +396,7 @@ def run_export(cfg: PipelineConfig, *, restart: bool = False, limit: int | None 
         if target.is_file():
             if old is None and not restart:
                 raise StageError(f"{target} sudah ada tanpa {manifest_path.name} — asal file tidak diketahui. "
-                                 f"Jalankan dengan --restart untuk menimpa.")
+                                 f"Jalankan {cli_cmd('export', work_dir)} --restart untuk menimpa.")
             if old is not None and not restart:
                 stale = manifest_diff(old, manifest)
                 if not stale:
@@ -439,12 +441,13 @@ def run_export(cfg: PipelineConfig, *, restart: bool = False, limit: int | None 
             "wall_s": wall}
 
 
-# ── Entry point sementara (cli.py = T-104b) ────────
+# ── Entry point stage (dipanggil cli.py, T-104b) ───
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="python -m rotoscope.export",
                                 description="Stage [6]: stable/groups → out/<nama>.mp4 (siluet, naif)")
     p.add_argument("--config", type=Path, default=None,
                    help=f"YAML pipeline (default: {DEFAULT_CONFIG.as_posix()} kalau ada, selain itu default kode)")
+    add_work_dir_arg(p)
     p.add_argument("--restart", action="store_true", help="encode ulang walau up-to-date (menimpa file tanpa manifest)")
     p.add_argument("--limit", type=int, default=None, help="preview N frame pertama → <nama>.limitN.mp4")
     args = p.parse_args(argv)
@@ -455,7 +458,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         path = args.config if args.config is not None else (DEFAULT_CONFIG if DEFAULT_CONFIG.is_file() else None)
-        cfg = load_pipeline(path)
+        cfg = load_pipeline(path, overrides=work_dir_overrides(args.work_dir))
         run = run_export(cfg, restart=args.restart, limit=args.limit, log=log)
         log(f"selesai: {run['output']}")
     except (StageError, ConfigError) as e:

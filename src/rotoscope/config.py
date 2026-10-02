@@ -4,7 +4,7 @@ Sumber kebenaran default = dataclass di file ini (T-104a, opsi A). configs/defau
 configs/styles/rough-sketch.yaml, dan dua blok YAML di docs/02 wajib identik dengan default ini —
 dijaga tests/test_config.py. Ubah default = ubah ketiganya.
 
-Urutan load: default kode → YAML (merge rekursif) → overrides (flag CLI T-104b) → konversi tipe →
+Urutan load: default kode → YAML (merge rekursif) → overrides (flag CLI: --seg-model, --work-dir) → konversi tipe →
 validasi (dua tabel + aturan grup di docs/02). Hasil = dataclass frozen (immutable); mapping =
 MappingProxyType (dict read-only); `groups` = tuple berurutan ((nama, (kelas, …)), …), urutan = id
 grup 1..G (0 = background).

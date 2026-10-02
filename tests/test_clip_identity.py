@@ -361,22 +361,22 @@ def test_stabilize_old_manifest_without_identity_recomputed_once(tmp_path):
     assert again["processed"] == 0 and again["stale"] == []
 
 
-@pytest.mark.parametrize("stage, cmd", [("seg", "rotoscope.segment"), ("depth", "rotoscope.depth")])
+@pytest.mark.parametrize("stage, cmd", [("seg", "rotoscope segment"), ("depth", "rotoscope depth")])
 def test_stabilize_input_without_identity_suggests_adopt(tmp_path, stage, cmd):
     work = tst.make_work(tmp_path)
     strip_clip(work / stage / "manifest.json")
-    with pytest.raises(StageError, match=rf"{cmd} --adopt[\s\S]*{cmd} --restart"):
+    with pytest.raises(StageError, match=rf"{cmd} \S+ --adopt[\s\S]*{cmd} \S+ --restart --yes"):
         stb.run_stabilize(tst.cfg_for(work), log=tst.quiet)
 
 
-@pytest.mark.parametrize("stage, cmd", [("seg", "rotoscope.segment"), ("depth", "rotoscope.depth")])
+@pytest.mark.parametrize("stage, cmd", [("seg", "rotoscope segment"), ("depth", "rotoscope depth")])
 def test_stabilize_input_other_clip_suggests_restart(tmp_path, stage, cmd):
     work = tst.make_work(tmp_path)
     new = other_clip(work)
     if stage == "depth":   # input [2] sudah milik klip baru; hanya [2c] yang tertinggal
         p = work / "seg" / "manifest.json"
         p.write_text(json.dumps({**read_json(p), "clip": new}), encoding="utf-8")
-    with pytest.raises(StageError, match=rf"{stage}/manifest.json milik klip LAIN[\s\S]*{cmd} --restart[\s\S]*"
+    with pytest.raises(StageError, match=rf"{stage}/manifest.json milik klip LAIN[\s\S]*{cmd} \S+ --restart --yes[\s\S]*"
                                          f"ingest klip yang benar"):
         stb.run_stabilize(tst.cfg_for(work), log=tst.quiet)
     assert not (work / "stable").exists()

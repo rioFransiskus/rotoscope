@@ -11,7 +11,8 @@ jitter di stage berikutnya (P-007), jadi harus konsisten.
 meta.json ditulis PALING AKHIR sebagai penanda sukses: kalau ada meta.json,
 frame di folder yang sama lengkap dan tervalidasi.
 
-Uji manual:
+CLI final (T-104b): python -m rotoscope ingest <video> [--target-fps N] [--working-width N] (folder kerja =
+<paths.work_dir>/clips/<nama video>/); atau seluruh pipeline: python -m rotoscope run <video>. Entry point stage:
     python -m rotoscope.ingest <video> [--work-dir work] [--target-fps N] [--working-width N]
 """
 

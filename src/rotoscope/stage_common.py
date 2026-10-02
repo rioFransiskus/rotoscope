@@ -171,20 +171,20 @@ def identity_diff(old: dict | None, new: dict) -> list[str]:
 
 def require_same_clip(manifest: dict, current: dict, *, stage: str, out_dir: Path, cmd: str) -> None:
     """Tolak output stage GPU milik klip lain / tanpa identitas (stage [2]/[2c]; --qc-only juga).
-    `cmd` = perintah stage, mis. "python -m rotoscope.segment"."""
+    `cmd` = perintah CLI stage (cli_cmd), mis. 'python -m rotoscope segment "C:/clips/a.mp4"'."""
     old = manifest.get(CLIP_KEY)
     if not isinstance(old, dict) or not old.get("meta_sha256"):
         raise StageError(
             f"output {stage} di {out_dir} tidak memuat identitas klip (manifest lama) — tidak diketahui milik "
             f"klip mana. Klip saat ini: {describe_identity(current)}.\n"
             f"  - kalau output itu memang milik klip ini: {cmd} --adopt (mencatat identitas tanpa inferensi ulang)\n"
-            f"  - kalau bukan / ragu: {cmd} --restart")
+            f"  - kalau bukan / ragu: {cmd} --restart --yes")
     if old["meta_sha256"] != current["meta_sha256"]:
         raise StageError(
             f"output {stage} di {out_dir} milik klip LAIN:\n"
             f"  klip lama (output): {describe_identity(old)}\n"
             f"  klip baru (meta.json): {describe_identity(current)}\n"
-            f"Satu-satunya jalan: {cmd} --restart (menghapus output lama). --adopt tidak berlaku untuk "
+            f"Satu-satunya jalan: {cmd} --restart --yes (menghapus output lama). --adopt tidak berlaku untuk "
             f"identitas berbeda.")
 
 
@@ -202,7 +202,7 @@ def adopt_identity(*, stage: str, manifest_path: Path, frames_log: Path, work_di
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as e:
-        raise StageError(f"gagal membaca {manifest_path} ({e}) — jalankan {cmd} --restart") from None
+        raise StageError(f"gagal membaca {manifest_path} ({e}) — jalankan {cmd} --restart --yes") from None
     current = clip_identity(work_dir)
     old = manifest.get(CLIP_KEY)
     if isinstance(old, dict) and old.get("meta_sha256"):
@@ -212,17 +212,17 @@ def adopt_identity(*, stage: str, manifest_path: Path, frames_log: Path, work_di
         raise StageError(
             f"manifest {stage} sudah memuat identitas klip LAIN — --adopt ditolak:\n"
             f"  klip lama (output): {describe_identity(old)}\n  klip baru (meta.json): {describe_identity(current)}\n"
-            f"Satu-satunya jalan: {cmd} --restart")
+            f"Satu-satunya jalan: {cmd} --restart --yes")
     if manifest.get("frame_size") != size:
         raise StageError(f"{stage} --adopt ditolak: frame_size manifest {manifest.get('frame_size')} ≠ "
                          f"meta.json {size}")
     invalid = [n for n in names if not frame_valid(n)]
     if invalid:
         raise StageError(f"{stage} --adopt ditolak: {len(invalid)}/{len(names)} frame belum/rusak, mis. "
-                         f"{invalid[0]} — output tidak lengkap, gunakan {cmd} --restart")
+                         f"{invalid[0]} — output tidak lengkap, gunakan {cmd} --restart --yes")
     if orphans:
         raise StageError(f"{stage} --adopt ditolak: {len(orphans)} file output di luar daftar frame klip, mis. "
-                         f"{orphans[0].name} — output milik klip lain? Gunakan {cmd} --restart")
+                         f"{orphans[0].name} — output milik klip lain? Gunakan {cmd} --restart --yes")
     log(f"{stage} --adopt: mencatat identitas klip ini ke {manifest_path} (tanpa inferensi)\n"
         f"  source_path : {current['source_path']}\n"
         f"  meta_sha256 : {current['meta_sha256'][:HASH_SHORT]}\n"
@@ -315,6 +315,37 @@ def vram_state(torch) -> dict:
 
 
 # ── Entry point ────────────────────────────────────
+CLI_PROG = "python -m rotoscope"
+VIDEO_PLACEHOLDER = "<video>"
+
+
+def cli_cmd(stage: str, work_dir: Path | None = None) -> str:
+    """Perintah CLI final untuk satu stage, dipakai di pesan error: `python -m rotoscope <stage> "<video>"`.
+    Path video dibaca dari <work_dir>/meta.json; tidak terbaca → `<video>`."""
+    video = VIDEO_PLACEHOLDER
+    if work_dir is not None:
+        try:
+            src = json.loads((Path(work_dir) / META_FILENAME).read_text(encoding="utf-8"))["source_path"]
+            video = f'"{src}"' if " " in str(src) else str(src)
+        except (OSError, ValueError, KeyError, TypeError):
+            pass
+    return f"{CLI_PROG} {stage} {video}"
+
+
+def add_work_dir_arg(parser) -> None:
+    """Flag `--work-dir` bersama semua main() stage (T-104b); menang atas paths.work_dir di config."""
+    parser.add_argument("--work-dir", type=Path, default=None,
+                        help="folder kerja klip (menang atas paths.work_dir di config; paths.out_dir tidak berubah)")
+
+
+def work_dir_overrides(work_dir: Path | None, base: dict | None = None) -> dict | None:
+    """Gabungkan `--work-dir` ke overrides config (key bertitik, T-104a)."""
+    out = dict(base or {})
+    if work_dir is not None:
+        out["paths.work_dir"] = str(work_dir)
+    return out or None
+
+
 def reconfigure_stdio() -> None:
     """stdout/stderr yang diarahkan ke file di Windows = cp1252: karakter seperti "→" / "≠" di pesan
     membuat print crash (UnicodeEncodeError) → ganti dengan "?" daripada gagal."""

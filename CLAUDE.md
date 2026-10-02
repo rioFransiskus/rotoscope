@@ -25,6 +25,9 @@ Segmentation → Contour → Stylized stroke. MediaPipe Pose hanya fallback untu
 | 5 | stylize.py | contours + style YAML → work/strokes/*.svg + *.png |
 | 6 | export.py | strokes → out/animation.mp4 + out/svg/*.svg |
 
+Path `work/…` di tabel = relatif terhadap folder kerja klip `work/clips/<nama video>/` (T-104b).
+Cara pakai: `python -m rotoscope run <video>`; per stage: `python -m rotoscope <stage> <video>`; unduh model:
+`python -m rotoscope download` (bagian "CLI" di docs/01). Hasil GPU hanya dihapus dengan `--yes`.
 Kontrak lengkap per modul: docs/01-PIPELINE-SPEC.md. Parameter style: docs/02-STYLE-PARAMS.md.
 
 ## Aturan keras (jangan dilanggar tanpa izin eksplisit)

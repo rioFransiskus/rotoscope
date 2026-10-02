@@ -314,7 +314,7 @@ def test_model_card_required_in_cache(tmp_path):
     cache = tmp_path / "hf_cache"
     _fake_snapshot(cache, {"config.json": "{}", "preprocessor_config.json": "{}", "model.safetensors": "x"})
     b = dep.TorchDepthBackend(make_cfg(make_work(tmp_path)), cache_dir=cache)
-    with pytest.raises(DepthError, match=r"(?s)hilang: README\.md.*python -m rotoscope\.depth --download"):
+    with pytest.raises(DepthError, match=r"(?s)hilang: README\.md.*python -m rotoscope download"):
         b.describe(H, W)
 
 
@@ -335,7 +335,7 @@ def test_default_revision_is_pinned_hash():
 
 def test_revision_null_stops(tmp_path):
     f = factory()
-    with pytest.raises(DepthError, match=r"(?s)depth\.revision = null.*--download"):
+    with pytest.raises(DepthError, match=r"(?s)depth\.revision = null.*rotoscope download"):
         run_depth(make_cfg(make_work(tmp_path), **{"depth.revision": None}), backend_factory=f, log=quiet)
     assert f.made == []
 
@@ -348,7 +348,7 @@ def test_revision_must_be_commit_hash(tmp_path, rev):
 
 def test_revision_not_in_cache_gives_download_command(tmp_path):
     b = dep.TorchDepthBackend(make_cfg(make_work(tmp_path)), cache_dir=tmp_path / "hf_cache")
-    with pytest.raises(DepthError, match=r"(?s)tidak ada di cache HF.*python -m rotoscope\.depth --download"):
+    with pytest.raises(DepthError, match=r"(?s)tidak ada di cache HF.*python -m rotoscope download"):
         b.describe(H, W)
 
 

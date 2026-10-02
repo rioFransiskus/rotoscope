@@ -20,10 +20,13 @@ Lisensi: hanya varian Small (Apache-2.0); Base/Large CC-BY-NC DILARANG. Dicek ti
 id (config + backend), backbone hidden_size 384 (ViT-S), dan front-matter `license` model card
 (README.md) di cache = apache-2.0.
 
-Uji manual (entry point sementara sampai cli.py, T-104b):
-    python -m rotoscope.depth [--config PATH] [--restart] [--limit N]
+CLI final (T-104b): python -m rotoscope depth <video> [--config PATH] [--restart --yes] [--limit N] [--adopt];
+atau seluruh pipeline: python -m rotoscope run <video>. cli.py menjalankan modul ini sebagai subprocess
+(--work-dir <folder klip>); --yes hanya ada di cli (penghapusan hasil GPU wajib --yes, dibuang sebelum diteruskan).
+Flag main() stage:
+    python -m rotoscope.depth [--config PATH] [--work-dir DIR] [--restart] [--limit N]
     python -m rotoscope.depth --adopt            (catat identitas klip ke manifest lama, tanpa inferensi)
-    python -m rotoscope.depth --download
+    python -m rotoscope.depth --download         (lewat cli: python -m rotoscope download)
 Exit code: 0 sukses, 1 prasyarat gagal, 3 OOM di tengah run.
 
 Identitas klip (T-108): manifest memuat `clip` (sha256 meta.json + source_path). Output klip lain / manifest
@@ -52,9 +55,10 @@ from rotoscope.config import DEPTH_MODEL_ID_REQUIRED, ConfigError, PipelineConfi
 from rotoscope.ingest import FRAMES_DIRNAME
 from rotoscope.stage_common import (
     COMMIT_HASH_RE, DOWNLOAD_REVISION_FALLBACK, EXIT_OK, EXIT_OOM, EXIT_PRECONDITION, MIB, BackendOOM,
-    StageError, StageOOMError, adopt_identity, append_jsonl, cached_file, clean_tmp, clip_identity, ensure_cached,
-    hf_offline_active, is_oom, load_frame_list, read_rgb, reconfigure_stdio, require_frames, require_same_clip,
-    set_offline, utc_now, vram_state, write_bytes_atomic, write_json_atomic,
+    StageError, StageOOMError, add_work_dir_arg, adopt_identity, append_jsonl, cached_file, clean_tmp, cli_cmd,
+    clip_identity, ensure_cached, hf_offline_active, is_oom, load_frame_list, read_rgb, reconfigure_stdio,
+    require_frames, require_same_clip, set_offline, utc_now, vram_state, work_dir_overrides, write_bytes_atomic,
+    write_json_atomic,
 )
 
 # ── Layout output (docs/01 [2c]) ───────────────────
@@ -77,15 +81,19 @@ MODEL_CARD = "README.md"
 REQUIRED_FILES = ("config.json", "preprocessor_config.json", "model.safetensors", MODEL_CARD)
 REQUIRED_LICENSE = "apache-2.0"
 SMALL_HIDDEN_SIZE = 384              # backbone DINOv2 ViT-S (Small); Base 768, Large 1024
-DOWNLOAD_CMD = "python -m rotoscope.depth --download"
+DOWNLOAD_CMD = "python -m rotoscope download"
 LICENSE_HINT = "Base/Large berlisensi CC-BY-NC (non-komersial) — DILARANG; hanya Small (Apache-2.0)"
 
 DEFAULT_CONFIG = Path("configs") / "default.yaml"
 
 # Alias error bersama (stage_common): prasyarat gagal → exit 1, OOM di tengah run → exit 3.
 DepthError = StageError
-STAGE_CMD = "python -m rotoscope.depth"
 DepthOOMError = StageOOMError
+
+
+def stage_cmd(work_dir: Path | None = None) -> str:
+    """Perintah CLI stage [2c] untuk pesan error (path video dari meta.json)."""
+    return cli_cmd("depth", work_dir)
 
 
 # ── Backend ────────────────────────────────────────
@@ -356,7 +364,7 @@ def _require_same_clip(clip: Clip) -> None:
     if clip.manifest_path.is_file():
         manifest = json.loads(clip.manifest_path.read_text(encoding="utf-8"))
         require_same_clip(manifest, clip_identity(clip.work_dir), stage="[2c]", out_dir=clip.depth_dir,
-                          cmd=STAGE_CMD)
+                          cmd=stage_cmd(clip.work_dir))
 
 
 def adopt_depth(cfg: PipelineConfig, *, log: Callable[[str], None] = print) -> dict:
@@ -367,7 +375,8 @@ def adopt_depth(cfg: PipelineConfig, *, log: Callable[[str], None] = print) -> d
                if clip.depth_dir.is_dir() else [])
     return adopt_identity(stage="[2c]", manifest_path=clip.manifest_path, frames_log=clip.frames_log,
                           work_dir=clip.work_dir, size={"width": clip.width, "height": clip.height},
-                          names=clip.names, frame_valid=clip.frame_valid, orphans=orphans, cmd=STAGE_CMD, log=log)
+                          names=clip.names, frame_valid=clip.frame_valid, orphans=orphans,
+                          cmd=stage_cmd(clip.work_dir), log=log)
 
 
 def manifest_diff(old: dict, new: dict) -> list[str]:
@@ -416,10 +425,11 @@ def run_depth(cfg: PipelineConfig, *, restart: bool = False, limit: int | None =
         if diff:
             raise DepthError("output [2c] di " + str(clip.depth_dir) + " dibuat dengan setelan berbeda:\n  " +
                              "\n  ".join(diff) +
-                             "\nJalankan dengan --restart untuk menghapus output lama dan mulai dari awal.")
+                             f"\nJalankan {stage_cmd(clip.work_dir)} --restart --yes untuk menghapus output "
+                             f"lama dan mulai dari awal.")
     elif _has_outputs(clip):
         raise DepthError(f"{clip.depth_dir} berisi output tanpa {MANIFEST_FILENAME} — asal output tidak "
-                         f"diketahui. Jalankan dengan --restart.")
+                         f"diketahui. Jalankan {stage_cmd(clip.work_dir)} --restart --yes.")
     clean_tmp(clip.depth_dir)
 
     todo = [(i, n) for i, n in zip(clip.indices[:len(selected)], selected) if not clip.frame_valid(n)]
@@ -512,12 +522,13 @@ def download(cfg: PipelineConfig, *, log: Callable[[str], None] = print) -> str:
     return commit
 
 
-# ── Entry point sementara (cli.py = T-104b) ────────
+# ── Entry point stage (dipanggil cli.py, T-104b) ───
 def main(argv: list[str] | None = None, backend_factory: BackendFactory | None = None) -> int:
     p = argparse.ArgumentParser(prog="python -m rotoscope.depth",
                                 description="Stage [2c]: frames → depth/*.npy (Depth Anything V2 Small)")
     p.add_argument("--config", type=Path, default=None,
                    help=f"YAML pipeline (default: {DEFAULT_CONFIG.as_posix()} kalau ada, selain itu default kode)")
+    add_work_dir_arg(p)
     p.add_argument("--restart", action="store_true", help="hapus output [2c] lama (depth/) lalu mulai dari awal")
     p.add_argument("--limit", type=int, default=None, help="hanya N frame pertama")
     p.add_argument("--download", action="store_true", help="unduh checkpoint + model card (online) lalu keluar")
@@ -537,7 +548,7 @@ def main(argv: list[str] | None = None, backend_factory: BackendFactory | None =
         if args.adopt and (args.restart or args.limit is not None or args.download):
             raise DepthError("--adopt tidak bisa digabung dengan --restart/--limit/--download")
         path = args.config if args.config is not None else (DEFAULT_CONFIG if DEFAULT_CONFIG.is_file() else None)
-        cfg = load_pipeline(path)
+        cfg = load_pipeline(path, overrides=work_dir_overrides(args.work_dir))
         if args.adopt:
             t0 = time.perf_counter()
             adopt_depth(cfg, log=log)

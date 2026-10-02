@@ -677,7 +677,7 @@ Tiga langkah, jadikan refleks:
   test per stage (termasuk ingest nyata klip kedua); `docs/01` kontrak [2]/[2c]/[3] diperbarui
 - **Kenapa:** manifest [2]/[2c]/[3] tidak memuat identitas klip. Kalau klip lain di-ingest ke `work_dir` yang
   sama, resume [2] menganggap output klip lama valid → hasil salah tanpa error (known issue, `docs/04` D-010)
-- **Sebelum:** T-104b (cli.py). Mitigasi sementara: `work_dir` per klip
+- **Sebelum:** T-104b (cli.py; selesai — layout akhir `work/clips/<stem>/`). Mitigasi sementara: `work_dir` per klip
 - **Update log:**
   - [2026-10-01] Task baru — temuan Rio saat T-103 (manifest export sudah memuat identitas klip)
   - [2026-10-01] WIP — Tahap 1 (rencana) disetujui Rio dengan revisi (identitas beda → hanya `--restart`;
@@ -700,19 +700,97 @@ Tiga langkah, jadikan refleks:
   - [2026-10-01] DONE — `docs/01` (Identitas klip + Batas yang diketahui, kontrak [2]/[2c]/[3]/[6], tabel manifest),
     `docs/04` D-010 "Hasil T-108"
 
-### T-104b · `cli.py` · `TODO`
+### T-104b · `cli.py` · `DONE`
 - **Kerjakan:** CLI satu perintah jalankan pipeline (stage GPU [2] dan [2c] sebagai proses sendiri),
   tiap stage juga bisa dijalankan sendiri; flag `--seg-model`, `--restart`, `--qc-only`, `--config`
 - **Done when:** `python -m rotoscope run samples/test.mp4` menghasilkan MP4
 - **🎯 Milestone Phase 1:** pipeline end-to-end jalan
 - **Update log:**
   - [2026-09-29] Dipecah dari T-104 (config loader → T-104a) — D-010
-  - [2026-10-01] Catatan dari T-103: `work_dir` per klip (mis. `work/<stem>/`) — `work_dir` tunggal membuat klip
+  - [2026-10-01] Catatan dari T-103: `work_dir` per klip (mis. `work/<stem>/`; layout akhir `work/clips/<stem>/`) — `work_dir` tunggal membuat klip
     saling menimpa dan manifest [2]/[2c]/[3] belum membedakan klip (T-108). `export.filename` default
     `{source}.mp4` sudah aman untuk beberapa klip di `out/`
   - [2026-10-01] Catatan dari T-108: manifest [2]/[2c]/[3] kini memuat identitas klip; `cli.py` wajib meneruskan
     `--adopt` ke stage [2] dan [2c] (`segment.adopt_segment` / `depth.adopt_depth`; tolak kombinasi dengan
     `--restart` / `--limit` / `--qc-only` / `--download`, exit 1)
+  - [2026-10-01] WIP — mulai. Tahap 1 (rencana + daftar test) menunggu approval Rio
+  - [2026-10-01] Tahap 1 disetujui dengan revisi Rio: `--work-dir` di 4 `main()` stage (menang atas config; `out_dir`
+    tetap); restart mengikuti graf dependensi + `--yes` wajib untuk penghapusan GPU; pre-flight CPU-only
+    (video, bentrok folder kerja, bentrok target export); ingest di `run` = opsi A (selalu ulang); layout
+    `work/clips/<stem>/` (tanpa daftar nama dicadangkan); `cli.qc_fail_warn_ratio` ditolak (tanpa parameter YAML baru)
+  - [2026-10-01] Tahap 2: `src/rotoscope/cli.py` + `__main__.py`; `--work-dir` + `cli_cmd` di `stage_common.py`
+    (+ 4 `main()` stage); pesan error stage memakai perintah CLI lengkap (`python -m rotoscope segment "<video>"
+    --restart --yes`; `download` menggantikan `--download` di pesan); `tests/test_cli.py` (59 test) + penyesuaian regex
+    `test_clip_identity` / `test_segment` / `test_depth`. F1: `work/_backup_T108/` dihapus (5 file, 109 963 B);
+    F2: `T108-prompt.md` tidak ada di root (tidak ada yang dihapus)
+  - [2026-10-01] Tahap 3 — **F3** (klip uji → `work/clips/test/`): sebelum = sesudah = **1 706 file, 551 533 281 B**
+    (`frames` 283 / 51 208 350; `meta.json` 1 / 369; `qc_report.json` 1 / 115 512; `seg` 568 / 33 995 634; `depth` 285 /
+    232 152 582; `stable` 568 / 234 060 834). Rencana Tahap 1 tertulis 1 703 file — salah jumlah (283+1+1+568+285+568
+    = 1 706); byte cocok. `work/` tidak berisi path absolut `work_dir` (hanya `source_path` video → tetap cocok setelah
+    dipindah). Di lokasi baru, tanpa GPU: `segment --qc-only` exit 0 (10.1 s, 0/283 gagal), `depth` exit 0 (8.6 s, 283
+    dilewati), `stabilize` exit 0 (1.7 s, 283 dilewati), `export` exit 0 (0.4 s, up-to-date). Tidak disentuh: `t102c`,
+    `t106`, `ab_t102a`, `samples/test.mp4`, `out/test.mp4`, `out/test.export.json`
+  - **(a)** `run samples/test.mp4` setelah F3: exit 0, 33.2 s, semua dilewati tanpa GPU (ingest 0.8 s, segment 23.6 s
+    [283 valid dilewati, QC 0/283], depth 7.2 s, stabilize 1.0 s, export 0.1 s up-to-date); `meta.json` hasil ingest
+    ulang byte-identik (identitas klip lolos). **F4:** `samples/test_short.mp4` = 5 s pertama `test.mp4`, h264 + aac,
+    493 068 B; 30 fps → 119 frame pada 24 fps (rencana 120)
+  - **(b0)** smoke `run samples/test_short.mp4 --limit 3` (VRAM bebas 3324 MiB, batas 3300): exit 0, 90.5 s. ingest 0.4 s;
+    segment 0.8b 75.6 s (3 frame: 27.89 s [load model] / 16.31 / 16.31 s, peak reserved 3276 MiB, beda argmax
+    0.0012 / 0.0015 / 0.0020 %, QC dilewati karena `--limit`); depth 13.4 s (3 frame: 3.095 / 0.189 / 0.188 s, peak
+    424 MiB, NaN/inf 0); stabilize 0.4 s; export `test_short.limit3.mp4` 0.2 s (ffprobe: 3 frame, 24 fps, h264
+    yuv420p 480×854, 0.125 s, 7.2 KiB / 7 359 B, 0 stream audio). File itu dihapus setelah bersih (F6)
+  - **(b1)** `run samples/test_short.mp4` penuh (VRAM bebas 3324 MiB): exit 0, wall **1 943.8 s** (±32.4 mnt).
+    ingest 119 frame 0.5 s; segment 0.8b **116 diproses, 3 dilewati (dari smoke)** 1 895.6 s (stage 1 897.1 s;
+    16.20 s/frame), peak reserved 3276 MiB, QC **0/119 gagal** (semua metrik 0 gagal → tanpa peringatan); depth 116
+    diproses + 3 dilewati 31.6 s (stage 32.8 s), peak 424 MiB, NaN/inf 0; stabilize 116 + 3 dilewati 12.0 s; export 119
+    frame 1.0 s. ffprobe `out/test_short.mp4`: h264, yuv420p, 480×854, 24 fps, 119 frame (`-count_frames`), 4.958 s,
+    183 671 B (179.4 KiB), 0 stream audio. Run kedua `test_short.mp4`: exit 0, 21.1 s, semua dilewati (segment 13.0 s,
+    depth 6.8 s, stabilize 0.4 s, export 0.1 s); `run samples/test.mp4`: exit 0, 32.2 s, semua dilewati
+  - **Deviasi F4:** `test_short.mp4` punya audio aac (re-encode `-c:a aac`) dan 119 frame; TIDAK dibuat ulang tanpa audio
+    karena `meta.json` akan berubah → identitas berubah → GPU ulang ±33 mnt. Audio tidak berpengaruh (`export.audio`
+    default false → MP4 tanpa audio)
+  - **Cek tambahan Rio** (data asli, tanpa GPU): (1) `run samples/test_short.mp4 --restart-from segment` dan `segment
+    samples/test_short.mp4 --restart` tanpa `--yes` → keduanya exit 1; pesan memuat "241 file, 11.9 MiB, ulang ≈ 32.7
+    mnt GPU (119 frame × 16.5 s)"; `work/clips/test_short` sebelum = sesudah = 722 file / 230 914 088 B. (2) salinan
+    `test_short.mp4` di folder temp (stem sama, path beda) → `run` exit 1 di pre-flight sebelum ingest (pesan menyebut
+    kedua path, tanpa `--restart`); `work/clips/test_short` 722 / 230 914 088 B dan `out/test_short.mp4` sha256
+    `a91fd701…5f0e` tidak berubah. (3) salinan yang sama dengan `paths.work_dir` → folder temp KOSONG (config temp) →
+    hanya pengaman export terpicu, exit 1 sebelum ingest; folder temp tetap 0 file. File temp dihapus (`tmpcheck/`
+    berisi `cfg.yaml` 152 B + `copy/test_short.mp4` 493 068 B + folder kosong `emptywork/`; skrip pengukur 410 B)
+  - **Integritas test + mutation check:** `py_compile tests/test_cli.py` OK; tanpa BOM, 0 CRLF (584 LF, sama dengan file
+    test lain), tanpa karakter kontrol, satu newline di akhir. Blok `test_reingest_same_clip_passes_changed_video_is_
+    rejected` sempat ditambahkan lewat heredoc shell (melanggar aturan CLAUDE.md "Edit/Write, bukan shell"; isi sudah
+    diperiksa, tidak diulang). Mutation check (skrip luar, `mock.patch` pada `require_same_clip` segment / depth,
+    kode produksi tidak diubah): test GAGAL (`DID NOT RAISE StageError`) saat segment+depth, segment saja, atau depth
+    saja dimatikan; lolos saat normal → test tidak kosong
+  - **Checklist → test** (`tests/test_cli.py`): WAJIB 1 restart + `--yes` + pesan CLI penuh = `test_restart_from_scope`,
+    `test_restart_from_gpu_requires_yes`, `test_restart_from_cpu_does_not_need_yes`, `test_subcommand_restart_requires_yes`,
+    `test_preview_lists_files_and_estimate`, `test_real_restart_from_segment_leaves_depth`,
+    `test_real_restart_from_depth_leaves_segment`, `test_real_restart_from_ingest_deletes_everything`,
+    `test_real_restart_without_yes_deletes_nothing`, `test_stage_errors_use_full_cli_command` (segment, depth),
+    `test_stabilize_input_errors_use_full_cli_command`. WAJIB 2 pre-flight = `test_preflight_missing_video`,
+    `test_preflight_same_name_other_folder` (tanpa / dengan `--restart-from`; tidak ada stage, subprocess, penghapusan),
+    `test_preflight_same_video_other_spelling_is_not_a_clash`, `test_preflight_export_target_of_other_video`,
+    `test_preflight_export_target_same_video_ok`. WAJIB 3 ingest opsi A =
+    `test_reingest_same_clip_passes_changed_video_is_rejected` (+ `test_run_order_and_clip_workdir`). WAJIB 4 layout =
+    `test_run_order_and_clip_workdir`, `test_config_workdir_and_unsafe_stem`. TAMBAHAN 5 (F3) = verifikasi manual di atas.
+    6 proses anak = `test_interrupt_terminates_child_and_waits`, `test_exception_terminates_child`. 7 SystemExit
+    stage = `test_cpu_stage_argparse_exit_is_named`. 8 `--limit` = `test_flags_forwarded` + smoke (b0). 9 grep rujukan
+    = Tahap 4 (di bawah). 10 download = `test_download_default_and_fallback_without_forcing_offline`,
+    `test_download_stops_on_failure`. Lainnya: urutan + subprocess = `test_run_order_and_clip_workdir`,
+    `test_gpu_stages_are_subprocess_with_inherited_streams`; exit 1/3 = `test_stage_failure_propagates_exit_code`;
+    `--seg-model` = `test_flags_forwarded`, `test_seg_model_never_changes_silently`; tanpa torch =
+    `test_torch_not_imported_by_cli`; `--adopt`/`--qc-only` = `test_run_rejects_adopt_and_qc_only`,
+    `test_subcommand_passthrough_flags`; QC = `test_qc_warning_once_and_run_continues`, `test_no_qc_warning_when_clean`;
+    `--work-dir` per stage (#20) = `test_work_dir_flag_segment_and_depth`, `test_work_dir_flag_stabilize`,
+    `test_work_dir_flag_export_keeps_out_dir`; hint resume = `test_resume_hint_after_restart_from_drops_restart`
+  - **Tahap 4:** grep seluruh repo untuk `python -m rotoscope.` dan "entry point sementara": `docs/01` (semua kontrak
+    stage + bagian baru "CLI"), docstring `segment/depth/stabilize/export/ingest.py`, komentar `config.py`, `CLAUDE.md`
+    (cara pakai), `docs/04` D-010 "Hasil T-104b". Entri log lama T-102b / T-105 / T-106 / T-103 di sini tetap
+    (catatan sejarah). Suite penuh: **470 lolos, 2 skip (GPU)**
+  - [2026-10-01] DONE — 🎯 **milestone Phase 1 tercapai:** `python -m rotoscope run samples/test_short.mp4` dari nol
+    menghasilkan `out/test_short.mp4` (119 frame, ffprobe sesuai); fixture cepat Phase 2: `work/clips/test_short/` +
+    `out/test_short.*` (0.8b, JANGAN dihapus)
 
 ### T-105 · `depth.py` — Depth Anything V2 Small · `DONE`
 - **Kerjakan:** kontrak stage [2c] `docs/01`: DA-V2 Small fp32 GPU (proses sendiri, revision di-pin,
@@ -998,11 +1076,12 @@ Tiga langkah, jadikan refleks:
 | Phase | Task | Selesai |
 |---|---|---|
 | 0 Setup | T-001 … T-005 | 5/5 |
-| 1 Skeleton | T-101 … T-108 (T-102 → a/b/c, T-104 → a/b) | 9/11 |
+| 1 Skeleton | T-101 … T-108 (T-102 → a/b/c, T-104 → a/b) — 🎯 milestone tercapai (T-104b); sisa T-107 TODO | 10/11 |
 | 2 Vectorize | T-201 … T-204 (T-201 → a/b) | 0/5 |
 | 3 Stabilize | T-301 … T-305 (T-301 SKIP) | 0/5 |
 | 4 Style | T-401 … T-406 | 0/6 |
 | 5 Fallback | T-501 … T-502 (BLOCKED) | 0/2 |
 | 6 Opsional | T-601 … T-603 | 0/3 |
 
-**Total: 37 task** · Selesai: 13/37 (SKIP tidak dihitung selesai)
+**Total: 37 task** (5 + 11 + 5 + 5 + 6 + 2 + 3) · Selesai: 15/37 (5 + 10; SKIP — T-301, T-601 — tidak dihitung selesai).
+Rekonsiliasi 2026-10-01: sebelum T-104b selesai papan menulis 9/11 + 13/37, padahal 5 + 9 = 14 — total salah hitung 1.

@@ -15,10 +15,13 @@ probs uint8 = round(p × 255) + classmap = argmax logits. Softmax = mengubah sko
 probabilitas yang jumlahnya 1 per piksel; argmax = kelas dengan skor tertinggi.
 
 Run berjalan OFFLINE (HF_HUB_OFFLINE=1 + local_files_only): revision yang di-pin harus sudah ada di
-cache HF. Unduhan = langkah terpisah: python -m rotoscope.segment --download [--seg-model 0.4b].
+cache HF. Unduhan = langkah terpisah: python -m rotoscope download [--seg-model 0.4b].
 
-Uji manual (entry point sementara sampai cli.py, T-104b):
-    python -m rotoscope.segment [--config PATH] [--seg-model 0.8b|0.4b] [--restart] [--limit N]
+CLI final (T-104b): python -m rotoscope segment <video> [--config PATH] [--seg-model 0.8b|0.4b] [--restart --yes]
+[--limit N] [--qc-only] [--adopt]; atau seluruh pipeline: python -m rotoscope run <video>. cli.py menjalankan modul
+ini sebagai subprocess (python -m rotoscope.segment --work-dir <folder klip> ...); flag di bawah = flag main() stage
+(--yes hanya ada di cli: penghapusan hasil GPU wajib --yes dan dibuang sebelum diteruskan ke sini).
+    python -m rotoscope.segment [--config PATH] [--work-dir DIR] [--seg-model 0.8b|0.4b] [--restart] [--limit N]
     python -m rotoscope.segment --qc-only
     python -m rotoscope.segment --adopt          (catat identitas klip ke manifest lama, tanpa inferensi)
     python -m rotoscope.segment --download [--seg-model 0.4b]
@@ -55,10 +58,10 @@ from rotoscope.config import (
 from rotoscope.ingest import FRAMES_DIRNAME
 from rotoscope.stage_common import (  # noqa: F401 — sebagian di-export ulang (seg.MIB, seg.read_jsonl, …)
     COMMIT_HASH_RE, DOWNLOAD_REVISION_FALLBACK, EXIT_OK, EXIT_OOM, EXIT_PRECONDITION, HF_OFFLINE_ENV, MIB,
-    REPLACE_DELAY_S, REPLACE_RETRIES, TMP_SUFFIX, BackendOOM, StageError, StageOOMError, adopt_identity,
-    append_jsonl, clean_tmp, clip_identity, hf_offline_active, last_frame_records, load_frame_list, read_jsonl,
-    read_rgb, reconfigure_stdio, require_frames, require_same_clip, set_offline, vram_state, write_bytes_atomic,
-    write_json_atomic,
+    REPLACE_DELAY_S, REPLACE_RETRIES, TMP_SUFFIX, BackendOOM, StageError, StageOOMError, add_work_dir_arg,
+    adopt_identity, append_jsonl, clean_tmp, cli_cmd, clip_identity, hf_offline_active, last_frame_records,
+    load_frame_list, read_jsonl, read_rgb, reconfigure_stdio, require_frames, require_same_clip, set_offline,
+    vram_state, work_dir_overrides, write_bytes_atomic, write_json_atomic,
 )
 from rotoscope.stage_common import ensure_cached as _ensure_cached
 from rotoscope.stage_common import is_oom as _is_oom
@@ -88,7 +91,12 @@ QC_METRICS = ("area_ratio", "iou_prev", "big_blobs", "area_vs_median", "finite")
 # Alias error bersama (stage_common): prasyarat gagal → exit 1, OOM di tengah run → exit 3.
 SegmentError = StageError
 SegmentOOMError = StageOOMError
-STAGE_CMD = "python -m rotoscope.segment"
+DOWNLOAD_CMD = "python -m rotoscope download"
+
+
+def stage_cmd(work_dir: Path | None = None) -> str:
+    """Perintah CLI stage [2] untuk pesan error (path video dari meta.json)."""
+    return cli_cmd("segment", work_dir)
 
 
 # ── Backend ────────────────────────────────────────
@@ -117,7 +125,7 @@ def resolve_revision(cfg: PipelineConfig) -> str:
         raise SegmentError(
             f"segment.revision.{s.model} = null — run offline butuh commit hash checkpoint yang di-pin. "
             f"Isi di configs/default.yaml, atau jalankan dulu (online): "
-            f"python -m rotoscope.segment --download --seg-model {s.model} (mencetak hash untuk di-pin)")
+            f"{DOWNLOAD_CMD} --seg-model {s.model} (mencetak hash untuk di-pin)")
     if not COMMIT_HASH_RE.fullmatch(rev):
         raise SegmentError(f"segment.revision.{s.model} ({rev!r}) harus commit hash 40 karakter hex, "
                            f"bukan nama branch/tag — nama branch tidak mem-pin checkpoint")
@@ -127,13 +135,13 @@ def resolve_revision(cfg: PipelineConfig) -> str:
 def ensure_cached(model_id: str, revision: str, model_key: str, cache_dir: str | Path | None = None) -> None:
     """Semua file checkpoint revision ini ada di cache HF — kalau tidak, berhenti + perintah unduh."""
     _ensure_cached(model_id, revision, REQUIRED_FILES,
-                   f"python -m rotoscope.segment --download --seg-model {model_key}", cache_dir)
+                   f"{DOWNLOAD_CMD} --seg-model {model_key}", cache_dir)
 
 
 def check_vram(free_mib: float, total_mib: float, need_mib: int, model_key: str) -> None:
     if free_mib >= need_mib:
         return
-    alt = " atau jalankan ulang dengan --seg-model 0.4b (untuk SELURUH klip, pakai --restart)" \
+    alt = " atau jalankan ulang dengan --seg-model 0.4b (untuk SELURUH klip, pakai --restart --yes)" \
         if model_key == "0.8b" else ""
     raise SegmentError(
         f"VRAM bebas {free_mib:.0f} MiB < dibutuhkan {need_mib} MiB untuk Sapiens2-seg {model_key} "
@@ -383,7 +391,8 @@ def _require_same_clip(clip: Clip, manifest: dict | None = None) -> None:
         if not clip.manifest_path.is_file():
             return
         manifest = json.loads(clip.manifest_path.read_text(encoding="utf-8"))
-    require_same_clip(manifest, clip_identity(clip.work_dir), stage="[2]", out_dir=clip.seg_dir, cmd=STAGE_CMD)
+    require_same_clip(manifest, clip_identity(clip.work_dir), stage="[2]", out_dir=clip.seg_dir,
+                      cmd=stage_cmd(clip.work_dir))
 
 
 def adopt_segment(cfg: PipelineConfig, *, log: Callable[[str], None] = print) -> dict:
@@ -395,14 +404,14 @@ def adopt_segment(cfg: PipelineConfig, *, log: Callable[[str], None] = print) ->
             num = int(json.loads(clip.manifest_path.read_text(encoding="utf-8"))["num_labels"])
         except (OSError, ValueError, KeyError, TypeError):
             raise SegmentError(f"{clip.manifest_path} tidak terbaca / tanpa num_labels — jalankan "
-                               f"{STAGE_CMD} --restart") from None
+                               f"{stage_cmd(clip.work_dir)} --restart --yes") from None
     stems = {Path(n).stem for n in clip.names}
     orphans = [p for d, suffix in ((clip.classmap_dir, CLASSMAP_SUFFIX), (clip.probs_dir, PROBS_SUFFIX))
                for p in sorted(d.glob("frame_*" + suffix)) if p.stem not in stems]
     return adopt_identity(stage="[2]", manifest_path=clip.manifest_path, frames_log=clip.frames_log,
                           work_dir=clip.work_dir, size={"width": clip.width, "height": clip.height},
                           names=clip.names, frame_valid=lambda n: clip.frame_valid(n, num), orphans=orphans,
-                          cmd=STAGE_CMD, log=log)
+                          cmd=stage_cmd(clip.work_dir), log=log)
 
 
 def restart_outputs(clip: Clip) -> None:
@@ -446,10 +455,11 @@ def run_segment(cfg: PipelineConfig, *, restart: bool = False, limit: int | None
         if diff:
             raise SegmentError("output [2] di " + str(clip.seg_dir) + " dibuat dengan setelan berbeda "
                                "(model tidak pernah dicampur dalam satu klip):\n  " + "\n  ".join(diff) +
-                               "\nJalankan dengan --restart untuk menghapus output lama dan mulai dari awal.")
+                               f"\nJalankan {stage_cmd(clip.work_dir)} --restart --yes untuk menghapus output "
+                               f"lama dan mulai dari awal.")
     elif _has_outputs(clip):
         raise SegmentError(f"{clip.seg_dir} berisi output tanpa {MANIFEST_FILENAME} — asal output tidak "
-                           f"diketahui. Jalankan dengan --restart.")
+                           f"diketahui. Jalankan {stage_cmd(clip.work_dir)} --restart --yes.")
     _clean_tmp(clip)
 
     todo = [(i, n) for i, n in zip(clip.indices[:len(selected)], selected)
@@ -647,7 +657,7 @@ def run_qc(cfg: PipelineConfig, *, log: Callable[[str], None] = print) -> dict:
     size = {"width": clip.width, "height": clip.height}
     if manifest.get("frame_size") != size:
         raise SegmentError(f"ukuran frame manifest {manifest.get('frame_size')} ≠ meta.json {size} — "
-                           f"jalankan stage [2] dengan --restart")
+                           f"jalankan {stage_cmd(clip.work_dir)} --restart --yes")
     num = int(manifest["num_labels"])
     invalid = [n for n in clip.names if not clip.frame_valid(n, num)]
     if invalid:
@@ -690,12 +700,13 @@ def download(cfg: PipelineConfig, *, log: Callable[[str], None] = print) -> str:
     return commit
 
 
-# ── Entry point sementara (cli.py = T-104b) ────────
+# ── Entry point stage (dipanggil cli.py, T-104b) ───
 def main(argv: list[str] | None = None, backend_factory: BackendFactory | None = None) -> int:
     p = argparse.ArgumentParser(prog="python -m rotoscope.segment",
                                 description="Stage [2]: frames → seg/classmap + seg/probs + qc_report.json")
     p.add_argument("--config", type=Path, default=None,
                    help=f"YAML pipeline (default: {DEFAULT_CONFIG.as_posix()} kalau ada, selain itu default kode)")
+    add_work_dir_arg(p)
     p.add_argument("--seg-model", choices=("0.8b", "0.4b"), default=None,
                    help="override segment.model (untuk SELURUH klip)")
     p.add_argument("--restart", action="store_true", help="hapus output [2] lama lalu mulai dari awal")
@@ -720,7 +731,8 @@ def main(argv: list[str] | None = None, backend_factory: BackendFactory | None =
         if args.adopt and (args.restart or args.limit is not None or args.qc_only or args.download):
             raise SegmentError("--adopt tidak bisa digabung dengan --restart/--limit/--qc-only/--download")
         path = args.config if args.config is not None else (DEFAULT_CONFIG if DEFAULT_CONFIG.is_file() else None)
-        cfg = load_pipeline(path, overrides={"segment.model": args.seg_model} if args.seg_model else None)
+        cfg = load_pipeline(path, overrides=work_dir_overrides(
+            args.work_dir, {"segment.model": args.seg_model} if args.seg_model else None))
         if args.adopt:
             t0 = time.perf_counter()
             adopt_segment(cfg, log=log)

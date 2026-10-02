@@ -26,8 +26,10 @@ video.mp4
    └─[6]  export ─────► out/animation.mp4 + out/svg/*.svg
 ```
 
-Semua path relatif terhadap `paths.work_dir` (default `work/`) dan `paths.out_dir` (default `out/`).
-`paths.work_dir` boleh diarahkan ke drive lain — data antara ±1–5 GB per klip (lihat anggaran disk).
+Path stage di bawah (`frames/`, `seg/`, `depth/`, `stable/`, …) relatif terhadap **folder kerja klip**
+`<paths.work_dir>/clips/<nama video>/` (default `work/clips/<nama>/`; satu video = satu folder, lihat "CLI"),
+dan `out/` = `paths.out_dir` (default `out/`, tidak per klip). `paths.work_dir` boleh diarahkan ke drive lain —
+data antara ±1–5 GB per klip (lihat anggaran disk).
 
 ## Prinsip (D-010)
 
@@ -98,6 +100,71 @@ memakai output klip lama tanpa error, manifest [2], [2c], [3] (dan export sejak 
 
 ---
 
+## CLI (T-104b, D-010)
+
+`python -m rotoscope <subperintah>` (`src/rotoscope/cli.py` + `__main__.py`; tanpa entry point di `pyproject.toml`,
+tanpa dependency baru). Modul stage tetap bisa dijalankan sendiri (`python -m rotoscope.segment …`) — itu entry point
+internal yang dipanggil cli, bukan cara pakai utama.
+
+| Subperintah | Fungsi |
+|---|---|
+| `run <video>` | ingest → segment → depth → stabilize → export |
+| `ingest\|segment\|depth\|stabilize\|export <video> [flag stage]` | satu stage; sisa argumen diteruskan apa adanya ke `main(argv)` stage (flag stage tidak diparse ulang di cli) |
+| `download [--config P] [--seg-model 0.8b\|0.4b]` | unduh checkpoint (online, sekali jalan): Sapiens2-seg (default **0.8b**; `--seg-model 0.4b` = fallback) **dan** Depth Anything V2 Small + model card. Subprocess mewarisi environment; **tidak** memaksa `HF_HUB_OFFLINE=1` (run biasa offline) |
+
+- **Folder kerja per klip:** `<paths.work_dir>/clips/<stem>/`; `stem` = nama video disanitasi dengan fungsi yang sama
+  dengan `{source}` di `export.filename` (`export.sanitize_source_name`). Layout `clips/` memisahkan data klip dari
+  folder eksperimen di `work/` (`t102c`, `t106`, …) — tanpa daftar nama dicadangkan. `paths.out_dir` tidak berubah.
+- **`--work-dir DIR` di setiap `main()` stage** (ingest sudah punya; segment, depth, stabilize, export sejak
+  T-104b): menang atas `paths.work_dir` config (lewat `overrides`, T-104a — tanpa menulis YAML); `paths.out_dir` tidak
+  berubah. cli selalu menambahkannya sendiri; `--work-dir` di baris perintah cli ditolak (exit 2).
+- **Proses:** stage GPU ([2], [2c]) = **subprocess** `[sys.executable, -m, rotoscope.segment|depth, …]`, stdout/stderr
+  diwariskan (pesan VRAM tetap terbaca), baik lewat `run` maupun subperintah sendiri. Stage CPU (ingest, stabilize,
+  export) = in-process lewat `main(argv)`; `SystemExit` dari argparse stage ditangkap dan menyebut nama stage. Proses
+  induk **tidak meng-import torch** / menyentuh CUDA (diuji di subprocess bersih); cek VRAM tetap tugas stage.
+  Induk menerima `KeyboardInterrupt` / exception saat stage GPU jalan → anak di-`terminate` (lalu `kill` bila macet)
+  dan ditunggu selesai; pesan "dihentikan; jalankan ulang untuk resume".
+- **Pre-flight CPU-only** (`run`; ingest sendiri hanya (a)+(b)) — SEBELUM penghapusan, ingest, atau subprocess apa pun:
+  (a) file video ada; (b) folder kerja tidak berisi klip lain (`meta.json` `source_path` ≠ video, dibandingkan dengan
+  `Path.resolve` yang sama dengan ingest, bukan string mentah); (c) target export `out/<nama>.mp4` tidak milik video
+  lain (`<nama>.export.json` `clip.source_path`; fungsi nama export yang sama; dilewati bila `--limit`). Alasan (c):
+  pengaman export tidak bisa dilewati `--restart`, jadi tanpa ini klip bernama sama baru gagal di stage terakhir
+  setelah ±78 mnt GPU. Pesan bentrok TIDAK menyarankan `--restart`: ganti nama salah satu video (atau ubah
+  `export.filename`).
+- **Ingest di `run` = selalu ulang** (opsi A). `meta.json` byte-deterministik → klip yang sama lolos identitas T-108;
+  video lain yang menimpa path yang sama menulis ulang `meta.json` → identitas berubah → [2]/[2c] menolak (exit 1).
+  (Melewati ingest kalau `meta.json` cocok akan melebarkan batas (c) "Identitas klip": video apa pun di path yang sama
+  tidak terdeteksi.) Ingest hanya detik.
+- **Flag `run`:** `--config`, `--seg-model 0.8b|0.4b` (hanya segment; **tidak pernah fallback otomatis**, D-009),
+  `--limit N` (segment, depth, stabilize, export; export → `<nama>.limitN.mp4`), `--restart-from`, `--yes`.
+  `--adopt` / `--qc-only` hanya di subperintah `segment` / `depth` (`--adopt` hanya keduanya); di `run` → exit 1.
+  Kombinasi terlarang stage ([2]/[2c] `--adopt` + `--restart`/`--limit`/`--qc-only`/`--download`) tetap exit 1.
+- **Restart mengikuti graf dependensi** ingest → {segment, depth} → stabilize → export (depth **tidak** bergantung pada
+  segment). `run --restart-from X` menjalankan stage di bawah ini dengan `--restart`; stage sebelum X berjalan normal
+  (resume), hilir CPU yang basi dihitung ulang otomatis oleh stage-nya (cli tidak menghapusnya):
+
+  | `--restart-from` | stage ber-`--restart` | butuh `--yes` |
+  |---|---|---|
+  | `ingest` | segment, depth, stabilize, export (semua) | ya |
+  | `segment` | hanya [2] (`seg/` + `qc_report.json`); `depth/` utuh | ya |
+  | `depth` | hanya [2c] (`depth/`) | ya |
+  | `stabilize` / `export` | hanya stage itu | tidak |
+
+- **`--yes`:** wajib untuk SETIAP penghapusan hasil GPU lewat cli — `run --restart-from ingest|segment|depth` dan
+  subperintah `segment|depth --restart`. cli membuang `--yes` sebelum meneruskan ke stage. Tanpa `--yes`: cetak apa
+  yang akan dihapus (jumlah file, MiB, estimasi waktu GPU: 0.8b 16.5 s/frame, 0.4b 8 s/frame, depth 0.19 s/frame —
+  konstanta pesan di `cli.py`, bukan parameter), exit 1, tidak ada yang terhapus. Pesan error stage yang menyuruh
+  `--restart` memakai perintah CLI lengkap (`python -m rotoscope segment "<video>" --restart --yes`; `<video>` dari
+  `meta.json`). Setelah `run` yang memakai `--restart-from` gagal, pesan menyebut resume = jalankan ulang TANPA
+  `--restart-from`/`--yes` (kalau tidak, hasil dihapus lagi).
+- **Frame gagal QC:** setelah [2] satu peringatan `N/283 frame gagal QC (indeks: …, maks 10 ditampilkan)`; run lanjut
+  (stage [3] memberi bobot, D-010), exit 0. Tanpa parameter YAML baru.
+- **Exit code `run`:** 0 sukses (atau semua dilewati) | 1 prasyarat gagal (config, pre-flight, VRAM, identitas, flag
+  terlarang, `--limit` < 1) | 2 salah pakai argumen (argparse; juga argparse stage in-process) | 3 OOM di segment/depth |
+  130 dihentikan (Ctrl+C). Kode stage yang gagal dikembalikan apa adanya; pesan menyebut stage + cara resume.
+
+---
+
 ## Kontrak per modul
 
 Resolusi kerja = resolusi `frames/` (`meta.json` `working_width` × `working_height`; klip uji
@@ -109,6 +176,10 @@ diukur saat implementasi.
 - **Out:** `frames/frame_%05d.png`, plus `meta.json` (fps asli, durasi, jumlah frame, resolusi kerja)
 - **Lib:** ffmpeg via subprocess (`fps` + `scale`), ffprobe untuk metadata
 - Resize proporsional. Jangan upscale kalau sumber lebih kecil.
+- **CLI:** `python -m rotoscope ingest <video> [--target-fps N] [--working-width N]` (folder kerja =
+  `<paths.work_dir>/clips/<nama>/`; pre-flight (a)+(b) di bagian "CLI"). Di `run` ingest **selalu** dijalankan ulang
+  (`meta.json` byte-deterministik, jadi klip yang sama lolos identitas T-108). Ingest tidak membaca config (tanpa
+  `--config`); entry point modul: `python -m rotoscope.ingest <video> [--work-dir DIR]`. Exit code 0 / 1.
 
 ### [2] `segment.py` — Sapiens2-seg (GPU, proses sendiri)
 - **In:** `frames/*.png`, `meta.json`; config `segment`, `qc`
@@ -123,9 +194,9 @@ diukur saat implementasi.
     `449b3c5335e6722bb94990abdd1aa6e612432f22`.
   - Saat runtime revision model yang dipakai wajib **commit hash 40-hex**; `null` atau nama branch
     (mis. `main`) → **berhenti**.
-  - Unduhan checkpoint = **langkah terpisah sekali jalan** (online), **bukan** bagian dari run. Sementara:
-    `python -m rotoscope.segment --download [--seg-model 0.4b]` (dibungkus subperintah `download` di
-    T-104b). Revision `null` → unduh `main` lalu cetak hash-nya untuk di-pin.
+  - Unduhan checkpoint = **langkah terpisah sekali jalan** (online), **bukan** bagian dari run:
+    `python -m rotoscope download [--seg-model 0.4b]` (subperintah `download` T-104b: seg + depth; modul:
+    `python -m rotoscope.segment --download`). Revision `null` → unduh `main` lalu cetak hash-nya untuk di-pin.
   - Revision tidak ada di cache → **berhenti** sebelum cek VRAM, dengan pesan jelas + perintah unduh
     yang harus dijalankan.
 - **Inferensi per frame:** logits → interpolasi ke resolusi kerja (di GPU, seperti
@@ -169,13 +240,16 @@ diukur saat implementasi.
 4. **Identitas klip (T-108):** manifest memuat `clip`; klip lain / manifest tanpa `clip` → tolak SEBELUM
    `resolve_revision` / load backend (juga `--limit`, `--qc-only`) — lihat "Identitas klip" di Prinsip.
 
-**Entry point sementara** (sampai `cli.py`, T-104b): `python -m rotoscope.segment [--config PATH]
-[--seg-model 0.8b|0.4b] [--restart] [--limit N] [--qc-only] [--download] [--adopt]`. `--limit N` =
+**CLI** (T-104b): `python -m rotoscope segment <video> [--config PATH] [--seg-model 0.8b|0.4b] [--restart --yes]
+[--limit N] [--qc-only] [--adopt]` (unduh: `python -m rotoscope download`); di dalam `run` stage ini = subprocess
+`python -m rotoscope.segment --work-dir <folder klip> …`. Modul menerima `--work-dir DIR` (menang atas
+`paths.work_dir`; `paths.out_dir` tidak berubah) dan `--download`; `--yes` hanya ada di cli (membuang sebelum
+meneruskan; `--restart` tanpa `--yes` → exit 1, tidak ada yang dihapus). `--limit N` =
 pastikan N frame pertama valid (QC dilewati kecuali semua frame klip valid); `--qc-only` tanpa GPU/torch,
 butuh semua frame valid. `--adopt` = catat identitas klip ke manifest lama tanpa inferensi (terukur klip
 uji 283 frame: 8.45 s); tidak bisa digabung dengan `--restart` / `--limit` / `--qc-only` / `--download`.
 
-**Exit code** (dipakai `cli.py`, T-104b):
+**Exit code** (diteruskan apa adanya oleh `cli.py`, T-104b; tabel `run`: bagian "CLI"):
 
 | kode | arti |
 |---|---|
@@ -248,9 +322,11 @@ dan temporal fill tidak cukup. D-002 (pose hanya fallback, bukan primary) tetap 
 - **Identitas klip (T-108):** sama dengan [2] — klip lain / manifest tanpa `clip` → tolak SEBELUM
   `resolve_revision` / load backend (juga `--limit`); jalan: `--restart`, atau `--adopt` untuk manifest lama
   tanpa `clip`. Semua frame valid + identitas cocok → model tidak dimuat (terukur klip uji: 0 diproses, 8.5 s).
-- **Entry point sementara** (sampai `cli.py`, T-104b): `python -m rotoscope.depth [--config PATH]
-  [--restart] [--limit N] [--download] [--adopt]`. Exit code sama dengan [2] (0 / 1 / 3). `--adopt`: lihat
-  [2] (0.70 s pada klip uji).
+- **CLI** (T-104b): `python -m rotoscope depth <video> [--config PATH] [--restart --yes] [--limit N] [--adopt]`
+  (unduh: `python -m rotoscope download`); di dalam `run` = subprocess `python -m rotoscope.depth --work-dir
+  <folder klip> …`. Modul menerima `--work-dir DIR` (menang atas `paths.work_dir`) dan `--download`; `--yes` hanya
+  ada di cli (`--restart` tanpa `--yes` → exit 1, tidak ada yang dihapus). Exit code sama dengan [2] (0 / 1 / 3).
+  `--adopt`: lihat [2] (0.70 s pada klip uji).
 
 ### [3] `stabilize.py` — stage tersulit, alokasikan waktu paling banyak (CPU)
 - **In:** `seg/probs/`, `seg/classmap/` (tie-break seri, T-106), `seg/manifest.json`, `depth/`,
@@ -318,9 +394,10 @@ dan temporal fill tidak cukup. D-002 (pose hanya fallback, bukan primary) tetap 
   basi; [2] tidak. Output tanpa manifest → ditolak. `--restart` menghapus `stable/` saja. [3] tidak punya
   `--adopt`.
 - `stabilize.temporal.enabled: true` → berhenti (belum diimplementasi, T-302/T-303).
-- **Entry point sementara** (sampai `cli.py`, T-104b): `python -m rotoscope.stabilize [--config PATH]
-  [--restart] [--limit N]`. Exit code sama dengan [2]: 0 sukses, 1 prasyarat gagal (3 tidak dipakai —
-  tanpa GPU).
+- **CLI** (T-104b): `python -m rotoscope stabilize <video> [--config PATH] [--restart] [--limit N]`; di dalam `run`
+  dipanggil in-process `stabilize.main([--work-dir <folder klip>, …])` (`--work-dir DIR` menang atas
+  `paths.work_dir`). `--restart` stage CPU tidak butuh `--yes`. Exit code sama dengan [2]: 0 sukses, 1 prasyarat
+  gagal (3 tidak dipakai — tanpa GPU).
 
 ### [4] `vectorize.py` (CPU)
 - **In:** `stable/groups/`, `stable/depth_smooth/`, `stable/manifest.json`; config `groups`, `vectorize`
@@ -432,9 +509,11 @@ dan temporal fill tidak cukup. D-002 (pose hanya fallback, bukan primary) tetap 
   - file tujuan ada dan manifest menunjuk video sumber **LAIN** → **ditolak** (ubah `export.filename`, atau
     pindah / hapus file itu); `--restart` **tidak** melewati pengaman ini;
   - file tujuan ada **tanpa manifest** → **ditolak** (asal tidak diketahui); `--restart` menimpa.
-- **Entry point sementara** (sampai `cli.py`, T-104b): `python -m rotoscope.export [--config PATH] [--restart]
-  [--limit N]`; `--limit N` → `<nama>.limitN.mp4` (preview; tanpa manifest, tanpa pengaman, tidak menyentuh
-  hasil utama). Exit code: 0 sukses, 1 prasyarat gagal (3 tidak dipakai — tanpa GPU).
+- **CLI** (T-104b): `python -m rotoscope export <video> [--config PATH] [--restart] [--limit N]`; di dalam `run`
+  dipanggil in-process `export.main([--work-dir <folder klip>, …])` (`--work-dir DIR` menang atas `paths.work_dir`;
+  `paths.out_dir` tidak berubah). `--limit N` → `<nama>.limitN.mp4` (preview; tanpa manifest, tanpa pengaman, tidak
+  menyentuh hasil utama). Exit code: 0 sukses, 1 prasyarat gagal (3 tidak dipakai — tanpa GPU). Bentrok target export
+  dengan video lain dicek lebih awal oleh pre-flight (c) `run` (bagian "CLI").
 - **Identitas klip (T-108):** `stable/manifest.json` tanpa `clip` / milik klip lain → berhenti (jalankan ulang
   [3]; output basi dihitung ulang otomatis). Field `clip` manifest export memakai helper bersama
   `stage_common.clip_identity_from_bytes` (bentuk sama dengan sebelumnya).
@@ -499,7 +578,7 @@ rotoscope/
 ├── src/rotoscope/
 │   ├── ingest.py  segment.py  depth.py  fallback_pose.py (ditunda)
 │   ├── stabilize.py  vectorize.py  stylize.py  export.py
-│   ├── config.py  cli.py
+│   ├── config.py  cli.py  __main__.py   # python -m rotoscope (T-104b)
 │   ├── stage_common.py   # helper bersama stage: tulis atomik + retry, frames.jsonl, daftar frame,
 │   │                     # error/exit code; khusus GPU: offline/revision/cache HF, VRAM, OOM (T-105)
 │   └── data/sapiens2_classes.json   # nama 29 kelas (data paket)
@@ -509,7 +588,7 @@ rotoscope/
 ├── assets/        # brushes/, paper/
 ├── scripts/       # smoke_test.py, alat sekali pakai (A/B, T-102c)
 ├── samples/       # video test (tidak di-commit)
-├── work/          # intermediate (paths.work_dir), gitignored
+├── work/          # intermediate (paths.work_dir), gitignored; klip di work/clips/<nama video>/
 ├── out/           # hasil (paths.out_dir), gitignored
 └── tests/
 ```
@@ -518,7 +597,7 @@ rotoscope/
 
 | Phase | Isi | Selesai kalau |
 |---|---|---|
-| 1 | config loader (T-104a) → segment + QC (T-102b) → depth (T-105) → stabilize spasial saja, temporal off (T-106) → export naif (T-103) → cli (T-104b) | Pipeline end-to-end jalan (siluet blok peta grup → MP4) |
+| 1 | config loader (T-104a) → segment + QC (T-102b) → depth (T-105) → stabilize spasial saja, temporal off (T-106) → export naif (T-103) → cli (T-104b) | Pipeline end-to-end jalan (siluet blok peta grup → MP4) — **tercapai** (T-104b, 2026-10-01; `python -m rotoscope run samples/test_short.mp4`) |
 | 2 | vectorize: siluet + lubang + batas grup (T-201a), garis oklusi (T-201b), anchor + `track_id` (T-202) → stylize basic, satu renderer + parameter per tipe (T-203) → `--preview` (T-204) | Sudah keluar outline |
 | 3 | temporal pada probabilitas grup + kedalaman ternormalisasi (T-302, T-303) → `boil_preserve` (T-304) → kalibrasi ulang N/K/M/D/L/persentil/`min_hole_area` (T-305) | Flicker terkendali |
 | 4 | style params lengkap + SVG export | Bisa ganti style dari config |

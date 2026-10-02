@@ -21,8 +21,9 @@ dihapus dan dihitung ulang otomatis dengan peringatan (stage CPU murah + determi
 `clip` juga basi (dihitung ulang sekali). Output tanpa manifest → ditolak. --restart = paksa hitung ulang.
 Input [2]/[2c] yang milik klip lain / tanpa identitas → ditolak (load_inputs); [3] tidak punya --adopt.
 
-Uji manual (entry point sementara sampai cli.py, T-104b):
-    python -m rotoscope.stabilize [--config PATH] [--restart] [--limit N]
+CLI final (T-104b): python -m rotoscope stabilize <video> [--config PATH] [--restart] [--limit N]; atau seluruh
+pipeline: python -m rotoscope run <video>. cli.py memanggil main() ini in-process dengan --work-dir <folder klip>:
+    python -m rotoscope.stabilize [--config PATH] [--work-dir DIR] [--restart] [--limit N]
 Exit code: 0 sukses, 1 prasyarat gagal (3 = OOM tidak dipakai di stage CPU).
 """
 
@@ -47,8 +48,9 @@ from rotoscope.config import (
     ConfigError, PipelineConfig, ensure_dir, load_class_names, load_pipeline, section_hash, to_dict,
 )
 from rotoscope.stage_common import (
-    CLIP_KEY, EXIT_OK, EXIT_PRECONDITION, StageError, append_jsonl, clean_tmp, clip_identity, describe_identity,
-    last_frame_records, load_frame_list, reconfigure_stdio, utc_now, write_bytes_atomic, write_json_atomic,
+    CLIP_KEY, EXIT_OK, EXIT_PRECONDITION, StageError, add_work_dir_arg, append_jsonl, clean_tmp, cli_cmd,
+    clip_identity, describe_identity, last_frame_records, load_frame_list, reconfigure_stdio, utc_now,
+    work_dir_overrides, write_bytes_atomic, write_json_atomic,
 )
 
 # ── Layout output (docs/01 [3]) ────────────────────
@@ -295,25 +297,26 @@ def load_inputs(clip: Clip) -> tuple[dict, dict]:
     dep_m = _read_manifest(clip.depth_clip.manifest_path, "[2c] depth")
     size = {"width": clip.width, "height": clip.height}
     current = clip_identity(clip.work_dir)
-    for label, m, stage, cmd in (("seg/manifest.json", seg_m, "[2]", "python -m rotoscope.segment"),
-                                 ("depth/manifest.json", dep_m, "[2c]", "python -m rotoscope.depth")):
+    seg_cmd, dep_cmd = seg.stage_cmd(clip.work_dir), dep.stage_cmd(clip.work_dir)
+    for label, m, stage, cmd in (("seg/manifest.json", seg_m, "[2]", seg_cmd),
+                                 ("depth/manifest.json", dep_m, "[2c]", dep_cmd)):
         old = m.get(CLIP_KEY)
         if not isinstance(old, dict) or not old.get("meta_sha256"):
             raise StageError(f"{label} tidak memuat identitas klip (manifest lama) — tidak diketahui milik klip "
                              f"mana. Kalau output {stage} memang milik klip ini: {cmd} --adopt; "
-                             f"kalau bukan / ragu: {cmd} --restart")
+                             f"kalau bukan / ragu: {cmd} --restart --yes")
         if old["meta_sha256"] != current["meta_sha256"]:
             raise StageError(f"{label} milik klip LAIN: output {stage} = {describe_identity(old)}, meta.json "
-                             f"saat ini = {describe_identity(current)}. Jalankan {cmd} --restart, atau ingest "
-                             f"klip yang benar ke work_dir ini")
-    for label, m in (("seg/manifest.json", seg_m), ("depth/manifest.json", dep_m)):
+                             f"saat ini = {describe_identity(current)}. Jalankan {cmd} --restart --yes, atau "
+                             f"ingest klip yang benar ke work_dir ini")
+    for label, m, cmd in (("seg/manifest.json", seg_m, seg_cmd), ("depth/manifest.json", dep_m, dep_cmd)):
         if m.get("frame_size") != size:
             raise StageError(f"{label}: frame_size {m.get('frame_size')} ≠ meta.json {size} — jalankan ulang "
-                             f"stage itu dengan --restart")
+                             f"stage itu: {cmd} --restart --yes")
     classes = list(load_class_names())
     if seg_m.get("classes") != classes or seg_m.get("num_labels") != len(classes):
         raise StageError("seg/manifest.json: daftar kelas / num_labels ≠ src/rotoscope/data/sapiens2_classes.json "
-                         "— pemetaan kelas → grup akan salah. Jalankan ulang stage [2] dengan --restart")
+                         f"— pemetaan kelas → grup akan salah. Jalankan ulang stage [2]: {seg_cmd} --restart --yes")
     return seg_m, dep_m
 
 
@@ -419,7 +422,7 @@ def run_stabilize(cfg: PipelineConfig, *, restart: bool = False, limit: int | No
             restart_outputs(clip)
     elif _has_outputs(clip):
         raise StageError(f"{clip.stable_dir} berisi output tanpa {MANIFEST_FILENAME} — asal output tidak "
-                         f"diketahui. Jalankan dengan --restart.")
+                         f"diketahui. Jalankan {cli_cmd('stabilize', clip.work_dir)} --restart.")
     clean_tmp(clip.stable_dir)
 
     todo = [(i, n) for i, n in zip(clip.indices[:len(selected)], selected) if not clip.frame_valid(n, n_groups)]
@@ -466,12 +469,13 @@ def run_stabilize(cfg: PipelineConfig, *, restart: bool = False, limit: int | No
     return run
 
 
-# ── Entry point sementara (cli.py = T-104b) ────────
+# ── Entry point stage (dipanggil cli.py, T-104b) ───
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="python -m rotoscope.stabilize",
                                 description="Stage [3]: seg/probs + depth → stable/ (peta grup + kedalaman ternormalisasi)")
     p.add_argument("--config", type=Path, default=None,
                    help=f"YAML pipeline (default: {DEFAULT_CONFIG.as_posix()} kalau ada, selain itu default kode)")
+    add_work_dir_arg(p)
     p.add_argument("--restart", action="store_true", help="hapus output [3] lama (stable/) lalu hitung ulang")
     p.add_argument("--limit", type=int, default=None, help="hanya N frame pertama")
     args = p.parse_args(argv)
@@ -482,7 +486,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         path = args.config if args.config is not None else (DEFAULT_CONFIG if DEFAULT_CONFIG.is_file() else None)
-        cfg = load_pipeline(path)
+        cfg = load_pipeline(path, overrides=work_dir_overrides(args.work_dir))
         t0 = time.perf_counter()
         run = run_stabilize(cfg, restart=args.restart, limit=args.limit, log=log)
         log(f"selesai: {run['processed']} diproses, {run['skipped']} dilewati ({time.perf_counter() - t0:.1f} s)")

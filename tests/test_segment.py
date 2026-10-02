@@ -412,7 +412,7 @@ def test_main_rejects_flag_combinations(tmp_path):
 def test_revision_null_stops(tmp_path):
     work = make_work(tmp_path)
     f = factory()
-    with pytest.raises(SegmentError, match=r"(?s)segment\.revision\.0\.8b = null.*--download"):
+    with pytest.raises(SegmentError, match=r"(?s)segment\.revision\.0\.8b = null.*rotoscope download --seg-model 0\.8b"):
         run_segment(make_cfg(work, **{"segment.revision": {"0.8b": None}}), backend_factory=f, log=quiet)
     assert f.made == []  # berhenti sebelum backend dibuat
 
@@ -425,7 +425,7 @@ def test_revision_must_be_commit_hash(tmp_path, rev):
 
 def test_revision_not_in_cache_gives_download_command(tmp_path):
     cfg = make_cfg(make_work(tmp_path), **{"segment.model": "0.4b"})
-    with pytest.raises(SegmentError, match=r"(?s)tidak ada di cache HF.*python -m rotoscope\.segment --download "
+    with pytest.raises(SegmentError, match=r"(?s)tidak ada di cache HF.*python -m rotoscope download "
                                            r"--seg-model 0\.4b"):
         seg.TorchSegBackend(cfg, cache_dir=tmp_path / "hf_cache").describe()
 
