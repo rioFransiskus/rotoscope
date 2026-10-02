@@ -897,15 +897,33 @@ Tiga langkah, jadikan refleks:
 
 # PHASE 2 — Vectorize + stylize basic
 
-### T-201a · Siluet + lubang + batas grup · `TODO`
+### T-201a · Siluet + lubang + batas grup · `DONE`
 - **Kerjakan:** kontrak stage [4] `docs/01`: `cv2.findContours` mode `RETR_CCOMP` pada foreground
   `stable/groups` → `silhouette` (kontur luar ≥ `min_region_area`) + `silhouette_hole` (lubang ≥
   `min_hole_area`; ruang negatif tertutup wajib digambar); batas antar pasangan grup → `group_boundary`
   (polyline terbuka); filter komponen garis M = 5 sebelum thinning, tracing, `min_stroke_px`
-- **Done when:** `work/contours/*.json` berisi polyline bertipe sesuai skema `docs/01`
+- **Done when:** `work/clips/<stem>/contours/*.json` berisi polyline bertipe sesuai skema `docs/01`
 - **Update log:**
   - [2026-09-29] Dipecah dari T-201; siluet termasuk lubang (bukan `RETR_EXTERNAL` saja);
     `approxPolyDP` pindah ke stage [5] — D-010
+  - [2026-10-02] DONE — `src/rotoscope/vectorize.py` (CPU, tanpa torch) + subperintah `python -m rotoscope vectorize <video>
+    [--restart] [--limit N]` (belum di `run` sampai T-203). Keputusan Rio: `anchor` / `track_id` tidak ditulis (key strok
+    `{type, closed, groups, points}`); padding 1 px (kontur tertutup, garis tepi frame → T-203); [4] belum masuk `run`.
+    Filter ukuran = jumlah piksel (bukan `contourArea`); koordinat = pusat piksel (i + 0.5); `contours/manifest.json` baru
+    (`contract` `T-201a`, `algo_rev` 2, hash hanya 4 parameter T-201a, identitas klip, basi otomatis). Pelacak batas grup:
+    junction = **crossing number ≥ 3** (bukan ≥ 3 tetangga: versi pertama hanya mencakup 21,0% / 22,7% skeleton), `prune_redundant`,
+    klaster junction + titik wakil, **thinning Guo-Hall** (Zhang-Suen mengikis diagonal 45°; penyimpangan dari Opsi 1, `docs/04`).
+    Terukur (`test_short` 119 / `test` 283 frame): 29–30 ms/frame (p95 34–35 ms, 0 frame > 1 s), JSON 4.4 / 11.0 MB; cakupan
+    skeleton 99,83% / 99,74%, cakupan band 99,79% / 99,71%; titik berulang 0, loncatan 0; hash `contours/frame_*.json` identik
+    antar run dari nol. Lubang mentah → lolos: 292 → 203 / 703 → 470; komponen luar dibuang 3 / 45; loop `group_boundary`
+    25 / 57; foreground menyentuh tepi bawah 119/119 dan 283/283. Test: `tests/test_vectorize.py` (69 kasus) +
+    `tests/skeleton_metrics.py` (metrik cakupan permanen) + 2 di `test_cli.py`; suite penuh 541 lolos / 2 skip (470 → 541);
+    15 test pelacak gagal bila detektor lama dipasang kembali (plugin pytest di luar repo). Alat: `scripts/contour_overlay.py`.
+    Penilaian visual Rio (overlay `_fix1` + PNG kasus terburuk): garis hijau kontinu, tidak memendek / terlepas, tanpa garis
+    ganda / cabang liar / lingkaran kecil; frame 156 (celah 9 px) tidak mengganggu; siluet + lubang OK; lubang dibuang
+    (`min_hole_area` 200) tidak ada yang seharusnya digambar; garis magenta di tepi frame wajar. Batas yang diketahui (`docs/04`
+    "Hasil T-201a"): cakupan skeleton buta terhadap pengikisan thinning (pelengkap: cakupan band); 2 / 6 frame < 98% (komponen
+    terisolasi 15–17 px); `docs/01` [4] + [5] + CLI, `docs/04` D-010 "Hasil T-201a" diperbarui
 
 ### T-201b · Garis oklusi kedalaman · `TODO`
 - **Kerjakan:** kontrak stage [4] `docs/01`: dari `stable/depth_smooth` apa adanya (tanpa log kedua) →
@@ -940,6 +958,15 @@ Tiga langkah, jadikan refleks:
 ### T-203 · `stylize.py` garis polos · `TODO`
 - **Kerjakan:** `approxPolyDP` → Catmull-Rom → resample dari anchor, render stroke tebal seragam,
   warna solid. Satu renderer untuk semua `type`, override `stroke.by_type`
+- **⚠️ Keputusan tertunda dari T-201a (wajib, seperti `output_width`):**
+  - **Run titik di tepi frame:** foreground menyentuh tepi bawah di **283/283** frame `test` dan **119/119** `test_short`
+    (tepi kanan 59/283); kontur `silhouette` memuat run titik tepat di baris/kolom tepi (y = H − 0.5, x = 0.5, x = W − 0.5).
+    T-203 **WAJIB memutuskan** penanganannya (sembunyikan / pudarkan / gambar) **SEBELUM implementasi**
+  - **Urutan `run`:** T-203 memasukkan [4] dan [5] ke urutan `run`, ke tabel restart DAG (`docs/01` "CLI") dan menyalakan
+    `export.source: "strokes"`; `--restart-from vectorize|stylize` ikut ditambahkan
+  - **`group_boundary` loop** = `closed: false` dengan titik akhir = titik awal (25 di `test_short`, 57 di `test`): taper
+    ujung **tidak boleh menipiskan sambungan** (kenali loop dari titik akhir = titik awal)
+  - Konvensi koordinat pusat piksel: skala `output_width` langsung, x' = s · x (`docs/01` [4])
 - **Done when:** output sudah berupa outline, bukan siluet blok
 - **Update log:**
   - [2026-09-27] Keputusan tertunda: tambah parameter `output_width` (mis. 1080) terpisah dari
@@ -1094,11 +1121,11 @@ Tiga langkah, jadikan refleks:
 |---|---|---|
 | 0 Setup | T-001 … T-005 | 5/5 |
 | 1 Skeleton | T-101 … T-108 (T-102 → a/b/c, T-104 → a/b) — ✅ **Phase 1 selesai** (🎯 milestone T-104b, T-107 DONE) | 11/11 |
-| 2 Vectorize | T-201 … T-204 (T-201 → a/b) | 0/5 |
+| 2 Vectorize | T-201 … T-204 (T-201 → a/b) — T-201a ✅ DONE | 1/5 |
 | 3 Stabilize | T-301 … T-305 (T-301 SKIP) | 0/5 |
 | 4 Style | T-401 … T-406 | 0/6 |
 | 5 Fallback | T-501 … T-502 (BLOCKED) | 0/2 |
 | 6 Opsional | T-601 … T-603 | 0/3 |
 
-**Total: 37 task** (5 + 11 + 5 + 5 + 6 + 2 + 3) · Selesai: 16/37 (5 + 11; SKIP — T-301, T-601 — tidak dihitung selesai).
+**Total: 37 task** (5 + 11 + 5 + 5 + 6 + 2 + 3) · Selesai: 17/37 (5 + 11 + 1; SKIP — T-301, T-601 — tidak dihitung selesai).
 Rekonsiliasi 2026-10-01: sebelum T-104b selesai papan menulis 9/11 + 13/37, padahal 5 + 9 = 14 — total salah hitung 1.

@@ -21,12 +21,13 @@ Segmentation → Contour → Stylized stroke. MediaPipe Pose hanya fallback untu
 | 2b | fallback_pose.py | DITUNDA (BLOCKED, D-010) — frame gagal QC diberi bobot temporal kecil di stage 3 |
 | 2c | depth.py | frames → work/depth/*.npy (disparity mentah DA-V2 Small) + work/depth/manifest.json |
 | 3 | stabilize.py | seg/probs + depth + qc_report → work/stable/groups/*.png (peta grup) + work/stable/depth_smooth/*.npy (temporal EMA + optical flow, filter pulau + mode filter) |
-| 4 | vectorize.py | stable/ → work/contours/*.json (polyline bertipe: silhouette, silhouette_hole, group_boundary, occlusion) + work/contours/clip_stats.json |
+| 4 | vectorize.py | stable/ → work/contours/*.json (polyline bertipe: silhouette, silhouette_hole, group_boundary, occlusion) + work/contours/manifest.json (+ clip_stats.json, T-201b). T-201a DONE: siluet + lubang + batas grup; oklusi (T-201b) dan anchor/track_id (T-202) belum. Subperintah `vectorize`, belum masuk `run` sampai T-203 |
 | 5 | stylize.py | contours + style YAML → work/strokes/*.svg + *.png |
 | 6 | export.py | strokes → out/animation.mp4 + out/svg/*.svg |
 
 Path `work/…` di tabel = relatif terhadap folder kerja klip `work/clips/<nama video>/` (T-104b).
-Cara pakai: `python -m rotoscope run <video>`; per stage: `python -m rotoscope <stage> <video>`; unduh model:
+Cara pakai: `python -m rotoscope run <video>`; per stage: `python -m rotoscope <stage> <video>` (stage = ingest, segment, depth,
+stabilize, vectorize, export; `vectorize` belum ada di `run`); unduh model:
 `python -m rotoscope download` (bagian "CLI" di docs/01). Hasil GPU hanya dihapus dengan `--yes`.
 Kontrak lengkap per modul: docs/01-PIPELINE-SPEC.md. Parameter style: docs/02-STYLE-PARAMS.md.
 

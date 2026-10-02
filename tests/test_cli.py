@@ -22,7 +22,7 @@ from rotoscope import segment as seg
 from rotoscope import stabilize as stb
 from rotoscope.stage_common import HF_OFFLINE_ENV, StageError
 
-CPU_STAGES = ("ingest", "stabilize", "export")
+CPU_STAGES = ("ingest", "stabilize", "vectorize", "export")
 
 
 @pytest.fixture(autouse=True)
@@ -340,6 +340,25 @@ def test_subcommand_passthrough_flags(rec, tmp_path):
     assert rec.args("export")[-2:] == ["--limit", "3"]
     assert "--restart" in rec.args("stabilize")             # CPU: tanpa --yes
     assert all("--work-dir" in c[2] for c in rec.calls)
+
+
+def test_vectorize_subcommand_only_not_in_run(rec, tmp_path):
+    """T-201a: [4] = subperintah sendiri (CPU, tanpa --yes); belum masuk urutan `run` (menunggu T-203)."""
+    video = make_video(tmp_path)
+    assert run_cli("vectorize", str(video), "--limit", "2", "--restart") == 0
+    a = rec.args("vectorize")
+    assert a[0] == "--work-dir" and Path(a[1]).name == "clip" and "--restart" in a and a[-2:] == ["--limit", "2"]
+    assert "--yes" not in a and rec.stages == ["vectorize"]
+    assert run_cli("vectorize", str(video), "--work-dir", "x") == 2
+    assert "vectorize" not in cli.STAGES and "vectorize" not in cli.RESTART_SCOPE["ingest"]
+
+
+def test_work_dir_flag_vectorize(tmp_path):
+    import test_vectorize as tvec
+    from rotoscope import vectorize as vec_stage
+    work, wrong = tvec.make_work(tmp_path), tmp_path / "salah"
+    assert vec_stage.main(["--config", str(_conf(tmp_path, wrong)), "--work-dir", str(work), "--limit", "1"]) == 0
+    assert (work / "contours" / "manifest.json").is_file() and not wrong.exists()
 
 
 def test_subcommand_ingest_preflight_and_no_restart(rec, tmp_path, capsys):

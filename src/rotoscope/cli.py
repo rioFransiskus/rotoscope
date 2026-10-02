@@ -2,7 +2,7 @@
 
     python -m rotoscope run <video> [--config PATH] [--seg-model 0.8b|0.4b] [--limit N]
                                     [--restart-from ingest|segment|depth|stabilize|export [--yes]]
-    python -m rotoscope ingest|segment|depth|stabilize|export <video> [flag stage ...]
+    python -m rotoscope ingest|segment|depth|stabilize|vectorize|export <video> [flag stage ...]
     python -m rotoscope download [--config PATH] [--seg-model 0.8b|0.4b]
 
 Satu video = satu folder kerja `<paths.work_dir>/clips/<nama video disanitasi>/` (nama disanitasi dengan fungsi
@@ -11,7 +11,8 @@ lewat `--work-dir` (menang atas config) — tanpa menulis YAML.
 
 Prinsip #3 docs/01: stage GPU ([2] segment, [2c] depth) selalu proses sendiri (subprocess; stdout/stderr
 diteruskan apa adanya) dan proses induk TIDAK meng-import torch / menyentuh CUDA. Stage CPU (ingest, stabilize,
-export) dipanggil in-process lewat main(argv) stage-nya, jadi flag stage tidak diparse ulang di sini.
+vectorize, export) dipanggil in-process lewat main(argv) stage-nya, jadi flag stage tidak diparse ulang di sini.
+[4] vectorize (T-201a) hanya subperintah sendiri; masuk urutan `run` bersama [5] di T-203.
 
 Exit code: 0 sukses | 1 prasyarat gagal (config, pre-flight, VRAM, identitas, ...) | 2 salah pakai argumen |
 3 OOM di stage GPU | 130 dihentikan (Ctrl+C). Kode stage yang gagal dikembalikan apa adanya.
@@ -33,6 +34,7 @@ from pathlib import Path
 from rotoscope import export as export_stage
 from rotoscope import ingest as ingest_stage
 from rotoscope import stabilize as stabilize_stage
+from rotoscope import vectorize as vectorize_stage
 from rotoscope.config import ConfigError, PipelineConfig, load_pipeline
 from rotoscope.export import DEFAULT_CONFIG, manifest_path_for, read_manifest, resolve_filename, sanitize_source_name
 from rotoscope.ingest import META_FILENAME
@@ -47,7 +49,7 @@ PROG = "python -m rotoscope"
 STAGES = ("ingest", "segment", "depth", "stabilize", "export")      # urutan run
 GPU_STAGES = ("segment", "depth")
 LABELS = {"ingest": "[1] ingest", "segment": "[2] segment", "depth": "[2c] depth",
-          "stabilize": "[3] stabilize", "export": "[6] export"}
+          "stabilize": "[3] stabilize", "vectorize": "[4] vectorize", "export": "[6] export"}
 MODULES = {"segment": "rotoscope.segment", "depth": "rotoscope.depth"}
 
 # Graf dependensi: ingest → {segment, depth} → stabilize → export; depth TIDAK bergantung pada segment.
@@ -63,7 +65,8 @@ TERMINATE_TIMEOUT_S = 10
 
 _popen = subprocess.Popen                       # seam untuk test (subprocess dipalsukan)
 CPU_MAINS: dict[str, Callable[[list[str]], int]] = {
-    "ingest": ingest_stage.main, "stabilize": stabilize_stage.main, "export": export_stage.main,
+    "ingest": ingest_stage.main, "stabilize": stabilize_stage.main, "vectorize": vectorize_stage.main,
+    "export": export_stage.main,
 }
 
 
@@ -153,7 +156,7 @@ def _tree_stats(paths: Sequence[Path]) -> tuple[int, int]:
 def _targets(stage: str, ctx: Ctx) -> list[Path]:
     w = ctx.work_dir
     return {"segment": [w / "seg", w / QC_REPORT_FILENAME], "depth": [w / "depth"],
-            "stabilize": [w / "stable"], "export": []}[stage]
+            "stabilize": [w / "stable"], "vectorize": [w / "contours"], "export": []}[stage]
 
 
 def deletion_preview(stages: Sequence[str], ctx: Ctx) -> str:
@@ -383,6 +386,8 @@ def build_parser() -> argparse.ArgumentParser:
                         ("depth", "[2c] Depth Anything V2 Small (GPU, proses sendiri); flag: --restart --yes "
                                   "--limit --adopt"),
                         ("stabilize", "[3] peta grup + kedalaman ternormalisasi; flag: --restart --limit"),
+                        ("vectorize", "[4] stable/groups → contours/ (siluet, lubang, batas grup; belum ada di "
+                                      "`run`); flag: --restart --limit"),
                         ("export", "[6] stable/groups → out/<nama>.mp4; flag: --restart --limit")):
         s = sub.add_parser(stage, help=text, description=text)
         s.add_argument("video", type=Path, help="video sumber (menentukan folder kerja klip)")

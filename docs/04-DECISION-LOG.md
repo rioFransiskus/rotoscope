@@ -404,6 +404,70 @@ dan venv (opsi B′, keputusan Rio).
 - `scripts/ab_segment.py` diberi anotasi arsip (backend u2net tidak bisa dijalankan lagi); cache model
   `C:\Users\LEGION\.rembg` (167,84 MiB) dihapus
 
+**Hasil T-201a (2026-10-02)** — `src/rotoscope/vectorize.py` (CPU, tanpa torch), strok `silhouette`, `silhouette_hole`,
+`group_boundary`; klip `test_short` (119 frame) dan `test` (283 frame), 480×854. Kontrak lengkap: `docs/01` [4].
+- **Keputusan (Rio menyetujui rencana Tahap 1, semuanya):**
+  - `anchor` / `track_id` **tidak ditulis** (key tiap strok persis `{type, closed, groups, points}`; manifest `pending`);
+    nilai sementara ditolak karena menghasilkan animasi salah tanpa pesan error (P-004 / P-007)
+  - Filter ukuran = **jumlah piksel**, bukan `cv2.contourArea` (bias berlawanan untuk kontur luar vs lubang; persegi
+    20×40 = 800 px → `contourArea` 741)
+  - Foreground di-pad 1 px background → kontur tetap tertutup; garis tepi frame ditangani di T-203
+  - Koordinat = pusat piksel (i + 0.5), skala ke `output_width` langsung (x' = s · x); pembulatan 0.1 px = no-op permanen
+  - Hash `vectorize_hash` hanya 4 parameter T-201a (bukan seluruh section); manifest `contours/manifest.json` baru +
+    `contract` + `algo_rev` (naik tiap perbaikan perilaku tanpa perubahan parameter; sekarang 2)
+  - [4] **belum masuk `run`** sampai T-203 (stage setengah jadi yang tidak dipakai export bisa menghalangi MP4)
+- **Alternatif ditolak:** `anchor = 0` / `track_id` = indeks urut (nilai palsu); membuang segmen di tepi frame (kontur
+  terbuka, bertentangan dengan skema `closed: true`); `contourArea` untuk filter; hash seluruh section `vectorize`
+  (output siluet basi tanpa sebab saat T-201b / T-202 mengubah `depth_lines` / `track`); `group_boundary` loop sebagai
+  `closed: true` (memecah tabel skema); junction "≥ 3 tetangga" (di bawah)
+- **Angka terukur** (default config): 24 ms/frame (versi pertama) → **29–30 ms/frame** rata-rata (p95 34–35 ms, maks 50 ms,
+  0 frame > 1 s) setelah perbaikan junction; JSON 4.4 MB (36.9 KB/frame) / 11.0 MB (38.9 KB/frame); determinisme: hash
+  `contours/frame_*.json` identik antar dua run dari nol (`test_short` 119 berkas 4 387 010 B `fa8425d0…af2dd5`; `test` 283
+  berkas 10 998 919 B `48a8ca7a…1375`). Per frame: silhouette 1 / 1 / 1–3 (min / median / maks), lubang 0 / 2 / 4,
+  `group_boundary` 4–5 / 8 / 14. Lubang mentah vs lolos `min_hole_area` = 200: 292 → 203 (`test_short`), 703 → 470
+  (`test`); luas yang dibuang median 65–76 px, p90 154–155 px, maks 198–199 px (Rio menilai: tidak ada yang seharusnya
+  digambar). Komponen luar dibuang `min_region_area` = 800: 3 dari 122 dan 45 dari 340. Foreground menyentuh tepi bawah
+  283/283 dan 119/119 frame (tepi kanan 59/283)
+- **Koreksi di tengah jalan (versi pertama salah):** junction = "≥ 3 tetangga" (look test) membuat ±73% piksel skeleton
+  Zhang-Suen terhitung junction → garis hijau hanya 21,0% / 22,7% tercakup (spur "dibuang" 4795 / 13 036, 70% berpanjang
+  1–2 px = artefak tangga). Laporan Tahap 3 saya sempat menyebut ini tidak merusak — spekulasi tanpa dasar, salah. Metrik
+  cakupan (skeleton ≤ 1 px dari polyline) menemukannya. Perbaikan (Rio menyetujui Opsi 1, crossing number) →
+  `ALGO_REV` 2: **cakupan agregat 99,83% / 99,74%**, titik berulang dalam strok 0, loncatan 0, spur dibuang 12 / 54
+- **Penyimpangan dari Opsi 1: thinning Zhang-Suen → Guo-Hall** (temuan saat menulis test diagonal 45°; disetujui Rio
+  sebagai temuan). Band diagonal (`xx < yy`, berpadding 1 px seperti pipeline), piksel skeleton:
+
+  | band | piksel band | Zhang-Suen berpadding | Zhang-Suen tanpa padding | Guo-Hall berpadding |
+  |---|---|---|---|---|
+  | 14×14 | 52 | **2** | 29 | 14 |
+  | 30×30 | 116 | **2** | 61 | 30 |
+  | 50×50 | 196 | **2** | 101 | 50 |
+
+  Zhang-Suen mengikis habis garis diagonal 45° bila band berpadding; Guo-Hall mempertahankan seluruh panjangnya. Look
+  test T-102c memakai Zhang-Suen (default `cv2.ximgproc.thinning`) tanpa mendeteksi ini
+- **Perbaikan lain di pelacak:** `prune_redundant` (sudut tangga redundan), klaster junction dengan titik wakil bersama,
+  penggabungan dua ujung. Satu bug yang saya buat lalu perbaiki: `_dedupe` pertama memotong seluruh badan cincin yang
+  berawal dan berakhir di klaster yang sama (celah 79 px di frame 139 `hair|face`, `test`)
+- **Batas yang diketahui:**
+  - **Cakupan skeleton tidak bisa melihat pengikisan oleh thinning / `prune_redundant`:** ia membandingkan terhadap
+    skeleton buatan thinning yang sama (Zhang-Suen yang mengikis diagonal tampak "tercakup"). Metrik pelengkap = **cakupan
+    band** (piksel band setelah filter M, sebelum thinning, ≤ 2 px dari polyline): 99,79% (`test_short`) / 99,71% (`test`),
+    tetapi run band tak-tercakup > 5 px ada 14 / 94, 10 / 54 di antaranya > 8 px dari ujung polyline mana pun — kemungkinan
+    band yang melebar (garis tengah > 2 px dari tepi band), belum diverifikasi
+  - 2 frame (`test_short`: 38, 40) dan 6 frame (`test`: 12, 39, 40, 156, 209, 234) di bawah 98% per frame: komponen
+    skeleton kecil terisolasi (15–17 px, semua cabang < `min_stroke_px`) dibuang sesuai aturan
+  - 1 celah > 5 px di tengah garis (`test` frame 156, `hair|torso`, 9 px) — jembatan junction-ke-junction pendek yang
+    terbuang; Rio menilai tidak mengganggu, aturan tidak diubah. Run 3–5 px yang diapit dua bagian tercakup: 1 / 0
+  - Loop `group_boundary` 25 (`test_short`) / 57 (`test`): mayoritas `hair|face` > 50 titik (frame 81–104) dan `torso|left_arm`
+    (frame 213–220); kelas ≤ 8 titik kosong; 9–20 titik: 1 / 13 (mis. frame 15, 26, 63). Rio menilai tidak ada lingkaran /
+    titik kecil yang mengganggu
+  - Garis di tepi frame (magenta di overlay) = run titik pada koordinat tepi; wajar menurut Rio, keputusan tetap di T-203
+  - `track_id` / `anchor` / orientasi belum ada (T-202); garis oklusi belum ada (T-201b)
+- **Verifikasi:** suite penuh 541 lolos / 2 skip (470 → 541: `test_vectorize.py` 69 kasus, `test_cli.py` +2, termasuk 15
+  test pelacak yang semuanya GAGAL bila detektor lama dipasang kembali di memori lewat plugin pytest di luar repo, dan
+  lolos dengan perbaikan); input `frames/ seg/ depth/ stable/` kedua klip identik sebelum / sesudah run Tahap 3 (jumlah file + byte +
+  sha256 gabungan) dan, sesudah perbaikan terakhir, mtime terbaru semua input lebih tua daripada `contours/` (hanya
+  `contours/` yang ditulis); `silhouette` / `silhouette_hole` identik antar versi pelacak; klip lain pada salinan sementara → exit 1
+
 ---
 
 ## Pitfall yang sudah diketahui
