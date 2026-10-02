@@ -872,13 +872,26 @@ Tiga langkah, jadikan refleks:
     background, `stable/frames.jsonl`, resume, manifest basi, entry point, waktu + disk terukur). `docs/04` D-010:
     catatan "Hasil T-106"
 
-### T-107 · Keluarkan rembg + onnxruntime dari requirements dan venv · `TODO`
+### T-107 · Keluarkan rembg + onnxruntime dari requirements dan venv · `DONE`
 - **Kerjakan:** hapus `rembg[cpu]` + `onnxruntime` dari `requirements.txt`, uninstall dari venv,
   perbarui `requirements-lock.txt`, `pip check` bersih, catatan stack `CLAUDE.md` / `docs/01`
 - **Done when:** tidak ada rembg / onnxruntime di venv dan requirements; `scripts/smoke_test.py`
   disesuaikan + lolos, test lain lolos
 - **Update log:**
   - [2026-09-29] Task baru — follow-up D-008 (T-102a)
+  - [2026-10-02] DONE — opsi B′ (keputusan Rio). Dicopot 14 paket: rembg, onnxruntime, imageio, jsonschema,
+    jsonschema-specifications, lazy-loader, llvmlite, numba, pooch, pymatting, referencing, rpds-py, scikit-image,
+    tifffile. 6 paket generik (attrs, charset-normalizer, platformdirs, protobuf, requests, urllib3) sengaja
+    dibiarkan, bisa dicopot setelah Phase 2 jalan. Paket 79 → 65; lock 76 → 62 baris (14 dihapus, 0 ditambah /
+    diubah); venv 6207,9 → 5987,6 MiB (−220,3 MiB); cache `~/.rembg` (167,84 MiB) dihapus. Tidak ada dependensi
+    yang perlu ditambah (`opencv-contrib-python` tetap eksplisit). Verifikasi: `pip check` bersih (= baseline);
+    import rembg / onnxruntime → `ModuleNotFoundError`; torch 2.7.1+cu118 (CUDA 11.8, `is_available()` True),
+    transformers 5.17.0, numpy 2.4.6, opencv 5.0.0, scipy 1.17.1 tidak berubah; `smoke_test.py` 13 PASS (tanpa
+    Pose; MediaPipe `ImageSegmenter` 103 ms/frame); impor kelas transformers, huggingface_hub,
+    `cv2.ximgproc.thinning`, scipy, PIL, yaml OK; `download` (cache hit) exit 0; `ab_segment.py` / `look_test.py`
+    lolos `py_compile` + impor; suite penuh 470 lolos / 2 skip; `run test_short.mp4` + `run test.mp4` exit 0,
+    semua dilewati, sha256 `out/*.mp4` identik. `docs/01`, `CLAUDE.md`, `docs/04` ("Hasil T-107") diperbarui;
+    anotasi arsip di `scripts/ab_segment.py`
 
 ---
 
@@ -1033,11 +1046,15 @@ Tiga langkah, jadikan refleks:
 - **Kerjakan:** MediaPipe Pose 33 landmark → mask sintetik dari capsule/polygon
   (torso, lengan, kaki, kepala)
 - **⚠️ Cek dulu:** mediapipe 1.x — pastikan API Pose yang dipakai masih ada (legacy `mp.solutions`
-  vs Tasks API `PoseLandmarker`)
+  vs Tasks API `PoseLandmarker`) — **terjawab (T-107, 2026-10-02):** `mediapipe.solutions` tidak ada di
+  mediapipe 1.0.1; pakai Tasks API
 - **Dibuka lagi kalau:** klip nyata gagal QC dan temporal berbobot QC (T-302) tidak cukup
 - **Update log:**
   - [2026-09-29] BLOCKED — foreground Sapiens2 0 frame gagal QC di klip uji; frame gagal QC diisi dari
     frame tetangga lewat temporal berbobot di [3] (Q3-B) — D-010
+  - [2026-10-02] Temuan di T-107: mediapipe 1.0.1: `mediapipe.solutions` tidak ada; `vision.PoseLandmarker`
+    ada (bisa diimpor) tetapi butuh file model `.task` yang belum ada di `models/`; belum diuji karena T-501
+    BLOCKED (keputusan Rio: model `.task` tidak diunduh sekarang)
 
 ### T-502 · Integrasi blend + QC · `BLOCKED`
 - **Kerjakan:** panggil fallback hanya untuk frame gagal QC, blend dengan mask asli
@@ -1076,12 +1093,12 @@ Tiga langkah, jadikan refleks:
 | Phase | Task | Selesai |
 |---|---|---|
 | 0 Setup | T-001 … T-005 | 5/5 |
-| 1 Skeleton | T-101 … T-108 (T-102 → a/b/c, T-104 → a/b) — 🎯 milestone tercapai (T-104b); sisa T-107 TODO | 10/11 |
+| 1 Skeleton | T-101 … T-108 (T-102 → a/b/c, T-104 → a/b) — ✅ **Phase 1 selesai** (🎯 milestone T-104b, T-107 DONE) | 11/11 |
 | 2 Vectorize | T-201 … T-204 (T-201 → a/b) | 0/5 |
 | 3 Stabilize | T-301 … T-305 (T-301 SKIP) | 0/5 |
 | 4 Style | T-401 … T-406 | 0/6 |
 | 5 Fallback | T-501 … T-502 (BLOCKED) | 0/2 |
 | 6 Opsional | T-601 … T-603 | 0/3 |
 
-**Total: 37 task** (5 + 11 + 5 + 5 + 6 + 2 + 3) · Selesai: 15/37 (5 + 10; SKIP — T-301, T-601 — tidak dihitung selesai).
+**Total: 37 task** (5 + 11 + 5 + 5 + 6 + 2 + 3) · Selesai: 16/37 (5 + 11; SKIP — T-301, T-601 — tidak dihitung selesai).
 Rekonsiliasi 2026-10-01: sebelum T-104b selesai papan menulis 9/11 + 13/37, padahal 5 + 9 = 14 — total salah hitung 1.

@@ -1,5 +1,8 @@
 """A/B test backend segmentasi T-102a (D-008): MediaPipe vs MediaPipe+pad vs rembg u2net_human_seg.
 
+ARSIP SEJARAH: rembg + onnxruntime dihapus dari requirements dan venv di T-107, jadi backend u2net
+di skrip ini TIDAK bisa dijalankan lagi (impor gagal). Dibiarkan apa adanya sebagai bukti D-008.
+
 Alat sekali pakai, BUKAN modul pipeline. Jalankan dari root repo setelah T-101 (ingest):
     venv/Scripts/python.exe scripts/ab_segment.py [--threshold 0.5] [--force]
 

@@ -382,6 +382,28 @@ stabilize|export|download`), 🎯 **milestone Phase 1 tercapai**. Rincian: `docs
   lama sendiri atau `--restart-from ingest --yes` tidak membantu karena pre-flight menolak lebih dulu); nama video
   sama di folder berbeda = ganti nama salah satunya
 
+**Hasil T-107 (2026-10-02)** — follow-up D-008: `rembg` + `onnxruntime` keluar dari `requirements.txt`, `requirements-lock.txt`
+dan venv (opsi B′, keputusan Rio).
+- **Dicopot 14 paket:** rembg, onnxruntime, imageio, jsonschema, jsonschema-specifications, lazy-loader, llvmlite, numba,
+  pooch, pymatting, referencing, rpds-py, scikit-image, tifffile. Paket terpasang 79 → 65; lock 76 → 62 baris
+  (diff = 14 dihapus, 0 ditambah, 0 diubah); venv 6207,9 → 5987,6 MiB (**−220,3 MiB**)
+- **6 paket generik SENGAJA DIBIARKAN:** attrs, charset-normalizer, platformdirs, protobuf, requests, urllib3 (total
+  hanya ±14,1 MiB; 4 paket terbesar yang dicopot = 211,8 dari 225,9 MiB). Audit yatim bersandar pada metadata
+  `Requires-Dist`, yang tidak menangkap impor tak-terdeklarasi (`pip check` ikut buta) → bisa dicopot setelah Phase 2 jalan
+- **Tidak ada dependensi baru** yang perlu ditambah: semua impor kode proyek sudah eksplisit di `requirements.txt`
+  (`huggingface_hub` datang lewat transformers, bukan rembg)
+- **Terverifikasi:** `pip check` bersih (= baseline); `import rembg` / `import onnxruntime` → `ModuleNotFoundError`;
+  torch 2.7.1+cu118 (`cuda.is_available()` True, CUDA 11.8), transformers 5.17.0, huggingface_hub 1.33.0, numpy 2.4.6,
+  opencv 5.0.0, scipy 1.17.1 tidak berubah; suite penuh 470 lolos / 2 skip; `python -m rotoscope download` (cache hit)
+  exit 0; `run` `test_short` + `test` exit 0, semua dilewati, sha256 `out/*.mp4` identik
+- **`scripts/smoke_test.py`** (13 PASS, 0 FAIL) kini tanpa rembg/onnxruntime; mencakup impor + lisensi paket, ffmpeg,
+  OpenCV (`findContours`, Farneback) dan benchmark MediaPipe `ImageSegmenter` (103 ms/frame). **Tidak mencakup Pose**;
+  keputusan Rio: cukup begitu (model `.task` tidak diunduh; fallback Pose BLOCKED, T-501/T-502)
+- **Thinning Phase 2** = `cv2.ximgproc.thinning` (opencv-contrib, sudah terpasang; diuji: persegi panjang 231 px → garis
+  10 px); scikit-image dicopot. Jangan ganti `opencv-contrib-python` dengan `opencv-python` / headless
+- `scripts/ab_segment.py` diberi anotasi arsip (backend u2net tidak bisa dijalankan lagi); cache model
+  `C:\Users\LEGION\.rembg` (167,84 MiB) dihapus
+
 ---
 
 ## Pitfall yang sudah diketahui

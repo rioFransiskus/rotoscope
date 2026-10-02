@@ -55,7 +55,7 @@ Kontrak lengkap per modul: docs/01-PIPELINE-SPEC.md. Parameter style: docs/02-ST
   dengan syarat cek VRAM bebas sebelum stage [2] + berhenti dengan pesan jelas, resume per frame, dan
   fallback 0.4B fp16 (2258 MiB) untuk seluruh klip
 - ffmpeg: binary eksternal
-- Stack disetujui: opencv-contrib-python (via mediapipe; JANGAN install opencv-python juga), mediapipe, numpy, scipy, svgwrite, Pillow, pyyaml, torch==2.7.1+cu118, torchvision==0.22.1+cu118, transformers==5.17.0 (index PyTorch cu118 di requirements.txt). rembg DITOLAK (D-008) — masih terinstall sampai follow-up pembersihan, jangan dipakai
+- Stack disetujui: opencv-contrib-python (via mediapipe; JANGAN install opencv-python juga), mediapipe, numpy, scipy, svgwrite, Pillow, pyyaml, torch==2.7.1+cu118, torchvision==0.22.1+cu118, transformers==5.17.0 (index PyTorch cu118 di requirements.txt). rembg + onnxruntime DITOLAK (D-008) dan sudah dicopot dari venv/requirements (T-107): jangan diinstal lagi. scikit-image juga tidak ada; thinning (Phase 2) = `cv2.ximgproc.thinning` dari opencv-contrib-python (jangan ganti dengan opencv-python / headless)
 - Dev-only: pytest (requirements-dev.txt). Package di-install editable: pip install -e .
 - Versi mayor baru: OpenCV 5.x dan mediapipe 1.x. Jangan asumsikan API versi lama (OpenCV 4.x / mediapipe 0.10.x); cek dokumentasi versi terinstall dulu.
 

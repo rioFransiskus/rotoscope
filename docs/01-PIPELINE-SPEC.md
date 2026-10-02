@@ -566,8 +566,10 @@ ffmpeg                      # ingest + muxing (binary eksternal, gyan.dev essent
   revision di-pin di YAML.
 - GPU: GTX 1650 Ti 4 GB, Turing sm_75 → **tanpa bf16** (P-005), fp16/fp32 saja. Attention `sdpa`.
 - Versi terkunci: `requirements.txt` (dependency langsung) dan `requirements-lock.txt` (full freeze).
-- `rembg` + `onnxruntime` DITOLAK (D-008), masih ada di `requirements.txt` / venv sampai **T-107**.
-  `onnxruntime-gpu` tidak dipakai (T-601 SKIP).
+- `rembg` + `onnxruntime` DITOLAK (D-008) dan sudah dikeluarkan dari `requirements.txt` / venv (T-107, 2026-10-02);
+  `onnxruntime-gpu` tidak dipakai (T-601 SKIP). scikit-image ikut dicopot: thinning di stage [4] =
+  `cv2.ximgproc.thinning` dari `opencv-contrib-python` (terverifikasi di T-107). Jangan ganti dengan
+  `opencv-python` / headless (modul `ximgproc` hanya ada di contrib).
 - ⚠️ OpenCV 5.x dan mediapipe 1.x adalah versi mayor baru — jangan asumsikan API OpenCV 4.x /
   mediapipe 0.10.x dari tutorial lama.
 

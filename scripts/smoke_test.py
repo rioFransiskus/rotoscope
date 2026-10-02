@@ -1,4 +1,6 @@
-"""Smoke test T-003: cek environment, lisensi, ffmpeg, OpenCV, dan benchmark segmentasi (D-008).
+"""Smoke test T-003: cek environment, lisensi, ffmpeg, OpenCV, dan benchmark segmentasi MediaPipe (D-008).
+
+rembg + onnxruntime sudah dihapus dari stack (D-008, T-107): cek import/lisensi/benchmark-nya dibuang.
 
 Jalankan dari root repo:
     venv/Scripts/python.exe scripts/smoke_test.py [--image samples/person.jpg] [--runs 10]
@@ -19,7 +21,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 MP_MODEL = ROOT / "models" / "selfie_multiclass_256x256.tflite"
-REMBG_MODEL = "u2net_human_seg"  # WAJIB eksplisit: default rembg = bria-rmbg (D-003)
 
 # Proyeksi: klip 15 detik x 24 fps
 PROJ_SECONDS = 15
@@ -37,8 +38,6 @@ PACKAGES = [
     ("svgwrite", "svgwrite"),
     ("PIL", "Pillow"),
     ("yaml", "PyYAML"),
-    ("rembg", "rembg"),
-    ("onnxruntime", "onnxruntime"),
     ("mediapipe", "mediapipe"),
 ]
 LICENSE_RED_FLAGS = ["AGPL", "GPL", "NON-COMMERCIAL", "NONCOMMERCIAL", "NON COMMERCIAL", "CC-BY-NC"]
@@ -114,7 +113,6 @@ def check_licenses() -> None:
         flag = any(f in upper for f in LICENSE_RED_FLAGS)
         any_warn |= flag
         print(f"  {'WARNING ' if flag else ''}{dist:<22} {text}")
-    print(f"  catatan: lisensi paket rembg != lisensi bobot model {REMBG_MODEL} (ABU-ABU, lihat CLAUDE.md)")
     record("license scan", True, "ada WARNING, review manual" if any_warn else "tidak ada red flag")
 
 
@@ -210,21 +208,6 @@ def report_bench(name: str, avg: float, mn: float, mask, is_real: bool) -> None:
         print(f"    area mask: {area:.1f}% dari frame")
 
 
-def bench_rembg(img, is_real: bool, runs: int) -> None:
-    import numpy as np
-    from rembg import new_session, remove
-
-    try:
-        session = new_session(REMBG_MODEL)  # model eksplisit, BUKAN default
-        avg, mn, mask = bench(lambda: remove(img, session=session, only_mask=True), runs)
-        mask = np.asarray(mask).astype(np.float32) / 255.0
-        report_bench(f"rembg {REMBG_MODEL}", avg, mn, mask, is_real)
-        record(f"bench rembg {REMBG_MODEL}", True, f"{avg:.0f} ms/frame")
-    except Exception as e:  # noqa: BLE001
-        traceback.print_exc()
-        record(f"bench rembg {REMBG_MODEL}", False, str(e)[:60])
-
-
 def bench_mediapipe(img, is_real: bool, runs: int) -> None:
     import mediapipe as mp
     import numpy as np
@@ -262,7 +245,6 @@ def check_segmentation(image: Path, runs: int) -> None:
     else:
         print(f"  {image} tidak ada -> gambar sintetis {w}x{h}: TIMING SAJA, BUKAN UJI KUALITAS")
     print(f"  1x warm-up + {runs} run per model (CPU)")
-    bench_rembg(img, is_real, runs)
     bench_mediapipe(img, is_real, runs)
 
 
