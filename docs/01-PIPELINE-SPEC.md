@@ -19,9 +19,9 @@ video.mp4
    │
    ├─[3]  stabilize ──► stable/groups/*.png + stable/depth_smooth/*.npy
    │
-   ├─[4]  vectorize ──► contours/*.json + contours/manifest.json (+ clip_stats.json, T-201b) (polyline bertipe; di luar `run` sampai T-203)
+   ├─[4]  vectorize ──► contours/*.json + contours/manifest.json (+ clip_stats.json, T-201b) (polyline bertipe; di luar `run` sampai T-203b)
    │
-   ├─[5]  stylize ────► strokes/*.svg + strokes/*.png
+   ├─[5]  stylize ────► strokes/*.svg + strokes/*.png + strokes/manifest.json (T-203a; di luar `run` sampai T-203b)
    │
    └─[6]  export ─────► out/animation.mp4 + out/svg/*.svg
 ```
@@ -109,7 +109,7 @@ internal yang dipanggil cli, bukan cara pakai utama.
 | Subperintah | Fungsi |
 |---|---|
 | `run <video>` | ingest → segment → depth → stabilize → export |
-| `ingest\|segment\|depth\|stabilize\|vectorize\|export <video> [flag stage]` | satu stage; sisa argumen diteruskan apa adanya ke `main(argv)` stage (flag stage tidak diparse ulang di cli). `vectorize` (T-201a, T-201b): flag `--restart --limit` (`--limit N` tetap membaca SEMUA frame untuk ambang per klip, `clip_stats.json`), CPU in-process, `--restart` tanpa `--yes`; **belum ada di `run`** (masuk bersama [5] di T-203) |
+| `ingest\|segment\|depth\|stabilize\|vectorize\|stylize\|export <video> [flag stage]` | satu stage; sisa argumen diteruskan apa adanya ke `main(argv)` stage (flag stage tidak diparse ulang di cli). `vectorize` (T-201a, T-201b): flag `--restart --limit` (`--limit N` tetap membaca SEMUA frame untuk ambang per klip, `clip_stats.json`), CPU in-process, `--restart` tanpa `--yes`; **belum ada di `run`** (masuk bersama [5] di T-203b). `stylize` (T-203a): flag `--style PATH --restart --limit`, CPU in-process, `--restart` tanpa `--yes` (hanya menghapus `strokes/`); **belum ada di `run`** (T-203b) |
 | `download [--config P] [--seg-model 0.8b\|0.4b]` | unduh checkpoint (online, sekali jalan): Sapiens2-seg (default **0.8b**; `--seg-model 0.4b` = fallback) **dan** Depth Anything V2 Small + model card. Subprocess mewarisi environment; **tidak** memaksa `HF_HUB_OFFLINE=1` (run biasa offline) |
 
 - **Folder kerja per klip:** `<paths.work_dir>/clips/<stem>/`; `stem` = nama video disanitasi dengan fungsi yang sama
@@ -153,7 +153,8 @@ internal yang dipanggil cli, bukan cara pakai utama.
   Graf lengkap sejak T-201a: ingest → {segment, depth} → stabilize → {vectorize, export}. `--restart-from` **tidak**
   mencakup `vectorize` (stage itu belum ada di `run`); `python -m rotoscope vectorize <video> --restart` menghapus
   `contours/` saja, dan `stabilize --restart` (atau [3] dihitung ulang) membuat [4] basi → dihitung ulang otomatis oleh
-  stage-nya. T-203 memasukkan [4] + [5] ke urutan `run` dan baris ini ke tabel di atas.
+  stage-nya. T-203b memasukkan [4] + [5] ke urutan `run` dan baris ini ke tabel di atas; `stylize --restart` menghapus `strokes/`
+  saja, dan [5] basi (hilir [4]) dihitung ulang otomatis oleh stage-nya.
 
 - **`--yes`:** wajib untuk SETIAP penghapusan hasil GPU lewat cli — `run --restart-from ingest|segment|depth` dan
   subperintah `segment|depth --restart`. cli membuang `--yes` sebelum meneruskan ke stage. Tanpa `--yes`: cetak apa
@@ -409,7 +410,7 @@ dan temporal fill tidak cukup. D-002 (pose hanya fallback, bukan primary) tetap 
 **Status:** **T-201a `DONE`** (siluet + lubang + batas grup, 2026-10-02), **T-201b `DONE`** (garis oklusi +
 `clip_stats.json`, 2026-10-03, **dengan batas kaki** — lihat langkah 3) dan **T-202 `DONE`** (orientasi, anchor, arah garis
 terbuka, `track_id`, rantai kesinambungan, 2026-10-03) — strok `silhouette`, `silhouette_hole`, `group_boundary`,
-`occlusion`. Subperintah sendiri `python -m rotoscope vectorize <video>`; **belum masuk urutan `run`** sampai T-203 (lihat
+`occlusion`. Subperintah sendiri `python -m rotoscope vectorize <video>`; **belum masuk urutan `run`** sampai T-203b (lihat
 "CLI" dan [5]). Bagian bertanda *(T-201a)* / *(T-201b)* / *(T-202)* sudah diimplementasi dan diukur. Kode pelacakan:
 `src/rotoscope/track.py` (stage ini memanggilnya per frame, **berurutan**).
 
@@ -573,7 +574,7 @@ menggambar di (x · skala − 0.5).
 `test_short`). Padding 1 px menjaga kontur tertutup, tetapi kontur memuat **run titik di baris/kolom tepi** (y = H − 0.5,
 x = 0.5, x = W − 0.5) yang tergambar sebagai garis lurus di dasar frame di tiap frame bila tidak ditangani. Run itu
 terdeteksi persis dari koordinatnya (tanpa field skema baru; `edge_points` per frame di `frames.jsonl`). Keputusan
-penanganan (sembunyikan / pudarkan / gambar) = **T-203, wajib sebelum implementasi** (lihat [5]). `group_boundary` tidak
+penanganan (sembunyikan / pudarkan / gambar) = **diputuskan T-203a: sembunyikan (`hide`)** (lihat [5]). `group_boundary` tidak
 butuh padding: garis yang sampai tepi berakhir di tepi (terbuka, sah).
 
 **Manifest [4]** (`contours/manifest.json`, prinsip #4): `stage`, `contract` (`"T-202"`; manifest `"T-201a"` / `"T-201b"`
@@ -665,33 +666,80 @@ dengan aturan tetap)*:
   lengan terpisah (klip `test`) mendapat id baru (2 dari 12 strok-frame mewarisi id fragmen sebelumnya), wajar sementara.
 
 ### [5] `stylize.py` (CPU)
-- **In:** `contours/*.json`, style YAML (`configs/styles/*.yaml`)
-- **Out:** `strokes/frame_%05d.svg` (stroke tebal-variabel sebagai polygon) + `strokes/frame_%05d.png`
-  (raster). Disk: SVG 100–250 MB, PNG 150–500 MB per klip *est.* (tergantung `output_width`).
-- **Satu renderer untuk semua `type`**; parameter dasar + override per tipe (`stroke.by_type`).
-- Komponen render (metode look test T-102c, `scripts/look_test.py`):
-  - `approxPolyDP` (`shape.simplify_epsilon`) → spline Catmull-Rom (`shape.smooth_tension`,
-    `shape.spline_steps`) → resample arc-length (`shape.resample_points`, maks 1 titik/px)
-  - Width modulation sepanjang path + taper ujung (`taper_px`, `taper_min`)
-  - Jitter searah normal, noise 1D, seed = `hash(frame_index, param_seed, track_id)` + indeks pass —
-    reproducible (P-007), dan tidak melompat saat urutan stroke berubah. ⚠️ `points[0]` garis terbuka melompat sampai 60–127 px
-    saat strok memanjang / memendek ([4] "Aturan anchor"): noise 1D berbasis panjang busur dari titik awal akan "pop";
-    pertimbangkan jitter terkunci posisi atau tidak bergantung titik awal. [5] membaca `points[0]` (bukan `anchor`) dan
-    mengabaikan `prev_sha256`
-  - Multipass (offset + opacity falloff), supersampling `render.ss` untuk anti-alias
-  - Tekstur: brush stamping (raster) atau multi-stroke offset (SVG); paper background layer
-- **Lib:** `svgwrite` untuk SVG, OpenCV / `Pillow` untuk raster
-- ⚠️ `output_width` (resolusi output terpisah dari resolusi kerja, satuan tebal/jitter relatif) →
-  diputuskan sebelum T-203.
-- ⚠️ **Run titik di tepi frame** (keputusan tertunda dari T-201a): foreground menyentuh tepi bawah di **283/283** frame
-  `test` dan **119/119** `test_short` (tepi kanan 59/283). Kontur `silhouette` memuat run titik tepat di baris/kolom tepi
-  (y = H − 0.5, x = 0.5, x = W − 0.5; lihat [4] "Kasus tepi"). T-203 **WAJIB memutuskan** penanganannya
-  (sembunyikan / pudarkan / gambar) **SEBELUM implementasi**; konvensi koordinat pusat piksel + skala x' = s · x ([4])
-  berlaku.
-- ⚠️ **`group_boundary` loop** = `closed: false` dengan titik akhir = titik awal (57 loop di `test`, 25 di `test_short`;
-  terutama `hair|face` dan `torso|left_arm`). Taper ujung di [5] **jangan menipiskan sambungan** loop: kenali loop dari
-  titik akhir = titik awal dan perlakukan sebagai tertutup untuk taper. Berlaku juga untuk loop `occlusion` (4 di
-  `test`, 5 di `test_short`).
+
+**Status:** **T-203a `DONE`** (garis polos, 2026-10-03): subperintah sendiri `python -m rotoscope stylize <video>`; **belum masuk
+urutan `run`**, tabel restart DAG, dan `export.source: "strokes"` (= **T-203b**). Jitter, taper, width modulation, multipass, tekstur,
+opasitas dan `shape.resample_points` **belum aktif** (Phase 4; `ignored_params` di manifest). Preview `--preview N` = T-204.
+Tanpa GPU: `torch` tidak pernah di-import (diuji di subprocess).
+
+- **In:** `contours/frame_*.json`, `contours/manifest.json`, `meta.json`, style YAML (`--style`, default
+  `configs/styles/rough-sketch.yaml`, selain itu default kode); config pipeline (`--config`) hanya untuk `paths.work_dir`.
+- **Out:** `strokes/frame_%05d.svg` + `strokes/frame_%05d.png` (RGB, latar `paper.color`) + `strokes/manifest.json` +
+  `strokes/frames.jsonl` (log per frame: waktu per tahap, ukuran, jumlah strok / jalur / titik, statistik tepi).
+  Terukur (1080×1922): PNG median 67–71 KiB, SVG median 37–40 KiB per frame → total 7,8 + 4,2 MiB (`test_short`, 119 frame) dan
+  19,0 + 10,4 MiB (`test`, 283 frame): **14–30 MiB per klip** (estimasi lama 100–500 MB terlalu besar 10–25 kali).
+- **Satuan:** semua parameter panjang style = **px REFERENSI lebar 1080**; `unit = render.output_width / 1080`; geometri dihitung di
+  px OUTPUT: titik kontur (pusat piksel kerja) × `s`, `s = output_width / width` (x' = s · x, sama untuk x dan y). Tinggi output
+  = `round(height × output_width / width)` dinaikkan ke genap (integer: `(2·H·ow + W) // (2·W)`, +1 bila ganjil; 854 → 1922).
+  Default look test dikonversi × 2,25 (look test menggambar di px KERJA); lihat docs/02 "Satuan dan parameter aktif".
+- **Validasi masukan (exit 1, pesan menyebut perintah `vectorize`):** `contours/manifest.json` hilang / rusak; `contract` ∉
+  `SUPPORTED_CONTOURS_CONTRACTS` (= `{"T-202"}`; pesan menyebut yang ditemukan vs yang didukung); `pending` tidak kosong;
+  `clip` hilang / milik klip lain (`meta_sha256`); `frame_size` ≠ `meta.json`; frame contours terpilih hilang / rusak / `frame_index`,
+  ukuran, `source.vectorize_hash`, atau key strok tidak cocok. Hanya frame yang DIPILIH (`--limit`) yang divalidasi. Exit code 0 / 1.
+- **Pipeline geometri per strok (satu geometri untuk SVG dan raster):** skala → penanganan tepi (mode hide) → **penghalusan
+  Gaussian arc-length** (`shape.smooth_px`) → `approxPolyDP` (`shape.simplify_epsilon`) → spline Catmull-Rom seragam
+  (`shape.smooth_tension`; `shape.spline_steps` = minimum titik per segmen, digandakan sampai galat akor ≤ 0,03 px ref) →
+  ekstensi ujung di tepi → pembulatan 2 desimal (galat ≤ 0,007 px). **Tanpa resample** di render (resample N = 200 tetap merusak
+  bentuk: jarak titik 16–29 px, deviasi maks 12–13 px; resample arc-length dari `points[0]` = Phase 4, T-401 / T-402).
+  - **Penghalusan** (keputusan Rio; konstanta struktural bernama): kontur dire-sample 1 px ref; sudut tajam (belok > 60° pada
+    ±6 sampel) dikunci dan memecah jalur; ujung strok terbuka (termasuk titik silang tepi) tidak bergeser (pantulan ganjil);
+    strok tertutup dan loop (titik akhir = titik awal, dibuang titik penutupnya) periodik tanpa takik. Penyusutan luas silhouette
+    rata-rata −0,008% (terburuk −0,09%). approxPolyDP tidak menjamin deviasi ≤ epsilon (terukur sampai +31%): epsilon BUKAN batas.
+  - **Strok tertutup** digambar sebagai jalur tertutup (`Z`); `points[0]` tidak dipertahankan sebagai titik awal jalur (approxPolyDP
+    memilih titik awalnya sendiri; tanpa efek visual di garis polos).
+- **Tepi frame (mode `shape.edge_mode`, keputusan Rio: `hide`):** run titik di y = H − 0,5, x = 0,5, x = W − 0,5 (deteksi koordinat
+  persis; cocok dengan `edge_points` di `contours/frames.jsonl` untuk silhouette + lubang: 119/119 dan 282/283 frame) **disembunyikan**: strok dipecah jadi
+  k jalur terbuka (k run → k jalur), tiap ujung = titik silang tepi (titik tepi pertama), diperpanjang keluar **KANVAS** (bukan
+  bingkai konten 1921,5) sejauh tebal/2 + 1 px: searah tangen akor terakhir bila ≥ 45° terhadap tepi, selain itu (kontak dangkal)
+  tegak lurus tepi; sudut kanvas = jumlah normal. Strok yang seluruhnya di tepi tidak digambar. `draw`: run tepi digambar apa adanya
+  (inset 0,5·s); peringatan stderr satu kali bila tebal < `draw_mode_min_width` (= s). Terukur: kontak dangkal 31/336 (`test_short`)
+  dan 183/1152 (`test`) ujung; 0 ujung tepat di sudut kanvas; 0 ujung tidak mencapai tepi kanvas.
+- **Raster:** satu mask supersampling (`render.ss`, union semua strok; tumpang tindih tidak lebih gelap) → `INTER_AREA` → tabel warna
+  (kertas/tinta) → PNG (kompresi level 3). Garis = poligon terisi (kuad per segmen + cakram di tiap titik, sub-piksel 1/16) karena
+  `cv2.polylines` hanya menghasilkan lebar ganjil. Koordinat cv2 = x' · ss − 0,5 (titik cv2 integer = pusat piksel). Tebal tiap
+  tipe = `stroke.width_base × stroke.by_type.<tipe>.width_scale × unit`; tinta solid (opasitas diabaikan).
+- **SVG:** string manual (bukan svgwrite: byte-determinisme penuh, tanpa atribut otomatis, tanpa dependency; svgwrite 1.4.3 MIT tetap
+  terpasang, tidak dipakai): `<svg width height viewBox>` = ukuran output, `<rect>` latar `paper.color`, satu `<g id=tipe>` per tipe
+  (urutan silhouette, silhouette_hole, group_boundary, occlusion), satu `<path d="M … L … [Z]">` per jalur, `stroke-width` konstan,
+  `stroke-linecap` / `stroke-linejoin` `round`, `fill="none"`, titik yang SAMA dengan raster. Tanpa id acak / timestamp.
+- **Satu renderer untuk semua `type`**; parameter dasar + override per tipe (`stroke.by_type.*.width_scale`). Loop (`closed: false`
+  dengan titik akhir = titik awal) diperlakukan sebagai tertutup. Garis oklusi berkedip digambar apa adanya (tanpa interpolasi antar
+  frame; frame tanpa strok = hanya kertas, valid).
+- **Manifest** `strokes/manifest.json` (prinsip #4): `stage`, `contract` `"T-203a"`, `algo_rev` (`stylize.ALGO_REV`, mulai 1; naik hanya
+  untuk perbaikan perilaku; fitur baru menaikkan `contract`), `style` (nama), `style_hash` + `style_params` (HANYA parameter aktif),
+  `ignored_params`, `contours` (`contract`, `vectorize_hash`, `algo_rev`, `created_utc`), `clip`, `frame_size` (kerja), `output_width`,
+  `output_size`, `scale`, `unit`, `edge_mode`, `coords`, `created_utc`. **Basi** (CPU murah): field berubah → `strokes/` dihapus + dihitung
+  ulang dengan peringatan menyebut field (parameter style aktif, ukuran output, contours, klip, `contract`, `algo_rev`); mengubah
+  parameter yang belum aktif tidak membuat basi (dicatat satu baris). `strokes/` tanpa manifest → ditolak. `--restart` menghapus
+  `strokes/` saja; `--limit N` = N frame pertama. **Resume per frame:** valid = SVG well-formed dengan `viewBox` / `width` / `height`
+  benar dan PNG utuh (signature, IHDR = ukuran output, trailer IEND); tulis PNG terakhir.
+- **Determinisme:** hash `strokes/frame_*.svg|png` identik antar run dari nol, `--limit 20` lalu penuh, dan setelah basi lalu kembali ke
+  setelan awal. `manifest.json` / `frames.jsonl` memuat waktu → jangan di-hash.
+- **Parameter style aktif / belum aktif:** docs/02 "Satuan dan parameter aktif (T-203a)".
+- **Metrik + toleransi test (docs/05 T-203):** kesetiaan = jarak titik kontur asli terskala (titik tepi dikecualikan pada hide) ke
+  polyline akhir; toleransi sintetis = 0,35 × tebal garis (BUKAN epsilon), data nyata = ambang regresi dari angka terukur. Fungsi:
+  `tests/stylize_metrics.py`.
+- ⚠️ **Jitter** (T-402, Phase 4), dengan catatan dari [4]: `points[0]` garis terbuka melompat sampai 60–127 px saat strok memanjang
+  / memendek ([4] "Aturan anchor"); noise 1D berbasis panjang busur dari titik awal akan "pop". **Ditunda ke Phase 4 (keputusan Rio):**
+  pertimbangkan jitter terkunci posisi atau tidak bergantung titik awal; butuh resample arc-length dari `points[0]` (T-203a tidak
+  me-resample); seed = `hash(frame_index, param_seed, track_id)`; [5] membaca `points[0]` (bukan `anchor`) dan mengabaikan
+  `prev_sha256`.
+- ✅ **`output_width`** (terjawab, T-203a): 1080, satuan px ref × `unit`.
+- ✅ **Run titik di tepi frame** (terjawab, T-203a): **hide** (lihat "Tepi frame").
+- ⚠️ **`group_boundary` loop** = `closed: false` dengan titik akhir = titik awal (57 loop di `test`, 25 di `test_short`; terutama `hair|face`
+  dan `torso|left_arm`). **Taper loop ditunda ke Phase 4 (T-401):** taper ujung jangan menipiskan sambungan; kenali loop dari titik akhir =
+  titik awal dan perlakukan sebagai tertutup untuk taper. Berlaku juga untuk loop `occlusion` (4 di `test`, 5 di `test_short`). T-203a
+  menggambar loop sebagai tertutup tanpa takik.
 - ⚠️ **Strok `occlusion` (T-201b):** (1) `strength` (rata-rata |grad|, 3 desimal) tersedia untuk memodulasi tebal / opacity
   tetapi skalanya per klip (bergantung normalisasi [3], akan berubah di T-302): jangan dipakai sebagai ambang absolut;
   (2) **temporal [3] belum aktif** (T-302/T-303), jadi garis oklusi antar frame masih berkedip (muncul / hilang, bergeser):
@@ -699,8 +747,9 @@ dengan aturan tetap)*:
   error dan jangan menginterpolasi antar frame; (3) garis oklusi tidak pernah dalam ≥ D px dari siluet / batas grup /
   tepi frame (ujungnya terpotong di D, jadi tidak menyambung ke garis siluet atau batas grup); (4) `track_id` (T-202) tersedia
   untuk seed jitter, tetapi id oklusi berkedip lahir-mati (umur median 1–2 frame; 37–51% strok-frame di track ≥ 5 frame).
-- ⚠️ **Urutan `run`:** T-203 memasukkan [4] dan [5] ke urutan `run` (`ingest → segment → depth → stabilize → vectorize →
-  stylize → export`), ke tabel restart DAG (bagian "CLI"), dan menyalakan `export.source: "strokes"` (sekarang ditolak).
+- ⚠️ **Urutan `run` (T-203b, belum dikerjakan):** memasukkan [4] dan [5] ke urutan `run` (`ingest → segment → depth → stabilize →
+  vectorize → stylize → export`), ke tabel restart DAG (bagian "CLI"; `--restart-from vectorize|stylize`), dan menyalakan
+  `export.source: "strokes"` (sekarang ditolak) + MP4 dari `strokes/*.png` + salin `strokes/*.svg` ke `out/svg/`.
 
 ### [6] `export.py` (CPU)
 - **SVG** (Phase 2): copy `strokes/*.svg` ke `out/svg/` — belum diimplementasi
@@ -744,8 +793,8 @@ dengan aturan tetap)*:
 | [2c] depth | 0.3 GB |
 | [3] groups + depth_smooth | 0.3 GB |
 | [4] contours | < 0.1 GB |
-| [5] strokes | 0.25–0.75 GB |
-| **total [2]–[5]** | **±1.0–1.9 GB** |
+| [5] strokes | 0.014–0.030 GB (terukur T-203a, 119 / 283 frame; estimasi lama 0.25–0.75 GB terlalu besar) |
+| **total [2]–[5]** | **±0.75–1.15 GB** (est. lama 1.0–1.9 GB; sisanya tidak berubah) |
 
 C: sisa ±54 GB → arahkan `paths.work_dir` ke drive lain kalau banyak klip disimpan bersamaan.
 
@@ -759,7 +808,7 @@ C: sisa ±54 GB → arahkan `paths.work_dir` ke drive lain kalau banyak klip dis
 | [3] spasial | CPU | – | ±43 s (0.12 s/frame, T-106) |
 | [4] T-201a | CPU | – | ±11 s (29–30 ms/frame rata-rata, p95 34–35 ms, maks 50 ms; 283 frame 8.5 s) |
 | [4] T-202 (+ oklusi + pelacakan) | CPU | – | median 74–93 ms/frame antar run (p95 84–112 ms, maks 88–135 ms, 0 frame > 1 s, target ≤ 150 ms; pelacakan sendiri median 8–11 ms, maks 19–26 ms), pass 2 saja; pass 1 ambang (baca ulang + gradien semua frame) 1,3 s (119 frame) / 2,7 s (283 frame) |
-| [5] | CPU | – | belum diukur |
+| [5] T-203a | CPU | – | median 125–128 ms/frame pada 1080×1922 (p95 134–137, maks 148, 0 frame > 0,3 s; geometri + penghalusan ±36–38, mask 22, downsample + warna 27, encode PNG 41, SVG 4, tulis 5); 119 frame 16 s, 283 frame 39 s; memori puncak ±127 MiB |
 
 ---
 
@@ -774,7 +823,7 @@ opencv-contrib-python       # contour, optical flow, thinning (ximgproc) — dib
                             # JANGAN tambah opencv-python (dua paket OpenCV bentrok di modul cv2)
 mediapipe                   # fallback pose (DITUNDA, D-010)
 numpy, scipy                # resampling, interpolasi
-svgwrite                    # export SVG
+svgwrite                    # terpasang (MIT) tetapi TIDAK dipakai [5]: SVG ditulis sebagai string manual (T-203a)
 Pillow                      # raster render
 pyyaml                      # config
 ffmpeg                      # ingest + muxing (binary eksternal, gyan.dev essentials build, via subprocess)
@@ -819,7 +868,7 @@ rotoscope/
 | Phase | Isi | Selesai kalau |
 |---|---|---|
 | 1 | config loader (T-104a) → segment + QC (T-102b) → depth (T-105) → stabilize spasial saja, temporal off (T-106) → export naif (T-103) → cli (T-104b) | Pipeline end-to-end jalan (siluet blok peta grup → MP4) — **tercapai** (T-104b, 2026-10-01; `python -m rotoscope run samples/test_short.mp4`) |
-| 2 | vectorize: siluet + lubang + batas grup (T-201a), garis oklusi (T-201b), anchor + `track_id` (T-202) → stylize basic, satu renderer + parameter per tipe (T-203) → `--preview` (T-204) | Sudah keluar outline |
+| 2 | vectorize: siluet + lubang + batas grup (T-201a), garis oklusi (T-201b), anchor + `track_id` (T-202) → stylize garis polos, satu renderer + parameter per tipe (T-203a) → integrasi `run` / export (T-203b) → `--preview` (T-204) | Sudah keluar outline |
 | 3 | temporal pada probabilitas grup + kedalaman ternormalisasi (T-302, T-303) → `boil_preserve` (T-304) → kalibrasi ulang N/K/M/D/L/persentil/`min_hole_area` (T-305) | Flicker terkendali |
 | 4 | style params lengkap + SVG export | Bisa ganti style dari config |
 | 5 | fallback pose — DITUNDA (`BLOCKED`, D-010) | — |

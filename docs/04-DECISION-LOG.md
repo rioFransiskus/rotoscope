@@ -661,6 +661,78 @@ orientasi + `track_id`".
   CLAUDE.md untuk berkas teks; diungkapkan); semua berkas repo lewat Edit / Write. Regenerasi T-201b untuk pembanding byte memakai
   `git show HEAD:...` yang ditulis ke scratchpad, bukan ke repo
 
+#### Keputusan T-203, 2026-10-03 (Rio, final; dicatat sebelum implementasi stage [5])
+
+1. **`render.output_width` = 1080** (parameter style `render.output_width`, int genap 256–2160). Tinggi = `round(height × ow / width)`
+   dinaikkan ke genap (854 → 1921,5 → 1922). Cadangan 720.
+2. **Satuan panjang style = px REFERENSI lebar 1080**, dikalikan `unit = output_width / 1080`; mengganti `output_width` tidak mengubah
+   tampilan. Look test menggambar di resolusi KERJA (480 px, terukur di Tahap 1 T-203a), jadi default dikonversi × 2,25:
+   `width_base` 3,2 → **7,2**, `simplify_epsilon` 2,5 → **5,6**, `jitter.amplitude` 1,8 → 4,0, `multipass.offset` 1,2 → 2,7,
+   `taper_px` 20 → 45, `width_noise_scale` 0,08 → 0,036, `jitter.frequency` 0,12 → 0,053. Syarat Rio: ukur epsilon 5,6 dan 8,0 ref
+   (di luar rentang 1,0–4,0 yang diukur) dan bandingkan visual epsilon {2,8; 5,6} di Tahap 3.
+3. **Garis di tepi frame** (run titik tepat di y = H − 0,5, x = 0,5, x = W − 0,5): **disembunyikan**, ujung strok diperpanjang keluar
+   KANVAS sehingga tubuh tampak terpotong frame; mode `shape.edge_mode: "hide" | "draw"` (default `hide`) supaya perbandingan di
+   Tahap 3 bisa dijalankan; keputusan dikunci setelah Rio menilai.
+4. **Jitter terkunci posisi dan taper loop ditunda ke Phase 4** (T-203a tidak memakainya); yang dijaga: `points[0]`, `track_id`,
+   loop dikenali dari titik akhir = titik awal.
+5. **Garis polos:** latar `paper.color`, tinta `stroke.color`, solid. Tekstur, vinyet, multipass, jitter, width modulation, taper,
+   opasitas dan `resample_points` mati (divalidasi, tidak dipakai; `ignored_params` di manifest). SVG dan PNG dari SATU geometri.
+   **Hash style = hanya parameter aktif.**
+6. **`run` / tabel restart DAG / `export.source: "strokes"` = T-203b**; T-203a hanya menambah subperintah `stylize`.
+7. **T-203 dipecah** T-203a + T-203b; papan Phase 2 = 6 task, total 38.
+8. **Penyimpangan dari "resample dari anchor" (docs/05 T-203 "Kerjakan"):** render T-203a **tidak me-resample**. Resample N = 200 tetap
+   merusak bentuk (silhouette 4000+ px output → jarak titik 16–29 px, deviasi median 7 px, maks 12–13 px; dengan jarak maks 3 px:
+   maks 1,5 px); spline (`spline_steps` 8) sudah rapat. Resample arc-length dari `points[0]` dibutuhkan Phase 4 (jitter, tebal,
+   taper): dicatat di docs/05 T-401 / T-402.
+9. **SVG lewat string manual** (bukan svgwrite): byte-determinisme dan tanpa atribut otomatis; svgwrite 1.4.3 (MIT) tetap terpasang,
+   tidak dipakai di [5]; baris "Lib: svgwrite" di docs/01 [5] dikoreksi.
+11. **Penilaian visual Rio (2026-10-03, final; perbandingan `smooth_*` frame 233 dan 80):** `simplify_epsilon` **2,8** ref
+    (5,6 membuang bentuk, 2,8 tanpa penghalusan bergelombang) dan penghalusan **Gaussian 3,0 px ref** sebelum approxPolyDP (dipilih
+    dari tanpa / 1,5 / 3,0 / 5,0: garis mengalir lebih natural, bentuk tetap terbaca). Parameter baru `shape.smooth_px` (default 3,0;
+    px ref; 0 = mati; masuk hash style). Alternatif ditolak: Taubin (lebih lemah pada sigma sama, kelok 103 vs 87 pada 5 px, dan
+    10–17 ms lebih lambat; keunggulan anti-susut tidak perlu karena Gaussian tidak menyusutkan: luas < 0,01%), epsilon 4,0 (deviasi
+    p50 +38%). Tepi bawah dan tebal garis: ikut default (hide, 7,2). Video: garis oklusi berkedip dianggap wajar sementara.
+12. **Penilaian visual Rio putaran 2 (2026-10-03):** `final_f233` / `final_f080` dengan smooth 3,0 masih bergelombang → `smooth_px`
+    **5,0** (satu langkah naik dari perbandingan 1,5 / 3,0 / 5,0); tebal garis **9,0** px ref (bukan 7,2); tepi bawah **hide**
+    (frame 233 dan 195: tubuh tampak terpotong frame dengan rapi); takik cekung dan sambungan strok (zoom 3×): OK; video (getar antar
+    frame, garis oklusi berkedip): wajar sementara. Default baru: `smooth_px` 5,0 dan `stroke.width_base` 9,0.
+10. Lain-lain dari Rio: spline uniform vs centripetal diukur (usulan di laporan Tahap 3, tidak diaktifkan tanpa persetujuan);
+    kontak tepi dangkal (< 45°) memakai tegak lurus tepi; strok terbuka dekat tepi harus mencapai tepi kanvas tanpa celah; waktu +
+    ukuran PNG dan deviasi akor SVG diukur; contract contours yang didukung = konstanta `SUPPORTED_CONTOURS_CONTRACTS`.
+
+#### Hasil T-203a (2026-10-03): stage [5] garis polos — DONE
+
+- **Keputusan akhir (default produksi):** `render.output_width` 1080 (1080×1922); satuan px referensi 1080; `shape.simplify_epsilon` **2,8**;
+  `shape.smooth_px` **5,0** (Gaussian arc-length sebelum approxPolyDP; 3,0 masih bergelombang di penilaian Rio); `stroke.width_base`
+  **9,0** (setara look test 7,2); `shape.edge_mode` **hide**; spline Catmull-Rom seragam adaptif; SVG string manual; hash style =
+  parameter aktif saja; tanpa resample di render. Rincian kontrak: docs/01 [5]; parameter: docs/02; log pengukuran: docs/05 T-203a.
+- **Alternatif ditolak:** (1) satuan px kerja / `width_base` 3,2 literal (2,25× lebih tipis dari look test); (2) resample N = 200 tetap
+  (jarak titik 16–29 px, deviasi 12–13 px output); (3) epsilon 5,6 (membuang bentuk) dan 4,0 (deviasi p50 +38%); (4) Taubin (lebih lemah
+  pada sigma sama, 10–17 ms lebih lambat; Gaussian pun tidak menyusutkan: luas −0,008%); (5) Catmull-Rom centripetal (silhouette p95
+  16,1 → 12,2 tetapi p50 8,9 → 9,7, group_boundary maks 10,8 → 13,0: tidak menang jelas); (6) svgwrite (kontrol byte, atribut otomatis);
+  (7) `cv2.polylines` untuk raster (lebar hanya ganjil) dan satu panggilan `fillPoly` (aturan genap-ganjil membuat lubang di tumpang
+  tindih); (8) mode draw sebagai default (Rio memilih hide); (9) titik awal jalur tertutup dipertahankan (tidak perlu di garis polos).
+- **Angka terukur (kedua klip, 1080×1922):** 125–128 ms/frame (p95 134–137, maks 148, 0 frame > 0,3 s; geometri + penghalusan 36–38,
+  mask 22, downsample + warna 27, encode PNG 41, SVG 4, tulis 5); memori puncak ±127 MiB; PNG median 67–71 KiB, SVG 37–40 KiB per frame →
+  14–30 MiB per klip. Kesetiaan silhouette (deviasi maks per strok p50 / p95 / maks px output): 5,8 / 8,7 / 15,0; group_boundary
+  2,6 / 4,6 / 10,1; luas silhouette −0,008% (terburuk −0,09%); kelok 86,8 °/100 px (ε 2,8 tanpa penghalusan 114,5), balik kelengkungan 1,58
+  (1,89); deviasi akor polyline vs spline maks 0,041 px (target ≤ 0,1); tepi hide: titik tengah run tepi ke garis tengah ≥ 3,2 px (draw
+  ≈ 0), 1488 ujung semua mencapai tepi kanvas; kontak dangkal (< 45°) 31/336 dan 183/1152 ujung. approxPolyDP melebihi epsilon sampai +31%
+  (jarak ke garis akord, 22/496 strok tertutup): epsilon bukan batas test.
+- **Verifikasi:** suite **774 lolos / 2 skip** (698 → 774); `tests/stylize_metrics.py` + `test_stylize.py` (53) + `test_stylize_smooth.py` (16);
+  mutation check 8/8 + 3/3 (penghalusan mati, ujung bergeser, sudut dibulatkan) membuat test GAGAL; determinisme (hash
+  `strokes/frame_*` identik dari nol, `--limit 20` lalu penuh), stale (`output_width` 720 → peringatan + hitung ulang, kembali → hash
+  identik), klip lain → exit 1, input `frames/ seg/ depth/ stable/ contours/` tidak berubah.
+- **Batas yang diketahui:** lihat docs/05 T-203a (overshoot spline di sudut tajam; kuantisasi tebal raster; garis oklusi berkedip dan getar
+  antar frame sampai temporal [3]; `stroke.cap` hanya round; validasi contours hanya frame terpilih; contours yang diubah tangan tanpa
+  perubahan manifest tidak terdeteksi). Backlog: centripetal / tangen nol di sudut tajam; `smooth_px` lebih tinggi bila masih bergelombang.
+- **Penilaian visual Rio:** (1) `smooth_*` frame 233: Gaussian 3,0 dipilih dari 1,5 / 3,0 / 5,0; (2) `final_f233` / `final_f080` dengan 3,0: masih
+  bergelombang → 5,0; (3) dengan 5,0, tebal 9,0: kemulusan sesuai, tepi bawah hide (frame 233, 195) rapi, takik cekung dan sambungan strok
+  (zoom 3×) OK, ujung garis di tepi frame rapi, video (getar antar frame, garis oklusi berkedip) wajar untuk saat ini; keputusan: T-203a
+  selesai, lanjut dokumentasi.
+- **Catatan proses:** satu pemeriksaan sekali pakai lewat heredoc Bash (tanpa berkas repo; melanggar aturan CLAUDE.md untuk berkas teks,
+  diungkapkan); blok keputusan T-203 ditulis setelah `config.py` / YAML diubah tetapi sebelum `stylize.py`; semua berkas repo lewat Edit / Write.
+
 ---
 
 ## Pitfall yang sudah diketahui

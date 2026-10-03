@@ -58,7 +58,9 @@ def test_defaults_without_yaml():
     assert [n for n, _ in p.groups] == ["hair", "face", "torso", "left_arm", "right_arm", "left_leg", "right_leg"]
     assert p.paths.work_dir == Path.cwd() / "work"
     s = load_style()
-    assert s.stroke.width_base == 3.2 and s.stroke.color == "#1a1a1a" and s.render.ss == 3
+    assert s.stroke.width_base == 9.0 and s.stroke.color == "#1a1a1a" and s.render.ss == 3   # keputusan Rio (look test 7.2)
+    assert s.render.output_width == 1080 and s.shape.edge_mode == "hide" and s.shape.simplify_epsilon == 2.8
+    assert s.shape.smooth_px == 5.0
     assert s.texture.brush_image == ROOT / "assets" / "brushes" / "pencil_01.png"
 
 
@@ -241,6 +243,11 @@ STYLE_INVALID = [
     ({"stroke.by_type": {"silhouette": {"opacity_scale": 1.5}}}, r"stroke\.by_type\.silhouette\.opacity_scale"),
     ({"stroke.by_type": {"hatch": {"width_scale": 1.0}}}, r"stroke\.by_type\.hatch.*tidak dikenal"),
     ({"jitter.amplitude": -1}, r"jitter\.amplitude"),
+    ({"shape.edge_mode": "fade"}, r"shape\.edge_mode"),
+    ({"shape.smooth_px": -0.1}, r"shape\.smooth_px"),
+    ({"render.output_width": 255}, r"render\.output_width"),
+    ({"render.output_width": 301}, r"render\.output_width"),
+    ({"render.output_width": 2162}, r"render\.output_width"),
     ({"jitter.frequency": -1}, r"jitter\.frequency"),
     ({"jitter.temporal_seed_mode": "random"}, r"jitter\.temporal_seed_mode"),
     ({"jitter.temporal_drift": 1.5}, r"jitter\.temporal_drift"),

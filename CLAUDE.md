@@ -22,12 +22,12 @@ Segmentation → Contour → Stylized stroke. MediaPipe Pose hanya fallback untu
 | 2c | depth.py | frames → work/depth/*.npy (disparity mentah DA-V2 Small) + work/depth/manifest.json |
 | 3 | stabilize.py | seg/probs + depth + qc_report → work/stable/groups/*.png (peta grup) + work/stable/depth_smooth/*.npy (temporal EMA + optical flow, filter pulau + mode filter) |
 | 4 | vectorize.py | stable/ → work/contours/*.json (polyline bertipe: silhouette, silhouette_hole, group_boundary, occlusion) + work/contours/manifest.json (+ clip_stats.json, T-201b). T-201a DONE: siluet + lubang + batas grup; T-201b DONE: garis oklusi dari depth_smooth + clip_stats.json (ambang persentil per klip, dihitung dari seluruh klip; batas kaki, kalibrasi di T-302/T-305); T-202 DONE: orientasi (silhouette searah jarum jam, lubang berlawanan), anchor = `points[0]` (diputar; key `anchor` konstan 0), arah garis terbuka berkesinambungan, `track_id` (mulai 1; `src/rotoscope/track.py`, Chamfer simetris + penugasan optimal, `max_match_dist_px` 16, silhouette terbesar mewarisi id) + key level-frame `prev_sha256` (rantai kesinambungan: stage [4] diproses BERURUTAN, resume memeriksa rantai). Subperintah `vectorize`, belum masuk `run` sampai T-203 |
-| 5 | stylize.py | contours + style YAML → work/strokes/*.svg + *.png |
+| 5 | stylize.py | contours + style YAML → work/strokes/*.svg + *.png + manifest.json (+ frames.jsonl). T-203a DONE: garis polos (penghalusan Gaussian `shape.smooth_px` → approxPolyDP → Catmull-Rom; mode tepi `hide`/`draw`; SVG string manual + PNG supersampling; satuan px ref 1080 × `render.output_width`/1080; hash style = parameter aktif; tanpa resample, jitter, taper, tekstur = Phase 4). Subperintah `stylize` (`--style --restart --limit`), belum masuk `run` sampai T-203b |
 | 6 | export.py | strokes → out/animation.mp4 + out/svg/*.svg |
 
 Path `work/…` di tabel = relatif terhadap folder kerja klip `work/clips/<nama video>/` (T-104b).
 Cara pakai: `python -m rotoscope run <video>`; per stage: `python -m rotoscope <stage> <video>` (stage = ingest, segment, depth,
-stabilize, vectorize, export; `vectorize` belum ada di `run`); unduh model:
+stabilize, vectorize, stylize, export; `vectorize` dan `stylize` belum ada di `run` sampai T-203b); unduh model:
 `python -m rotoscope download` (bagian "CLI" di docs/01). Hasil GPU hanya dihapus dengan `--yes`.
 Kontrak lengkap per modul: docs/01-PIPELINE-SPEC.md. Parameter style: docs/02-STYLE-PARAMS.md.
 

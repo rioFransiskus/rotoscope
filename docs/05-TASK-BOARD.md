@@ -1018,17 +1018,17 @@ Tiga langkah, jadikan refleks:
     tidak terdeteksi rantai; Y tak bersyarat. Alat: `scripts/contour_overlay.py --track` (warna per `track_id`, anchor, panah arah,
     `--compare`, `--label`); keluaran `work/t202/` (ter-ignore)
 
-### T-203 · `stylize.py` garis polos · `TODO`
-- **Kerjakan:** `approxPolyDP` → Catmull-Rom → resample dari anchor, render stroke tebal seragam,
-  warna solid. Satu renderer untuk semua `type`, override `stroke.by_type`
-- **⚠️ Keputusan tertunda dari T-201a (wajib, seperti `output_width`):**
-  - **Run titik di tepi frame:** foreground menyentuh tepi bawah di **283/283** frame `test` dan **119/119** `test_short`
-    (tepi kanan 59/283); kontur `silhouette` memuat run titik tepat di baris/kolom tepi (y = H − 0.5, x = 0.5, x = W − 0.5).
-    T-203 **WAJIB memutuskan** penanganannya (sembunyikan / pudarkan / gambar) **SEBELUM implementasi**
-  - **Urutan `run`:** T-203 memasukkan [4] dan [5] ke urutan `run`, ke tabel restart DAG (`docs/01` "CLI") dan menyalakan
-    `export.source: "strokes"`; `--restart-from vectorize|stylize` ikut ditambahkan
-  - **`group_boundary` loop** = `closed: false` dengan titik akhir = titik awal (25 di `test_short`, 57 di `test`): taper
-    ujung **tidak boleh menipiskan sambungan** (kenali loop dari titik akhir = titik awal)
+### T-203a · `stylize.py` garis polos (stage [5], subperintah `stylize`) · `DONE`
+- **Kerjakan (aktual, T-203a):** penghalusan Gaussian (`shape.smooth_px`) → `approxPolyDP` → Catmull-Rom (adaptif) → ekstensi ujung di tepi →
+  render garis tebal seragam solid (SVG string manual + PNG supersampling). **Tanpa resample** (penyimpangan dari "resample dari
+  anchor": docs/04 "Keputusan T-203" butir 8; resample arc-length dari `points[0]` = T-401 / T-402). Satu renderer untuk semua
+  `type`, override `stroke.by_type.*.width_scale`. Kontrak aktual: docs/01 [5]; parameter: docs/02
+- **Status ⚠️ dari T-201a / T-202:**
+  - ✅ **Run titik di tepi frame** (terjawab): **hide** (keputusan Rio, dinilai visual di frame 233 dan 195 `test`: tubuh tampak
+    terpotong frame dengan rapi); `shape.edge_mode: "draw"` tersedia
+  - ➡️ **Urutan `run`:** dipindah ke **T-203b** (di bawah)
+  - ⏳ **`group_boundary` loop** = `closed: false` dengan titik akhir = titik awal (25 di `test_short`, 57 di `test`): digambar sebagai
+    tertutup tanpa takik; **taper loop (taper ujung tidak boleh menipiskan sambungan) ditunda ke Phase 4 (T-401)**
   - Konvensi koordinat pusat piksel: skala `output_width` langsung, x' = s · x (`docs/01` [4])
   - ⚠️ **Titik awal garis terbuka melompat 60–127 px saat strok memanjang / memendek** (T-202, terukur Y@16: 7–13% strok-frame
     memilih ujung berbeda dari aturan statis; lompatan titik awal p50 3–4,5 px, p95 18–23 px, maks 97 / 127 px; sebabnya bentuk
@@ -1036,14 +1036,127 @@ Tiga langkah, jadikan refleks:
     dikunci posisi (mis. noise 2D / fase dari titik referensi tetap) atau yang tidak bergantung pada titik awal. Untuk strok
     tertutup `points[0]` = anchor (stabil: median 1–2 px, maks 19 px silhouette utama). [5] membaca `points[0]` (bukan `anchor`) dan
     mengabaikan `prev_sha256`
-- **Done when:** output sudah berupa outline, bukan siluet blok
+- **Done when:** output sudah berupa outline, bukan siluet blok — **tercapai** (penilaian visual Rio 2026-10-03: kemulusan sesuai, tepi
+  rapi, takik cekung dan sambungan OK; video: getar antar frame dan garis oklusi berkedip wajar sementara — temporal [3] belum aktif)
+- **Hasil akhir (default produksi):** ε 2,8 ref, `smooth_px` 5,0, `width_base` 9,0, `edge_mode` hide, `output_width` 1080 (1080×1922).
+  Terukur: median 125–128 ms/frame, 14–30 MiB per klip, memori puncak ±127 MiB. Suite **774 lolos / 2 skip** (698 → 774: 53 + 16
+  test `test_stylize*.py`, + test config). **Batas yang diketahui:** (a) overshoot spline di takik cekung / sudut tajam (deviasi maks
+  per strok p50 5,8 / p95 8,7 / maks 15,0 px output pada silhouette; backlog di bawah); (b) approxPolyDP tidak menjamin ≤ epsilon;
+  (c) tebal raster dikuantisasi grid supersampling (galat posisi ≤ 0,3 px, tebal ≤ 0,4 px per kasus); (d) garis oklusi berkedip dan
+  getar antar frame (temporal [3]); (e) titik awal jalur tertutup tidak dipertahankan; (f) `stroke.cap` hanya `round`; (g) validasi
+  contours hanya untuk frame terpilih; (h) frame contours yang diubah tangan tanpa mengubah manifest tidak terdeteksi (resume
+  stage ini memeriksa SVG / PNG, bukan isi contours)
 - **Update log:**
+  - [2026-10-03] **T-203a DONE.** Rincian di entri-entri di bawah (Tahap 1–3 + putaran visual) dan docs/04 "Hasil T-203a"
   - [2026-09-27] Keputusan tertunda: tambah parameter `output_width` (mis. 1080) terpisah dari
     `working_width`. Output digambar ulang dari vector (D-001) → resolusi output tidak terikat
     sumber (video test 480 px). Tebal garis & jitter harus relatif terhadap ukuran output, bukan px
     absolut. Ini mengubah kontrak stage [5] → bahas & catat di decision log sebelum implementasi
   - [2026-09-29] Satu renderer + parameter per tipe; simplify/resample pindah dari [4] ke [5] — D-010.
     `output_width` tetap harus diputuskan sebelum implementasi
+  - [2026-10-03] **T-203 dipecah** T-203a (stage [5] garis polos + subperintah `stylize`) dan T-203b (integrasi `run` / DAG /
+    export). Keputusan Rio 1–7: "Keputusan T-203, 2026-10-03" di docs/04. **Log Tahap 1 T-203a (rencana disetujui Rio, lengkap):**
+    - **Poin 4 — parameter baru** (tiga tempat: YAML, `config.py`, docs/02; `default.yaml` tidak berubah): `render.output_width` (int
+      genap 256–2160, default 1080; batas atas supaya mask supersampling ≤ 75 MiB) dan `shape.edge_mode` (`hide` | `draw`, default
+      `hide`). Konstanta struktural bernama di modul (`REF_WIDTH = 1080`, bit sub-piksel, margin ekstensi tepi, batas kontak dangkal,
+      kompresi PNG), tanpa magic number. Default look test dikonversi × 2,25 (look test menggambar di px KERJA).
+    - **Poin 6 — pipeline geometri:** skala `x' = s·x` (titik = pusat piksel) → penanganan tepi → approxPolyDP (epsilon px output =
+      nilai ref × unit) → Catmull-Rom (`smooth_tension`, `spline_steps`; rapat otomatis untuk segmen panjang) → polyline rapat ke
+      renderer. **Tanpa resample** di render. Strok tertutup: `points[0]` = anchor, spline periodik, jalur ditutup tanpa takik. Loop
+      terbuka (titik akhir = titik awal): titik penutup dibuang, diperlakukan tertutup. Garis oklusi digambar apa adanya (tanpa
+      interpolasi antar frame); frame tanpa strok = hanya kertas (valid).
+    - **Poin 9 — SVG:** string manual dari titik yang SAMA dengan raster (1 desimal); `width` / `height` / `viewBox` = ukuran output;
+      latar `<rect fill=paper.color>`; satu `<g>` per tipe (id tetap) urut silhouette, silhouette_hole, group_boundary, occlusion
+      (urutan z tidak berpengaruh: tinta solid satu warna); satu `<path>` per strok (`M … L … [Z]`), `stroke-width` konstan,
+      `stroke-linecap` / `stroke-linejoin` `round`, `fill="none"`; tanpa id acak / timestamp (byte-deterministik). Opasitas diabaikan.
+    - **Poin 14 — alat visual:** `scripts/strokes_preview.py` (pakai ulang `export.encode`) → `work/t203a/`: (a) video pratinjau
+      rentang 73–92, 183–202, 225–240 (+ frame strok terbanyak / jalur terpanjang) kedua klip; (b) hide vs draw (frame 233 + tepi
+      kanan); (c) tebal garis `width_base` {3,6; 5,4; 7,2; 9,0} px ref pada frame 80 dan 233; (d) PNG kasus terburuk (deviasi
+      terbesar, strok terpanjang, run tepi terpanjang, strok terbanyak, kontak tepi paling dangkal, sudut kanvas); (e) crop zoom 3×
+      di sambungan, ujung terbuka, tepi bawah; (f) epsilon {2,8; 5,6} ref pada frame yang sama. Label "garis polos T-203a - belum ada
+      jitter / taper / tekstur".
+    - **Poin 15 — berkas dan papan:** hasil visual di `work/t203a/` (ter-ignore, dipertahankan); sementara di scratchpad; skrip
+      `scripts/strokes_preview.py` masuk git; `T203a-prompt.md` dihapus terakhir (Tahap 4). Phase 2 = 6 task (T-201a, T-201b, T-202,
+      T-203a, T-203b, T-204), total 38; setelah T-203a DONE: Phase 2 = 4/6, total 20/38.
+    - **Tambahan Rio (Tahap 1):** konversi default disetujui dengan ukuran epsilon 5,6 / 8,0 ref; `resample_points` tidak aktif
+      (T-401 / T-402 butuh resample arc-length dari `points[0]`); SVG manual; hash style = parameter aktif; tebal garis Tahap 3
+      {3,6; 5,4; 7,2; 9,0} px ref; spline uniform vs centripetal diukur (usulan saja); kontak tepi dangkal < 45° → tegak lurus tepi;
+      ujung terbuka dekat tepi tanpa celah ke tepi kanvas; ukur waktu + ukuran PNG dan deviasi akor SVG (≤ 0,1 px output, kalau
+      lebih naikkan kerapatan sampling dari sumber yang sama); `SUPPORTED_CONTOURS_CONTRACTS = {"T-202"}`.
+  - [2026-10-03] **Log Tahap 2–3 T-203a (angka terukur; status tetap WIP sampai Rio menilai visual):**
+    - **Waktu per frame (median, kedua klip serupa; 1080×1922, ss 3):** geometri 24–25 ms, mask 22 ms, compose 27 ms (tabel
+      LUT; float32 awal 115–124 ms), encode PNG 41–42 ms (`cv2.imencode`, level 3), SVG 4 ms, tulis berkas 5 ms; total p50 125 /
+      128 ms, p95 134 / 137 ms, maks 140 / 148 ms (`test_short` / `test`), 0 frame > 0,3 s. PNG level 1 / 3 / 6 / 9 = 40 / 40 /
+      54 / 108 ms dan 68,6 / 65 / 37 / 34,5 KiB per frame (level 3 dipakai). Memori puncak 126,6 MiB. Ukuran: PNG median 67,0 /
+      70,8 KiB (total 7,79 / 19,03 MiB), SVG median 37,3 / 39,8 KiB (total 4,18 / 10,43 MiB).
+    - **Metrik (a)–(c), angka:** (a) kesetiaan geometri, deviasi maks per strok (px output, ε 5,6 ref; p50 / p95 / maks; `test_short`
+      | `test`): silhouette 8,9 / 16,1 / 22,5 | 9,2 / 16,3 / 21,5; silhouette_hole 5,6 / 9,6 / 15,9 | 6,0 / 11,5 / 18,6;
+      group_boundary 3,8 / 7,0 / 10,8 | 3,9 / 7,9 / 18,7; occlusion 3,4 / 5,4 / 7,6 | 3,3 / 5,4 / 8,6; ε 2,8 ref: silhouette
+      5,4 / 8,0 / 15,5 | 5,3 / 7,9 / 15,3; ε 8,0 ref: 12,0 / 20,3 / 28,9 | 12,9 / 19,7 / 29,6; deviasi akor polyline vs spline
+      sebenarnya maks 0,041 px (p95 0,036; target ≤ 0,1). (b) penyelarasan: garis 0° / 30° / 45° / 60°, ss 3 dan 4: galat posisi per
+      kasus ≤ 0,3 px output (kuantisasi grid ss; keputusan Rio ±0,25), galat tebal ≤ 0,4 px; rata-rata atas 16 posisi sub-piksel
+      acak: posisi ≤ 0,05 px, tebal ≤ 0,1 px. (c) tepi (hide), seluruh frame: jarak titik tengah run tepi ke garis tengah jalur
+      terdekat minimum 10,8 px (`test_short`) / 3,2 px (`test`) (draw ≤ 0,01 px); 336 / 1152 ujung diperpanjang, 0 yang tidak
+      mencapai tepi kanvas (cakupan ≥ 0,99); kontak dangkal (< 45°) 31 / 336 dan 183 / 1152, sudut terkecil 1,8° / 0,0°; 0 ujung
+      tepat di sudut kanvas; 0 strok seluruhnya di tepi; jalur ≥ strok di semua frame.
+    - **Mutation check, 8 dari 8 mutan membuat test terkait GAGAL (plugin pytest di luar repo, kode produksi tidak diubah):**
+      (1) **pembuangan run tepi mati** → 9 test gagal (hide ×3 di tepi bawah / kanan / dangkal, draw-vs-hide, strok seluruhnya di
+      tepi, stale, data nyata ×2); (2) perpanjangan keluar kanvas mati → 5; (3) offset koordinat −0,5 piksel ss hilang → 2
+      (rata-rata galat posisi sub-piksel, ss 3 dan 4); (4) komposisi union diganti per strok → 1; (5) SVG memakai titik berbeda dari
+      raster → 1; (6) koreksi isian tepi poligon (`FILL_BIAS_SS`) dihapus → 3; (7) sampling spline adaptif dimatikan → 1; (8) aturan
+      kontak dangkal dirusak (selalu tegak lurus) → 1 (test unit aturan ekstensi).
+    - **Metrik kesetiaan + toleransi (keputusan Rio: epsilon BUKAN batas):** metrik = jarak tiap titik kontur asli terskala
+      (titik di tepi dikecualikan pada mode hide) ke polyline akhir terdekat (jarak segmen eksak, `stylize_metrics.stroke_deviation`),
+      diringkas per strok (maks) dan pooled (p95). approxPolyDP tidak menjamin deviasi ≤ epsilon: terukur pada ε 5,6 ref, jarak
+      tegak lurus ke GARIS akord (cara OpenCV sendiri mengukur; bukan jarak ke segmen) melebihi epsilon sampai 7,33 px (+31%) pada
+      22 / 496 strok tertutup dan 3 / 3163 strok terbuka; strok tertutup yang dibuka (+ titik awal) dan diputar titik awalnya tetap
+      melebihi (11 / 209 dan 13 / 209), jadi bukan efek segmen-vs-garis, bukan efek penutupan, bukan titik awal. Contoh: `test_short`
+      frame 24 strok 0 (tertutup, 1366 titik): OpenCV menyisakan 35 titik; rantai titik 728 → 905 (178 titik) berjarak maks 6,27
+      px > 5,6 dari garis akordnya, sedangkan Douglas-Peucker acuan pada rantai yang sama memecahnya di 1 titik tambahan.
+      Mekanisme di dalam OpenCV tidak diidentifikasi (kode sumbernya tidak dibaca). Toleransi test: sintetis = 0,35 × tebal garis
+      (lingkaran terukur 1,56 px vs epsilon 1,33 px); data nyata = ambang regresi dari angka terukur di atas (silhouette 30,
+      hole 22, group_boundary 22, occlusion 12 px output; bukan fungsi epsilon).
+    - **Peringatan mode draw bertebal tipis:** `draw_width_warning` — satu baris stderr per run (menyebut tebal per tipe dan syarat
+      minimum `draw_mode_min_width` = s), bukan error; test `test_draw_mode_thin_width_warns_once_on_stderr_not_error`.
+    - **Backlog (TIDAK dikerjakan di T-203a): spline di sudut tajam.** Overshoot Catmull-Rom seragam di takik cekung tajam
+      (maks ±22 px output pada ε 5,6, di tengah silhouette). Opsi: (i) centripetal (alpha 0,5): kurang menang jelas — silhouette p95
+      16,1 → 12,2 tetapi p50 8,9 → 9,7; group_boundary maks 10,8 → 13,0 (`test_short`); (ii) tangen nol di titik bersudut tajam
+      (fitur baru, butuh ambang sudut); (iii) epsilon lebih kecil (ε 2,8: silhouette maks 15,5). Diputuskan Rio sesudah penilaian
+      visual.
+  - [2026-10-03] **Putaran visual 2 Rio → default `smooth_px` 5,0 dan `stroke.width_base` 9,0** (docs/04 butir 12; tepi bawah hide,
+    takik / sambungan OK). Terukur (kedua klip; silhouette deviasi maks per strok p50 / p95 / maks px output): **5,8 / 8,7 / 15,0**
+    (smooth 3,0: 5,6 / 8,2 / 11,4); luas silhouette rata-rata −0,008% (terburuk −0,09%); kelok 86,8 °/100 px dan balik kelengkungan
+    1,58/100 px (smooth 3,0: 94,0 / 1,67); stabilitas excess silhouette 0,74 px; waktu geometri 38 ms. Determinisme (hash
+    `test_short` 7636be00…, `test` 0a328fe9…), resume, stale, input tidak berubah: lolos; suite 774 lolos / 2 skip.
+  - [2026-10-03] **Backlog (TIDAK dikerjakan), tuas berikutnya bila Rio masih menilai garis bergelombang:** (1) naikkan
+    `shape.smooth_px` (prototipe 5,0: kelok 86,8 °/100 px dan balik kelengkungan 1,57 vs 94,0 / 1,67 pada 3,0; deviasi p50
+    silhouette 5,8 vs 5,6 px; luas terburuk −0,09%; tanpa kode baru); (2) spline di sudut tajam (centripetal atau tangen nol di
+    titik bersudut, lihat backlog di atas); (3) penghalusan sesudah approx / `smooth_tension` lebih kecil. Pemetaan tahap waktu:
+    "gambar" = mask 22 ms, "downsample" = INTER_AREA + tabel warna (compose) 27 ms, "encode PNG" 41–42 ms, "tulis berkas" 5 ms.
+  - [2026-10-03] **Keputusan visual Rio → produksi:** `shape.simplify_epsilon` 2,8 ref + **`shape.smooth_px` 3,0** (Gaussian
+    arc-length sebelum approxPolyDP; 0 = mati; aktif, masuk hash style; docs/04 butir 11). Implementasi `stylize.smooth_polyline`
+    (re-sample 1 px ref, sudut > 60° pada ±6 sampel dikunci dan memecah jalur, ujung terbuka / titik silang tepi dikunci lewat
+    pantulan ganjil, tertutup + loop periodik). Tes: `tests/test_stylize_smooth.py` (16; garis miring 30 / 45 / 60°, busur, sudut 90 /
+    60 / 40°, sambungan tertutup, derau berkurang, determinisme); mutan penghalusan mati (7 test gagal), ujung bergeser (7),
+    sudut dibulatkan (3). Terukur ulang (produksi, kedua klip; silhouette p50 / p95 / maks deviasi per strok px output): lama
+    (ε 5,6, tanpa) 9,1 / 16,2 / 22,5; ε 2,8 tanpa 5,4 / 8,1 / 15,5; **final 5,6 / 8,2 / 11,4**; luas silhouette rata-rata −0,003%
+    (terburuk −0,04%); kegelisahan (kelok °/100 px, balik kelengkungan/100 px) 114,5 / 1,89 → **94,0 / 1,67**; stabilitas antar frame
+    (excess chamfer silhouette) 0,79 → 0,77 px (tidak peka); waktu geometri 34,6 → 35,7 ms per frame. Determinisme, resume, stale,
+    input tidak berubah: lolos (hash final `test_short` fba93116…, `test` 8a8ea41d…). Suite 774 lolos / 2 skip.
+
+### T-203b · Integrasi stage [4] + [5] ke `run`, export `strokes` · `TODO`
+- **Kerjakan:** (1) [4] vectorize dan [5] stylize masuk urutan `run` (`ingest → segment → depth → stabilize → vectorize → stylize →
+  export`); `cli.STAGES`, `RESTART_SCOPE`, `_targets`, graf dependensi + tabel restart di docs/01 "CLI" (`--restart-from
+  vectorize|stylize`, tanpa `--yes`); flag `--style` di `run`; (2) `export.source: "strokes"` diterima (sekarang ditolak oleh
+  `export.make_source`): MP4 dari `strokes/*.png` apa adanya (ukuran output 1080×1922 genap, bukan resolusi kerja; verifikasi ffprobe
+  memakai ukuran output), manifest export mencatat `strokes/manifest.json`; (3) salin `strokes/*.svg` ke `out/svg/` (docs/01 [6]);
+  (4) validasi `export.source` dan konfigurasi style-vs-export di `config.py` / docs/02 bila perlu
+- **⚠️ Tersisa dari T-203a:** (a) `export.filename` / `--limit` untuk jalur strokes (`<nama>.limitN.mp4`); (b) pre-flight (c) `run`
+  untuk target export tidak berubah; (c) taper loop dan jitter terkunci posisi tetap Phase 4 (bukan T-203b); (d) estimasi waktu
+  `run` ([4] ±80 ms + [5] ±130 ms per frame); (e) `--preview N` = T-204
+- **Done when:** `python -m rotoscope run <video>` menghasilkan `out/<nama>.mp4` berisi garis polos dari [5] dan `out/svg/*.svg`
+- **Update log:**
+  - [2026-10-03] Dipecah dari T-203 (keputusan Rio butir 6–7, docs/04 "Keputusan T-203")
 
 ### T-204 · Flag `--preview N` · `TODO`
 - **Kerjakan:** render hanya N frame untuk iterasi cepat. Threshold per klip dibaca dari
@@ -1116,12 +1229,17 @@ Tiga langkah, jadikan refleks:
 - **Kerjakan:** variasi tebal sepanjang path (`width_variation`, `width_noise_scale`),
   ujung menipis
 - **Update log:**
+  - [2026-10-03] T-203a merender garis polos TANPA resample. T-401 butuh **resample arc-length dari `points[0]`** (titik rapat, N =
+    max(`shape.resample_points`, ceil(panjang / jarak maks))) untuk tebal per titik; loop dikenali dari titik akhir = titik awal
+    (taper tidak menipiskan sambungan); satuan = px ref × `unit` (docs/02)
 
 ### T-402 · Jitter deterministic · `TODO`
 - **Kerjakan:** Perlin noise per titik, seed = `hash(frame_index, param_seed, track_id)`,
   `temporal_drift` untuk perubahan antar frame
 - **⚠️ Pitfall P-007:** random murni = tidak reproducible, tidak bisa di-debug
 - **Update log:**
+  - [2026-10-03] Jitter terkunci posisi ditunda ke sini (keputusan Rio, T-203a): `points[0]` garis terbuka melompat 60–127 px,
+    jadi noise 1D arc-length dari `points[0]` akan "pop". Butuh **resample arc-length dari `points[0]`** (T-203a tidak me-resample)
   - [2026-09-29] Seed ditambah `track_id` (bukan indeks stroke) supaya pola getar tidak melompat saat
     urutan stroke berubah — D-010
 
@@ -1200,11 +1318,12 @@ Tiga langkah, jadikan refleks:
 |---|---|---|
 | 0 Setup | T-001 … T-005 | 5/5 |
 | 1 Skeleton | T-101 … T-108 (T-102 → a/b/c, T-104 → a/b) — ✅ **Phase 1 selesai** (🎯 milestone T-104b, T-107 DONE) | 11/11 |
-| 2 Vectorize | T-201 … T-204 (T-201 → a/b) — T-201a ✅, T-201b ✅ DONE (dengan batas kaki), T-202 ✅ DONE | 3/5 |
+| 2 Vectorize | T-201 … T-204 (T-201 → a/b, T-203 → a/b) — T-201a ✅, T-201b ✅ DONE (dengan batas kaki), T-202 ✅ DONE, T-203a ✅ DONE (T-203b, T-204 TODO) | 4/6 |
 | 3 Stabilize | T-301 … T-305 (T-301 SKIP) | 0/5 |
 | 4 Style | T-401 … T-406 | 0/6 |
 | 5 Fallback | T-501 … T-502 (BLOCKED) | 0/2 |
 | 6 Opsional | T-601 … T-603 | 0/3 |
 
-**Total: 37 task** (5 + 11 + 5 + 5 + 6 + 2 + 3) · Selesai: 19/37 (5 + 11 + 3; SKIP — T-301, T-601 — tidak dihitung selesai).
+**Total: 38 task** (5 + 11 + 6 + 5 + 6 + 2 + 3) · Selesai: 20/38 (5 + 11 + 4; SKIP — T-301, T-601 — tidak dihitung selesai).
+Rekonsiliasi 2026-10-03: T-203 dipecah jadi T-203a + T-203b (Phase 2 = 6 task); jumlah per Phase = total.
 Rekonsiliasi 2026-10-01: sebelum T-104b selesai papan menulis 9/11 + 13/37, padahal 5 + 9 = 14 — total salah hitung 1.

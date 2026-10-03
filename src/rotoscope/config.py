@@ -79,7 +79,9 @@ TEMPORAL_SEED_MODES = ("frame", "fixed")
 TEXTURE_MODES = ("none", "brush_stamp", "grain_overlay")
 TEXTURE_MODE_BRUSH = "brush_stamp"
 RESAMPLE_POINTS_MIN = 4
+EDGE_MODES = ("hide", "draw")                   # shape.edge_mode (T-203a): garis di tepi frame
 RENDER_SS_MAX = 8
+OUTPUT_WIDTH_MIN, OUTPUT_WIDTH_MAX = 256, 2160  # render.output_width (px, genap)
 HEX_COLOR_RE = re.compile(r"#[0-9a-fA-F]{6}")
 EXPORT_SOURCES = ("silhouette", "strokes")      # "strokes" = Phase 2 (stage [5]); export menolak sampai ada
 X264_PRESETS = ("ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow")
@@ -245,10 +247,12 @@ class PipelineConfig:
 # ── Style: configs/styles/*.yaml ───────────────────
 @dataclass(frozen=True)
 class ShapeConfig:
-    simplify_epsilon: float = 2.5
+    simplify_epsilon: float = 2.8      # px referensi lebar 1080; keputusan Rio (visual): 5.6 membuang bentuk
+    smooth_px: float = 5.0             # px ref; Gaussian arc-length SEBELUM approxPolyDP, 0 = mati (keputusan Rio, visual)
     resample_points: int = 200
     smooth_tension: float = 0.5
     spline_steps: int = 8
+    edge_mode: str = "hide"
 
 
 @dataclass(frozen=True)
@@ -259,14 +263,14 @@ class TypeScaleConfig:
 
 @dataclass(frozen=True)
 class StrokeConfig:
-    width_base: float = 3.2
+    width_base: float = 9.0            # px referensi 1080; keputusan Rio (visual); setara look test 7.2 (3.2 px kerja × 2.25)
     width_variation: float = 0.45
-    width_noise_scale: float = 0.08
+    width_noise_scale: float = 0.036
     color: str = "#1a1a1a"
     opacity: float = 0.92
     cap: str = "round"
     taper_ends: bool = True
-    taper_px: float = 20.0
+    taper_px: float = 45.0
     taper_min: float = 0.15
     by_type: Mapping[str, TypeScaleConfig] = field(
         default_factory=_frozen({t: TypeScaleConfig() for t in STROKE_TYPES}))
@@ -274,8 +278,8 @@ class StrokeConfig:
 
 @dataclass(frozen=True)
 class JitterConfig:
-    amplitude: float = 1.8
-    frequency: float = 0.12
+    amplitude: float = 4.0
+    frequency: float = 0.053
     temporal_seed_mode: str = "frame"
     temporal_drift: float = 0.35
     param_seed: int = 0
@@ -285,7 +289,7 @@ class JitterConfig:
 class MultipassConfig:
     enabled: bool = True
     passes: int = 2
-    offset: float = 1.2
+    offset: float = 2.7
     opacity_falloff: float = 0.55
 
 
@@ -310,6 +314,7 @@ class PaperConfig:
 @dataclass(frozen=True)
 class RenderConfig:
     ss: int = 3
+    output_width: int = 1080
 
 
 @dataclass(frozen=True)
@@ -751,9 +756,11 @@ def _export_filename(key: str, v: str) -> None:
 def _validate_style(c: StyleConfig) -> None:
     sh = c.shape
     _at_least("shape.simplify_epsilon", sh.simplify_epsilon, 0)
+    _at_least("shape.smooth_px", sh.smooth_px, 0)
     _at_least("shape.resample_points", sh.resample_points, RESAMPLE_POINTS_MIN)
     _unit("shape.smooth_tension", sh.smooth_tension)
     _at_least("shape.spline_steps", sh.spline_steps, 1)
+    _choice("shape.edge_mode", sh.edge_mode, EDGE_MODES)
 
     st = c.stroke
     _at_least("stroke.width_base", st.width_base, 0, strict=True)
@@ -795,3 +802,6 @@ def _validate_style(c: StyleConfig) -> None:
         _fail("paper.texture_image", p.texture_image, "tidak ada (dipakai karena paper.enabled = true)")
 
     _between("render.ss", c.render.ss, 1, RENDER_SS_MAX)
+    _between("render.output_width", c.render.output_width, OUTPUT_WIDTH_MIN, OUTPUT_WIDTH_MAX)
+    if c.render.output_width % 2:
+        _fail("render.output_width", c.render.output_width, "harus genap (yuv420p)")

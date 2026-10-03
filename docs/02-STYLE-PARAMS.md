@@ -167,24 +167,29 @@ export:
 ## `configs/styles/rough-sketch.yaml` — style
 
 ```yaml
+# SATUAN PANJANG (tebal, epsilon, offset, jarak, frekuensi per px) = px REFERENSI lebar 1080; stage [5] mengalikannya
+# dengan unit = render.output_width / 1080 (T-203a). Nilai = nilai look test (px kerja 480 px) × 2.25.
+
 # ── SHAPE ──────────────────────────────────────────
 shape:
-  simplify_epsilon: 2.5      # cv2.approxPolyDP. Naik = lebih sedikit titik, lebih kasar
-  resample_points: 200       # jumlah titik tetap per stroke (maks 1 titik / px untuk stroke pendek)
+  simplify_epsilon: 2.8      # cv2.approxPolyDP (px ref). Naik = lebih sedikit titik, lebih kasar (keputusan Rio: 5.6 membuang bentuk)
+  smooth_px: 5.0             # penghalusan Gaussian arc-length SEBELUM approxPolyDP (px ref); 0 = mati. Sudut tajam + ujung dijaga
+  resample_points: 200       # jumlah titik tetap per stroke (Phase 4; belum dipakai render T-203a)
   smooth_tension: 0.5        # Catmull-Rom tension. 0 = tajam, 0.5 = Catmull-Rom standar
-  spline_steps: 8            # titik spline per segmen sebelum resample
+  spline_steps: 8            # titik spline minimum per segmen (otomatis lebih rapat bila galat akor > 0.03 px ref)
+  edge_mode: "hide"          # garis di tepi frame: "hide" = disembunyikan (tubuh terpotong frame) | "draw" = digambar
 # (min_contour_area pindah ke vectorize.min_region_area di default.yaml — D-010)
 
 # ── STROKE ─────────────────────────────────────────
 stroke:
-  width_base: 3.2            # tebal dasar garis (px)
+  width_base: 9.0            # tebal dasar garis (px ref); keputusan Rio (visual), setara look test = 7.2
   width_variation: 0.45      # 0 = seragam, 1 = variasi ekstrem
-  width_noise_scale: 0.08    # frekuensi perubahan tebal sepanjang path
+  width_noise_scale: 0.036   # frekuensi perubahan tebal sepanjang path (per px ref)
   color: "#1a1a1a"
   opacity: 0.92
   cap: "round"
   taper_ends: true           # ujung garis menipis
-  taper_px: 20               # panjang zona taper di tiap ujung (px)
+  taper_px: 45               # panjang zona taper di tiap ujung (px ref)
   taper_min: 0.15            # tebal di ujung sebagai fraksi tebal normal
   by_type:                   # override per jenis garis (skema [4]); 1.0 = sama dengan dasar
     silhouette:      {width_scale: 1.0, opacity_scale: 1.0}
@@ -194,8 +199,8 @@ stroke:
 
 # ── JITTER (hand-drawn feel) ───────────────────────
 jitter:
-  amplitude: 1.8             # pergeseran titik (px). 0 = garis mekanis
-  frequency: 0.12            # skala noise. Kecil = gelombang panjang
+  amplitude: 4.0             # pergeseran titik (px ref). 0 = garis mekanis
+  frequency: 0.053           # skala noise (per px ref). Kecil = gelombang panjang
   temporal_seed_mode: "frame"  # "frame" = getar tiap frame | "fixed" = diam
   temporal_drift: 0.35       # seberapa cepat pola jitter berubah antar frame
   param_seed: 0              # seed = hash(frame_index, param_seed, track_id) — P-007
@@ -204,7 +209,7 @@ jitter:
 multipass:
   enabled: true
   passes: 2                  # jumlah garis tumpang tindih
-  offset: 1.2                # jarak antar pass (px)
+  offset: 2.7                # jarak antar pass (px ref)
   opacity_falloff: 0.55      # pass ke-2 lebih pudar
 
 # ── TEXTURE ────────────────────────────────────────
@@ -226,7 +231,7 @@ paper:
 # ── RENDER ─────────────────────────────────────────
 render:
   ss: 3                      # faktor supersampling raster (anti-alias)
-  # output_width: diputuskan sebelum T-203 (resolusi output terpisah dari resolusi kerja)
+  output_width: 1080         # lebar output (px, genap, 256–2160); tinggi mengikuti rasio klip, dinaikkan ke genap
 ```
 
 Bagian `temporal:` lama (mask_ema_alpha, optical_flow_blend, boil_preserve) **pindah** ke
@@ -240,6 +245,8 @@ Bagian `temporal:` lama (mask_ema_alpha, optical_flow_blend, boil_preserve) **pi
 | `shape.resample_points` | int ≥ 4 |
 | `shape.smooth_tension` | 0–1 |
 | `shape.spline_steps` | int ≥ 1 |
+| `shape.smooth_px` | ≥ 0 (0 = penghalusan mati) |
+| `shape.edge_mode` | `"hide"` \| `"draw"` |
 | `stroke.width_base` | > 0 |
 | `stroke.width_variation`, `stroke.opacity`, `stroke.taper_min` | 0–1 |
 | `stroke.width_noise_scale` | ≥ 0 |
@@ -260,6 +267,32 @@ Bagian `temporal:` lama (mask_ema_alpha, optical_flow_blend, boil_preserve) **pi
 | `texture.stamp_spacing` | > 0 |
 | `texture.pressure_noise`, `texture.grain_strength`, `paper.texture_opacity`, `paper.vignette` | 0–1 |
 | `render.ss` | int 1–8 |
+| `render.output_width` | int genap 256–2160 |
+
+### Satuan dan parameter aktif (T-203a)
+
+- **Satuan:** semua parameter panjang di tabel di atas adalah **px referensi lebar 1080**. Stage [5] memakai `unit =
+  render.output_width / 1080`; nilai efektif di px output = nilai × `unit`. Mengganti `output_width` tidak mengubah tampilan.
+  Tinggi output = `round(height × output_width / width)` dinaikkan ke genap (integer: `(2·H·ow + W) // (2·W)`, +1 bila
+  ganjil; 854 → 1922 untuk lebar 1080). Skala titik `s = output_width / width` (sama untuk x dan y).
+- **Konversi dari look test** (`scripts/look_test.py` menggambar di resolusi KERJA 480 px): × 2.25 (= 1080 / 480) — `width_base`
+  3.2 → 7.2, `jitter.amplitude` 1.8 → 4.0, `multipass.offset` 1.2 → 2.7, `taper_px` 20 → 45, `width_noise_scale` 0.08 → 0.036 dan
+  `jitter.frequency` 0.12 → 0.053 (per px, dibagi 2.25). **Pengecualian:** `simplify_epsilon` setara look test = 5.6, tetapi
+  penilaian visual Rio memutuskan **2.8** (5.6 membuang bentuk) dipadukan dengan `smooth_px` (3.0 masih bergelombang → **5.0**).
+  `width_base` setara look test = 7.2, tetapi penilaian visual Rio memilih **9.0**.
+- **`shape.smooth_px` (keputusan Rio, perbandingan visual 2026-10-03):** Gaussian arc-length sebelum approxPolyDP, sigma = nilai
+  ini (px ref × `unit`), 0 = mati. Kontur dire-sample tiap 1 px ref; sudut tajam (belok > 60° pada jendela ±6 sampel) dikunci
+  dan memecah jalur; ujung strok terbuka (termasuk titik silang tepi) tidak bergeser; strok tertutup dan loop dihaluskan periodik
+  tanpa takik. Tanpa penyusutan bentuk yang berarti (luas silhouette < 0,01% rata-rata).
+- **Aktif di T-203a:** `shape.simplify_epsilon`, `shape.smooth_px`, `shape.smooth_tension`, `shape.spline_steps`, `shape.edge_mode`, `stroke.width_base`,
+  `stroke.color`, `stroke.cap` (hanya `"round"`; nilai lain → error stage), `stroke.by_type.*.width_scale`, `paper.color`,
+  `render.ss`, `render.output_width`. Hanya parameter ini yang masuk hash style stage [5].
+- **Divalidasi tetapi BELUM aktif (dicatat di `strokes/manifest.json` → `ignored_params`; aktif di Phase 4):** `shape.resample_points`
+  (render tidak me-resample; resample arc-length dari `points[0]` dibutuhkan Phase 4, T-401 / T-402), `stroke.width_variation`,
+  `stroke.width_noise_scale`, `stroke.opacity`, `stroke.taper_*`, `stroke.by_type.*.opacity_scale`, `jitter.*`, `multipass.*`,
+  `texture.*`, `paper.enabled`, `paper.texture_*`, `paper.vignette`.
+- **`shape.smooth_tension`:** Catmull-Rom seragam (uniform); tangen di titik i = `smooth_tension × (p[i+1] − p[i−1])`
+  (0.5 = Catmull-Rom standar; 0 = segmen lurus berkecepatan tidak seragam). Ujung strok terbuka: titik ujung digandakan.
 
 ## Preset yang perlu disediakan
 

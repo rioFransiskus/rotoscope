@@ -1,24 +1,29 @@
 # Style rough-sketch (stage [5]). Nilai = default kode (src/rotoscope/config.py) = docs/02.
 # Path aset relatif → terhadap root project (folder berisi pyproject.toml), bukan cwd.
+# SATUAN PANJANG (tebal, epsilon, offset, jarak, frekuensi per px) = px REFERENSI lebar 1080; stage [5] mengalikannya
+# dengan unit = render.output_width / 1080, jadi mengganti output_width tidak mengubah tampilan (T-203a).
+# Nilai di bawah = nilai look test (px kerja 480 px) × 2.25.
 
 # ── SHAPE ──────────────────────────────────────────
 shape:
-  simplify_epsilon: 2.5      # cv2.approxPolyDP. Naik = lebih sedikit titik, lebih kasar
-  resample_points: 200       # jumlah titik tetap per stroke (maks 1 titik / px untuk stroke pendek)
+  simplify_epsilon: 2.8      # cv2.approxPolyDP (px ref). Naik = lebih sedikit titik, lebih kasar (keputusan Rio: 5.6 membuang bentuk)
+  smooth_px: 5.0             # penghalusan Gaussian arc-length SEBELUM approxPolyDP (px ref); 0 = mati. Sudut tajam + ujung dijaga
+  resample_points: 200       # jumlah titik tetap per stroke (Phase 4; belum dipakai render T-203a)
   smooth_tension: 0.5        # Catmull-Rom tension. 0 = tajam, 0.5 = Catmull-Rom standar
-  spline_steps: 8            # titik spline per segmen sebelum resample
+  spline_steps: 8            # titik spline minimum per segmen (otomatis lebih rapat bila galat akor > 0.03 px ref)
+  edge_mode: "hide"          # garis di tepi frame: "hide" = disembunyikan (tubuh terpotong frame) | "draw" = digambar
 # (min_contour_area pindah ke vectorize.min_region_area di default.yaml — D-010)
 
 # ── STROKE ─────────────────────────────────────────
 stroke:
-  width_base: 3.2            # tebal dasar garis (px)
+  width_base: 9.0            # tebal dasar garis (px ref); keputusan Rio (visual), setara look test = 7.2
   width_variation: 0.45      # 0 = seragam, 1 = variasi ekstrem
-  width_noise_scale: 0.08    # frekuensi perubahan tebal sepanjang path
+  width_noise_scale: 0.036   # frekuensi perubahan tebal sepanjang path (per px ref)
   color: "#1a1a1a"
   opacity: 0.92
   cap: "round"
   taper_ends: true           # ujung garis menipis
-  taper_px: 20               # panjang zona taper di tiap ujung (px)
+  taper_px: 45               # panjang zona taper di tiap ujung (px ref)
   taper_min: 0.15            # tebal di ujung sebagai fraksi tebal normal
   by_type:                   # override per jenis garis (skema [4]); 1.0 = sama dengan dasar
     silhouette:      {width_scale: 1.0, opacity_scale: 1.0}
@@ -28,8 +33,8 @@ stroke:
 
 # ── JITTER (hand-drawn feel) ───────────────────────
 jitter:
-  amplitude: 1.8             # pergeseran titik (px). 0 = garis mekanis
-  frequency: 0.12            # skala noise. Kecil = gelombang panjang
+  amplitude: 4.0             # pergeseran titik (px ref). 0 = garis mekanis
+  frequency: 0.053           # skala noise (per px ref). Kecil = gelombang panjang
   temporal_seed_mode: "frame"  # "frame" = getar tiap frame | "fixed" = diam
   temporal_drift: 0.35       # seberapa cepat pola jitter berubah antar frame
   param_seed: 0              # seed = hash(frame_index, param_seed, track_id) — P-007
@@ -38,7 +43,7 @@ jitter:
 multipass:
   enabled: true
   passes: 2                  # jumlah garis tumpang tindih
-  offset: 1.2                # jarak antar pass (px)
+  offset: 2.7                # jarak antar pass (px ref)
   opacity_falloff: 0.55      # pass ke-2 lebih pudar
 
 # ── TEXTURE ────────────────────────────────────────
@@ -60,4 +65,4 @@ paper:
 # ── RENDER ─────────────────────────────────────────
 render:
   ss: 3                      # faktor supersampling raster (anti-alias)
-  # output_width: diputuskan sebelum T-203 (resolusi output terpisah dari resolusi kerja)
+  output_width: 1080         # lebar output (px, genap, 256–2160); tinggi mengikuti rasio klip, dinaikkan ke genap
