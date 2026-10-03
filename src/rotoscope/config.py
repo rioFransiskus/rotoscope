@@ -206,7 +206,7 @@ class DepthLinesConfig:
 
 @dataclass(frozen=True)
 class TrackConfig:
-    max_match_dist_px: float = 12.0
+    max_match_dist_px: float = 16.0      # T-202: dikalibrasi (docs/04 "Hasil T-202"); bukan batas keras, lihat docs/02
 
 
 @dataclass(frozen=True)

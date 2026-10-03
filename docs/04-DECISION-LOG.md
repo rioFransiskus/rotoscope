@@ -549,6 +549,118 @@ torch); klip `test_short` (119 frame) dan `test` (283 frame). Kontrak lengkap: `
   isi + byte diperiksa: CRLF konsisten, tanpa BOM / karakter kontrol); dua test data nyata yang selalu skip (frame 150 / 200 tidak
   ada di `test_short`) diarahkan per klip
 
+**Hasil T-202 (2026-10-03)** — anchor, orientasi, arah garis terbuka, `track_id` di `src/rotoscope/track.py` (baru; CPU, tanpa
+torch) + `vectorize.py`; klip `test_short` (119 frame) dan `test` (283 frame). Kontrak lengkap: `docs/01` [4] "Aturan anchor +
+orientasi + `track_id`".
+- **Keputusan (Rio menyetujui rencana Tahap 1, lalu Y + ambang 16 sesudah menilai overlay):**
+  - **Anchor diputar:** `points[0]` = anchor, key `anchor` konstan 0 untuk strok tertutup; [5] membaca `points[0]`. `track_id`
+    mulai dari 1 (tidak ada nilai falsy). `contract` `T-202` (output T-201a / T-201b basi otomatis), `pending` = `[]`, hash
+    manifest ditambah `track.max_match_dist_px`. **`ALGO_REV` tetap 2** (usulan menaikkan ke 3 ditolak Rio: fitur baru =
+    `contract` naik; `algo_rev` hanya untuk perbaikan perilaku pada kode yang sudah dikontrak, preseden T-201b)
+  - **Orientasi** lewat luas bertanda (y ke bawah, > 0 = searah jarum jam di layar): silhouette + loop searah, lubang
+    berlawanan. Mentah `findContours`: silhouette 100% berlawanan, lubang 100% searah → semuanya dibalik
+  - **Arah garis terbuka = kesinambungan (B), track baru = aturan statis (PENYIMPANGAN dari spesifikasi awal):** aturan awal
+    ("titik awal = ujung dengan proyeksi terkecil pada sumbu utama") tidak menentukan tanda sumbu; aturan statis apa pun
+    membalik di sudut pemotongannya. Terukur dengan aturan statis (tanda dikunci komponen dominan positif): **7 dari 35**
+    (`test_short`) dan **17 dari 83** (`test`) track hidup ≥ 5 frame pernah terbalik (tanda sumbu x positif: 10 / 35 dan 26 / 83;
+    urutan mentah: 46 dan 85 pasangan terbalik). Dengan B: 0 pembalikan. Ujung dipilih agar jumlah jarak (awal, akhir) ke
+    padanan minimum
+  - **Pencocokan:** Chamfer simetris rata-rata, penugasan optimal (`linear_sum_assignment`; seri: jarak dibulatkan 6 desimal
+    lalu indeks lebih kecil), kunci `type` + `groups`, pasangan ≥ `max_match_dist_px` tidak dipakai; split / merge: satu padanan
+    mempertahankan id lama; tanpa toleransi celah (terukur jarang: 10 dari 52 oklusi, 3 dari 29 lubang, 3 dari 63 batas lahir yang
+    cocok dengan frame k-2)
+  - **Pendekatan Y (PENYIMPANGAN dari spesifikasi awal, disetujui Rio):** silhouette berluas terbesar mewarisi id silhouette utama
+    frame sebelumnya tanpa memandang jarak (`vectorize.INHERIT_MAIN_SILHOUETTE = True`; bukan parameter YAML, tanpa parameter
+    baru). Alasan di bawah ("Kalibrasi")
+  - **`max_match_dist_px` default 12 → 16** (disetujui Rio; `config.py`, `configs/default.yaml`, `docs/02` dalam satu langkah)
+  - **Rantai kesinambungan:** key level-frame `prev_sha256` (sha256 byte frame sebelumnya); frame dipakai ulang hanya bila
+    rantai cocok + frame-pengganti (jika ada di disk) menyimpan hash byte-nya (menangkap frame yang diubah tangan, JSON tetap valid).
+    Counter id dari max `track_id` semua frame sebelumnya, tanpa `frames.jsonl`. Batas: frame terakhir klip yang diubah tangan tidak
+    terdeteksi. Dokumen: `docs/01` [4] "Resume + rantai kesinambungan"
+- **Alternatif ditolak / tidak dipilih:** aturan statis saja untuk garis terbuka (lihat angka pembalikan di atas); penugasan
+  rakus (id baru 170 vs 165 pada ambang 12 `test_short`; berbeda dari optimal di 13 / 19 frame); ambang global saja (X); pass kedua
+  "containment" (jarak terarah, strok besar dulu; `test` pada 12 px masih 5 id utama dari 11) — ditolak karena tidak cukup dan
+  menambah kompleksitas; ambang per tipe (Z, parameter baru) — **hanya diajukan, tidak diimplementasikan**: hanya
+  `group_boundary` yang sensitif terhadap ambang, lubang / oklusi hampir tidak (id baru lubang 75 → 70, oklusi 105 → 102 dari 12 ke
+  24, `test`); menyimpan `next_id` per frame untuk counter id — tidak perlu: counter = max `track_id` semua frame sebelumnya + 1,
+  dan rantai `prev_sha256` sudah kumulatif karena byte frame k-1 memuat `prev_sha256`-nya sendiri
+- **Kalibrasi `max_match_dist_px` (`test`; sensitivitas {6, 8, 12, 16, 20, 24} untuk X = ambang global dan Y = X + warisan id
+  silhouette utama; `test_short` pola sama):**
+
+  | Pendekatan @ ambang | Id utama | Fraksi cocok | Id baru `group_boundary` | Anchor utama p95 / maks (px) | Ambigu `group_boundary` | Ukuran selisih > 3× |
+  |---|---|---|---|---|---|---|
+  | X@6 | 52 | 0,740 | 543 | 17,1 / 33 | 1,23% | 5 |
+  | X@8 | 33 | 0,808 | 373 | 15,8 / 43 | 1,28% | 7 |
+  | X@12 (default lama) | 11 | 0,860 | 254 | 8,5 / **65** | 1,65% | 16 |
+  | X@16 | 3 | 0,880 | 198 | 8,1 / **153** | 2,34% | 25 |
+  | X@20 / X@24 | 1 | 0,889 / 0,890 | 177 / 174 | 9,5 / 19 | 2,51% | 26 / 27 |
+  | Y (semua ambang) | 1 | 0,756 … 0,890 | 543 … 174 | 9,5 / 19 | = X per ambang | = X per ambang |
+  | **Y@16 (dipilih)** | **1** | **0,881** | **198** | **9,5 / 19,0** | **2,34%** | **25** |
+
+  - Kriteria pemilihan: (1) silhouette utama satu id di kedua klip dan lompatan anchor ≤ batas lulus tanpa bergantung satu
+    kejadian; (2) id baru turun / fraksi cocok naik per kenaikan ambang; (3) ambiguitas (rasio jarak kandidat ke-2 / terbaik <
+    1,5) dan selisih ukuran (> 3×) tidak naik berlebihan; (4) tidak menambah parameter. Kriteria 11(b) sendiri tidak boleh
+    menentukan ambang (ambang itu global, sedangkan kunci `hair+torso` 82% / 56% frame dan `torso+arm` 58–80% sudah ambigu;
+    solusi yang hanya bertumpu pada lengan terlepas frame 213–266 rapuh untuk gerak lebih cepat)
+  - Y menyelesaikan silhouette utama di SEMUA ambang tanpa menambah biaya tipe lain; ambang lalu dipilih dari tipe yang
+    sensitif (`group_boundary`): 12 → 16 menurunkan id baru 22% (254 → 198), 16 → 20 11%, 20 → 24 2%; ambiguitas +0,7 poin ke 16,
+    +0,2 ke 20. Lutut: 16 di `test_short`, 20 di `test`; dipilih 16 (lebih ketat)
+  - X@16 tanpa Y justru terburuk di anchor (maks 153 px): bukti bahwa stabilitas silhouette tidak boleh bergantung pada ambang
+- **Angka terukur (default akhir = Y@16 + `max_match_dist_px` 16), `test_short` / `test`:**
+  - Orientasi silhouette / lubang / loop searah-berlawanan-searah: 100% / 100% / 100% (kedua klip)
+  - Id silhouette utama 1 / 1; lompatan anchor utama p50 / p95 / p99 / maks (px): 1,0 / 6,0 / 8,0 / 10,05 dan 2,24 / 9,5 / 12,4 /
+    19,0 (batas lulus median ≤ 3, p95 ≤ 12, maks ≤ 24); lubang p50 / p95 / maks 1,4 / 9,4 / 20,1 dan 3,0 / 11,1 / 26,9
+  - Pembalikan arah track ≥ 5 frame: 0 / 0; frame dengan id ganda: 0 / 0; hash kanonik semua field (jumlah + urutan strok, type,
+    closed, groups, strength, titik) identik dengan T-201b untuk keempat tipe (kedua klip)
+  - Id baru per frame (silhouette / lubang / batas / oklusi): 0 / 0,25 / 0,52 / 0,53 dan 0,04 / 0,26 / 0,70 / 0,37; umur
+    `group_boundary` p50 / p90 / maks 2 / 48 / 119 dan 2 / 26 / 220; padanan ambigu `group_boundary` / `occlusion` 1,5% / 5,3% dan
+    2,3% / 1,7%; selisih ukuran > 3× 11 / 4 dan 25 / 4
+  - Bobot strok-frame (Y@16, `test_short` / `test`): strok-frame di track berumur ≥ 5 / ≥ 10 frame — `group_boundary` 92 / 88% dan
+    89 / 84%, `silhouette_hole` 80 / 66% dan 78 / 70%, `occlusion` 51 / 29% dan 40 / 24%; track berumur ≤ 2 frame: 53,5% (`test_short`) dan
+    51,7% (`test`) track `group_boundary` (titik median 18, 53–58% fragmen < 20 titik; hanya 8–11% strok-frame), `occlusion` 75% dan 85%
+  - **Titik awal garis terbuka (track ≥ 5 frame; ukuran independen):** lompatan titik awal antar frame berurutan (B) p50 / p95 /
+    maks 3,0 / 19,2 / 97 px (`test_short`) dan 4,5 / 22,7 / 127 px (`test`); aturan statis 3,2 / 22,0 / 60,9 dan 5,0 / 25,7 / 127;
+    aturan statis memilih ujung berbeda dari B di 7,4% (72 / 977) dan 13,3% (273 / 2058) strok-frame. 10 terbesar per klip: ujung
+    memanjang / memendek (selisih panjang > 30%) 8 dari 10 di `test_short`, 3 dari 10 di `test`; sisanya di zona 12–16 px (6 dari 10
+    di `test`, termasuk 96–97 px frame 10) atau ujung lain berubah. ⚠️ **Dampak ke [5] / T-203:** jitter 1D berbasis panjang busur dari
+    `points[0]` akan "pop" (catatan di `docs/01` [5] dan `docs/05` T-203)
+  - **Padanan di zona 12–16 px (Y@16 vs Y@12):** 1–3% padanan per tipe; dari 71 padanan non-silhouette-utama, 67 adalah track yang
+    putus di Y@12 (id baru) dan tersambung di 16 (churn yang dihindari; panjang berubah > 30–43% pada 7 / 11 dan 33 / 55
+    `group_boundary`); **4 dari ±3500 padanan** (2 + 2: oklusi `test_short` frame 48 / 49, oklusi `test` frame 48, `group_boundary` `test`
+    frame 273) mendapat pendahulu berbeda dari Y@12 (pendahulu Y@12 jarak 1,1–10,9 px) karena `linear_sum_assignment`
+    memaksimalkan jumlah padanan lebih dulu. Ini heuristik jarak, **bukan bukti strok tertukar**; penilaian visual Rio: strok yang
+    sama dengan bentuk berubah
+  - **Silhouette non-utama (`test`):** 11 frame dengan silhouette > 1 (213, 220, 228, 232, 234–236, 249, 257, 260, 265), 10 id
+    non-utama (id baru 10 dari 12 strok-frame; 2 mewarisi id fragmen frame sebelumnya), 9 episode rata-rata 1,22 frame, tidak ada
+    bentrok id dengan silhouette utama; `test_short`: tidak ada
+  - Waktu per frame median 74–93 ms antar run (p95 84–112 ms, maks 88–135 ms, 0 frame > 1 s, target ≤ 150 ms; pelacakan sendiri
+    median 8–11 ms, maks 19–26 ms); JSON 4.573.011 B dan 11.260.170 B (T-201b 4.539.270 dan 11.182.650 B: +0,75% dan +0,70% untuk
+    `track_id`, `anchor`, `prev_sha256`; angka "turun" yang sempat terbaca berasal dari beda satuan MB desimal vs MiB)
+- **Penilaian visual Rio (overlay `_y16`, PNG `arm_*`, `startjump_*`):** Y@16 vs 12/X pada lengan terlepas "sama saja" (kanan tidak
+  lebih stabil secara visual); anchor silhouette utama tetap di puncak kepala; warna strok (`track_id`) bertahan antar frame untuk garis
+  yang sama kecuali kedip lahir-mati oklusi kaki (mis. frame 77 ada → 78 hilang): wajar sementara (temporal [3] belum aktif; T-302 /
+  T-303 / T-305); panah arah garis terbuka konsisten; PNG startjump: strok yang sama dengan bentuk berubah; fragmen lengan terpisah
+  (frame 213–266): wajar sementara
+- **Batas yang diketahui:** (a) titik awal garis terbuka melompat sampai 60–127 px saat strok memanjang / memendek (B dan aturan
+  statis sama-sama; jitter 1D akan "pop", T-203); (b) padanan di zona 12–16 px dan 4 kasus penugasan di atas; (c) id oklusi
+  kaki berkedip (umur median 1–2 frame; temporal [3]); (d) fragmen lengan terpisah mendapat id baru; (e) frame terakhir klip yang diubah
+  tangan tidak terdeteksi rantai; (f) Y bersifat tak bersyarat: jika silhouette utama hilang lalu subjek lain muncul, id utama
+  berpindah (aman untuk klip satu subjek dominan); (g) tanpa toleransi celah (strok hilang 1 frame = id baru)
+- **Verifikasi:** suite penuh **698 lolos / 2 skip** (598 → 698: `test_track.py` 73, `test_vectorize_track.py` 27 kasus, perubahan di
+  `test_vectorize.py` / `test_vectorize_occlusion.py`); fungsi metrik permanen `tests/track_metrics.py` + test data nyata (di-skip
+  bila klip / contours T-202 tidak ada); sintetis tidak hanya sumbu-sejajar (kontur miring / non-konveks / berlubang / berputar,
+  garis kemiringan berganti tanda dan sekitar sudut pemotongan, dua garis sejajar berdekatan, lahir / mati / split / merge, seri,
+  loop, frame kosong); **mutation check** (plugin pytest di luar repo; kode produksi tidak dimodifikasi): orientasi mati,
+  kesinambungan arah mati, penugasan rakus, pemeriksaan rantai mati, hanya pemeriksaan frame-pengganti mati, tanda sumbu tidak
+  dikunci, anchor kesinambungan mati — semuanya membuat test terkait GAGAL; determinisme (hash `contours/frame_*.json` identik
+  antar run dari nol, juga untuk konfigurasi Y@16 di scratchpad), `--limit 20` lalu penuh, frame tengah dihapus / dipotong / diubah
+  (JSON valid) / frame 0 dihapus → hasil akhir byte-identik, stale (`track.max_match_dist_px` diubah → peringatan + hitung ulang;
+  kembali → hash identik), klip lain pada salinan sementara → exit 1, input `frames/ seg/ depth/ stable/` kedua klip identik
+  sebelum / sesudah (jumlah file + byte + sha256)
+- **Catatan proses:** satu skrip bantu di scratchpad (`inputs_hash.py`, di luar repo) dibuat lewat heredoc Bash (melanggar aturan
+  CLAUDE.md untuk berkas teks; diungkapkan); semua berkas repo lewat Edit / Write. Regenerasi T-201b untuk pembanding byte memakai
+  `git show HEAD:...` yang ditulis ke scratchpad, bukan ke repo
+
 ---
 
 ## Pitfall yang sudah diketahui

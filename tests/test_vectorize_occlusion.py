@@ -13,6 +13,7 @@ import cv2
 import numpy as np
 import pytest
 import skeleton_metrics as sm
+import track_metrics as tm
 from test_vectorize import (DEPTH_DEFAULTS, N_FRAMES, NAMES, PARAMS, TORSO, LARM, blank, by_type, cfg_for,
                             frame_hashes, make_work, quiet)
 
@@ -378,7 +379,7 @@ def test_old_t201a_manifest_is_stale_and_gets_occlusion(tmp_path):
     stats_path(work).unlink()
     logs: list[str] = []
     run = vec.run_vectorize(cfg_for(work), log=logs.append)
-    assert run["processed"] == N_FRAMES and "contract: 'T-201a' → 'T-201b'" in "".join(run["stale"])
+    assert run["processed"] == N_FRAMES and "contract: 'T-201a' → 'T-202'" in "".join(run["stale"])
     assert stats_path(work).is_file()
 
 
@@ -390,12 +391,14 @@ def test_run_frames_log_has_occlusion_counts_and_old_types_unchanged(tmp_path):
     for r in recs.values():
         assert {"occ_px_hyst", "occ_px_dist", "occ_px_len", "n_occlusion"} <= set(r)
         assert r["occ_px_hyst"] >= r["occ_px_dist"] >= 0
-    # tipe lama byte-identik dengan vectorize_gmap murni (regresi: oklusi tidak menyentuh siluet / lubang / batas)
+    # tipe lama identik (secara kanonik: urutan titik DALAM strok boleh berubah oleh T-202) dengan vectorize_gmap murni
+    # (regresi: oklusi tidak menyentuh siluet / lubang / batas)
     for i in range(N_FRAMES):
         d = json.loads((work / "contours" / f"frame_{i:05d}.json").read_text(encoding="utf-8"))
-        old = [s for s in d["strokes"] if s["type"] != "occlusion"]
+        old = [tm.canonical_stroke(s) for s in d["strokes"] if s["type"] != "occlusion"]
         g = stb.read_groups(work / "stable" / "groups" / f"frame_{i:05d}.png")
-        assert old == vec.vectorize_gmap(g, NAMES, {**PARAMS, "min_region_area": 50})[0]
+        raw = vec.vectorize_gmap(g, NAMES, {**PARAMS, "min_region_area": 50})[0]
+        assert old == [tm.canonical_stroke(s) for s in raw]
 
 
 def test_missing_depth_for_stage_is_precondition_error(tmp_path):

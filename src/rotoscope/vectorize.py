@@ -2,9 +2,10 @@
 + contours/manifest.json + contours/clip_stats.json + contours/frames.jsonl (D-010). Kontrak lengkap: docs/01 [4].
 
 T-201a = siluet + lubang + batas grup; T-201b = garis oklusi kedalaman (langkah 3 di bawah) + clip_stats.json
-(ambang per klip, pass 1 atas SELURUH klip); anchor, orientasi, `track_id` = T-202 (sengaja TIDAK ditulis: key
-strok persis {type, closed, groups, points} (+ `strength` untuk occlusion), supaya [5] gagal keras kalau memakai
-nilai yang belum ada). CPU saja, tanpa torch. Per frame:
+(ambang per klip, pass 1 atas SELURUH klip); T-202 = orientasi, anchor, arah garis terbuka, `track_id` (modul
+`track.py`, frame diproses BERURUTAN; key strok final `track_id, type, closed, groups, points` + `anchor` (tertutup,
+konstan 0, [5] membaca points[0]) / `strength` (occlusion); key level-frame `prev_sha256` = rantai kesinambungan).
+CPU saja, tanpa torch. Per frame:
   1. Siluet: foreground (grup ≠ 0) di-pad 1 px background (kontur tetap tertutup di tepi frame) →
      cv2.findContours RETR_CCOMP / CHAIN_APPROX_NONE. Kontur luar < min_region_area dibuang, lubang <
      min_hole_area dibuang. Ukuran = JUMLAH PIKSEL (komponen foreground 8-arah / komponen background
@@ -45,6 +46,7 @@ import cv2
 import numpy as np
 
 from rotoscope import stabilize as stb
+from rotoscope import track as trk
 from rotoscope.config import ConfigError, PipelineConfig, ensure_dir, load_pipeline, section_hash
 from rotoscope.stage_common import (
     CLIP_KEY, EXIT_OK, EXIT_PRECONDITION, StageError, add_work_dir_arg, append_jsonl, clean_tmp, cli_cmd,
@@ -58,22 +60,34 @@ MANIFEST_FILENAME = "manifest.json"
 FRAMES_LOG_FILENAME = "frames.jsonl"
 FRAME_SUFFIX = ".json"
 CLIP_STATS_FILENAME = "clip_stats.json"
-CONTRACT = "T-201b"          # T-202 menaikkan ini → output lama otomatis basi
-# Naik 1 setiap perubahan PERILAKU algoritma tanpa perubahan parameter (output lama otomatis basi, peringatan
-# menyebut algo_rev lama → baru). 1 = junction ≥ 3 tetangga + Zhang-Suen; 2 = crossing number + prune sudut
-# tangga + klaster junction + Guo-Hall.
+CONTRACT = "T-202"           # T-201b → T-202: anchor + orientasi + track_id (output lama otomatis basi)
+# Naik 1 setiap perbaikan PERILAKU algoritma pada kode yang sudah dikontrak, tanpa perubahan parameter (output lama
+# otomatis basi, peringatan menyebut algo_rev lama → baru). 1 = junction ≥ 3 tetangga + Zhang-Suen; 2 = crossing
+# number + prune sudut tangga + klaster junction + Guo-Hall. Fitur baru = `contract` naik, bukan `algo_rev`
+# (preseden T-201b, T-202: tetap 2).
 ALGO_REV = 2
 BACKGROUND_NAME = "background"
+HAIR_FACE_GROUPS = ("hair", "face")          # anchor track silhouette baru = piksel tertinggi grup-grup ini
+# Pendekatan Y (docs/04 "Hasil T-202", disetujui Rio): silhouette berluas terbesar mewarisi id silhouette utama
+# sebelumnya tanpa memandang jarak. Bukan parameter style / YAML: kalau diubah, ini perilaku algoritma → ALGO_REV naik.
+INHERIT_MAIN_SILHOUETTE = True
 
-TYPE_SILHOUETTE = "silhouette"
-TYPE_HOLE = "silhouette_hole"
+TYPE_SILHOUETTE = trk.TYPE_SILHOUETTE
+TYPE_HOLE = trk.TYPE_HOLE
 TYPE_BOUNDARY = "group_boundary"
 TYPE_OCCLUSION = "occlusion"
 STROKE_TYPES = (TYPE_SILHOUETTE, TYPE_HOLE, TYPE_BOUNDARY, TYPE_OCCLUSION)   # urutan = rank sortir
+# Strok MENTAH (keluaran vectorize_gmap / vectorize_frame, sebelum pelacakan) dan strok FINAL (tertulis di JSON).
 STROKE_KEYS = ("type", "closed", "groups", "points")
 OCCLUSION_KEYS = STROKE_KEYS + ("strength",)
-PENDING = ("anchor", "track_id", "orientation")
+FINAL_KEYS = ("track_id",) + STROKE_KEYS                  # garis terbuka (group_boundary, occlusion)
+CLOSED_FINAL_KEYS = FINAL_KEYS + ("anchor",)              # silhouette, silhouette_hole: anchor konstan 0
+OCCLUSION_FINAL_KEYS = FINAL_KEYS + ("strength",)
+PENDING: tuple[str, ...] = ()                             # T-202 menutup anchor / track_id / orientation
+PREV_SHA_KEY = "prev_sha256"                              # kunci level-frame: sha256 byte berkas frame sebelumnya
 PARAM_KEYS = ("min_region_area", "min_hole_area", "line_min_px", "min_stroke_px")  # parameter T-201a
+TRACK_KEYS = ("max_match_dist_px",)                       # vectorize.track.*
+TRACK_PREFIX = "track."
 DEPTH_KEYS = ("blur_sigma", "hi_pct", "lo_pct", "erode_px", "min_dist_px", "min_len_px")   # vectorize.depth_lines.*
 DEPTH_PREFIX = "depth_lines."                # kunci datar di dict parameter / manifest: "depth_lines.hi_pct"
 
@@ -110,10 +124,11 @@ DEFAULT_CONFIG = Path("configs") / "default.yaml"
 
 # ── Parameter + hash ───────────────────────────────
 def vectorize_params(cfg: PipelineConfig) -> dict:
-    """4 parameter T-201a + `depth_lines.*` (T-201b), dict DATAR ('depth_lines.hi_pct'). `track.*` (T-202) tidak
-    ikut: bukan masukan stage ini."""
+    """4 parameter T-201a + `depth_lines.*` (T-201b) + `track.*` (T-202), dict DATAR ('depth_lines.hi_pct',
+    'track.max_match_dist_px')."""
     out = {k: getattr(cfg.vectorize, k) for k in PARAM_KEYS}
     out.update({DEPTH_PREFIX + k: getattr(cfg.vectorize.depth_lines, k) for k in DEPTH_KEYS})
+    out.update({TRACK_PREFIX + k: getattr(cfg.vectorize.track, k) for k in TRACK_KEYS})
     return out
 
 
@@ -713,10 +728,23 @@ def vectorize_frame(gmap: np.ndarray, depth: np.ndarray, names: tuple[str, ...],
     return strokes + occ, {**stats, **ostats}
 
 
-def frame_document(index: int, width: int, height: int, source: dict, strokes: list[dict]) -> bytes:
-    """JSON frame: kompak, urutan key tetap, tanpa timestamp → byte-identik antar run."""
-    doc = {"frame_index": index, "width": width, "height": height, "source": source, "strokes": strokes}
+def frame_document(index: int, width: int, height: int, source: dict, strokes: list[dict],
+                   prev_sha256: str | None = None) -> bytes:
+    """JSON frame: kompak, urutan key tetap, tanpa timestamp → byte-identik antar run. `prev_sha256` = sha256 byte
+    berkas frame sebelumnya (None untuk frame pertama klip): rantai kesinambungan pelacakan (T-202)."""
+    doc = {"frame_index": index, "width": width, "height": height, "source": source, PREV_SHA_KEY: prev_sha256,
+           "strokes": strokes}
     return (json.dumps(doc, separators=(",", ":"), ensure_ascii=False, allow_nan=False) + "\n").encode("utf-8")
+
+
+def bytes_sha256(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def hair_face_mask(gmap: np.ndarray, names: tuple[str, ...]) -> np.ndarray | None:
+    """Piksel grup hair ∪ face (id grup = indeks di `names` + 1); None kalau kedua grup tidak ada di config."""
+    ids = [names.index(g) + 1 for g in HAIR_FACE_GROUPS if g in names]
+    return np.isin(gmap, ids) if ids else None
 
 
 # ── Layout klip ────────────────────────────────────
@@ -764,6 +792,71 @@ def frame_valid(path: Path, index: int, clip: Clip, source: dict) -> bool:
         return False
     return (isinstance(d, dict) and d.get("frame_index") == index and d.get("width") == clip.width
             and d.get("height") == clip.height and d.get("source") == source and isinstance(d.get("strokes"), list))
+
+
+def final_keys(stroke_type: str) -> tuple[str, ...]:
+    return CLOSED_FINAL_KEYS if stroke_type in (TYPE_SILHOUETTE, TYPE_HOLE) else (
+        OCCLUSION_FINAL_KEYS if stroke_type == TYPE_OCCLUSION else FINAL_KEYS)
+
+
+def strokes_final(strokes: list) -> bool:
+    """Tiap strok memuat key final tipenya persis, dengan `track_id` bilangan bulat ≥ FIRST_ID."""
+    return all(isinstance(s, dict) and s.get("type") in STROKE_TYPES and set(s) == set(final_keys(s["type"]))
+               and isinstance(s["track_id"], int) and not isinstance(s["track_id"], bool)
+               and s["track_id"] >= trk.FIRST_ID for s in strokes)
+
+
+def read_valid_frame(path: Path, index: int, clip: Clip, source: dict, prev_bytes: bytes | None,
+                     first: bool) -> tuple[dict, bytes] | None:
+    """(dokumen, byte) kalau frame valid DI DALAM RANTAI: `frame_valid` + strok final + `prev_sha256` = sha256 byte
+    frame sebelumnya (frame pertama: None). `prev_bytes` None pada frame bukan-pertama (frame sebelumnya hilang /
+    rusak) → tidak valid. Dikembalikan None kalau tidak valid."""
+    if not frame_valid(path, index, clip, source):
+        return None
+    data = path.read_bytes()
+    doc = json.loads(data.decode("utf-8"))
+    if first:
+        expected = None
+    elif prev_bytes is None:
+        return None
+    else:
+        expected = bytes_sha256(prev_bytes)
+    if doc.get(PREV_SHA_KEY, False) != expected or not strokes_final(doc["strokes"]):
+        return None
+    return doc, data
+
+
+def successor_agrees(clip: Clip, pos: int, data: bytes) -> bool:
+    """Frame berikutnya di disk (kalau ada dan terbaca) menyimpan `prev_sha256` = sha256 byte frame ini? Frame ini
+    yang diubah tangan (JSON tetap valid) membuat frame berikutnya tidak cocok → frame ini dihitung ulang. Tidak ada
+    pengganti / tidak terbaca = tidak ada bukti → dipercaya (frame TERAKHIR yang diubah tangan tidak terdeteksi)."""
+    if pos + 1 >= len(clip.names):
+        return True
+    try:
+        nxt = json.loads(clip.frame_path(clip.names[pos + 1]).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return True
+    if not isinstance(nxt, dict) or not isinstance(nxt.get(PREV_SHA_KEY), str):
+        return True
+    return nxt[PREV_SHA_KEY] == bytes_sha256(data)
+
+
+def trusted_frame(clip: Clip, pos: int, index: int, name: str, source: dict, prev_bytes: bytes | None
+                  ) -> tuple[dict, bytes] | None:
+    """`read_valid_frame` + `successor_agrees`: frame yang boleh dipakai ulang, atau None (hitung ulang)."""
+    got = read_valid_frame(clip.frame_path(name), index, clip, source, prev_bytes, pos == 0)
+    return got if got is not None and successor_agrees(clip, pos, got[1]) else None
+
+
+def scan_chain(clip: Clip, selected: tuple[str, ...], indices, source: dict) -> list[bool]:
+    """Validitas rantai frame terpilih terhadap berkas di disk saat ini (tanpa menghitung apa pun). Dipakai untuk
+    ringkasan awal; keputusan sebenarnya diambil per frame saat run (frame yang dihitung ulang bisa mengubah rantai)."""
+    flags, prev = [], None
+    for pos, (index, name) in enumerate(zip(indices, selected)):
+        got = trusted_frame(clip, pos, index, name, source, prev)
+        flags.append(got is not None)
+        prev = got[1] if got else None
+    return flags
 
 
 # ── Input [3] ──────────────────────────────────────
@@ -959,44 +1052,59 @@ def run_vectorize(cfg: PipelineConfig, *, restart: bool = False, limit: int | No
                          f"diketahui. Jalankan {cli_cmd('vectorize', clip.work_dir)} --restart.")
     clean_tmp(clip.contours_dir)
 
-    todo = [(i, n) for i, n in zip(clip.indices[:len(selected)], selected)
-            if not frame_valid(clip.frame_path(n), i, clip, source)]
-    n_skip = len(selected) - len(todo)
-    log(f"[4] vectorize ({CONTRACT}: silhouette + silhouette_hole + group_boundary + occlusion): {len(selected)} "
-        f"frame dipilih, {n_skip} valid dilewati, {len(todo)} diproses")
+    indices = clip.indices[:len(selected)]
+    n_todo = len(selected) - sum(scan_chain(clip, selected, indices, source))   # perkiraan; rantai bisa menambah
+    log(f"[4] vectorize ({CONTRACT}: silhouette + silhouette_hole + group_boundary + occlusion + anchor/orientasi/"
+        f"track_id): {len(selected)} frame dipilih, {len(selected) - n_todo} valid dilewati, {n_todo} diproses")
 
-    run = {"selected": len(selected), "skipped": n_skip, "processed": 0, "stale": stale, "frames": [],
-           "clip_stats": clip_stats}
-    if not todo:
+    run = {"selected": len(selected), "skipped": len(selected) - n_todo, "processed": 0, "stale": stale,
+           "frames": [], "clip_stats": clip_stats}
+    if not n_todo:
         return run
+    tracker = trk.Tracker(params[TRACK_PREFIX + "max_match_dist_px"], inherit_main=INHERIT_MAIN_SILHOUETTE)
+    run["skipped"] = 0
     ensure_dir(clip.contours_dir)
     if load_clip_stats(clip, inputs) != clip_stats:
         write_json_atomic(clip.clip_stats_path, clip_stats)
     if not clip.manifest_path.is_file():
         write_json_atomic(clip.manifest_path, manifest)
     t_run = time.perf_counter()
-    append_jsonl(clip.frames_log, {"event": "run_start", "time_utc": utc_now(), "n_todo": len(todo),
+    append_jsonl(clip.frames_log, {"event": "run_start", "time_utc": utc_now(), "n_todo": n_todo,
                                    "vectorize_hash": manifest["vectorize_hash"]})
     try:
-        for k, (index, name) in enumerate(todo, 1):
+        # Berurutan: frame k bergantung pada keadaan pelacakan frame k-1 (strok final + penghitung id). Frame valid
+        # (rantai prev_sha256 cocok dengan byte frame k-1 yang BERLAKU saat ini) dipakai ulang dan memuat keadaannya;
+        # selain itu dihitung ulang. Frame k-1 yang berubah mengubah byte-nya → k..N otomatis tidak valid.
+        prev_bytes = None
+        for pos, (index, name) in enumerate(zip(indices, selected)):
+            got = trusted_frame(clip, pos, index, name, source, prev_bytes)
+            if got is not None:
+                tracker.load(got[0]["strokes"])
+                prev_bytes = got[1]
+                run["skipped"] += 1
+                continue
             t0 = time.perf_counter()
             gmap, depth = load_frame_inputs(clip, name, len(names))
             t1 = time.perf_counter()
             strokes, stats = vectorize_frame(gmap, depth, names, params, clip_stats["t_high"], clip_stats["t_low"])
             t2 = time.perf_counter()
-            data = frame_document(index, clip.width, clip.height, source, strokes)
-            write_bytes_atomic(clip.frame_path(name), data)
+            tstats = tracker.step(strokes, hair_face_mask(gmap, names))
             t3 = time.perf_counter()
+            data = frame_document(index, clip.width, clip.height, source, strokes,
+                                  None if pos == 0 else bytes_sha256(prev_bytes))
+            write_bytes_atomic(clip.frame_path(name), data)
+            prev_bytes = data
+            t4 = time.perf_counter()
             rec = {"event": "frame", "frame": name, "index": index, "time_utc": utc_now(),
-                   "read_s": round(t1 - t0, 4), "vectorize_s": round(t2 - t1, 4), "write_s": round(t3 - t2, 4),
-                   "total_s": round(t3 - t0, 4), "bytes": len(data), "points": sum(len(s["points"]) for s in strokes),
-                   **stats}
+                   "read_s": round(t1 - t0, 4), "vectorize_s": round(t2 - t1, 4), "track_s": round(t3 - t2, 4),
+                   "write_s": round(t4 - t3, 4), "total_s": round(t4 - t0, 4), "bytes": len(data),
+                   "points": sum(len(s["points"]) for s in strokes), **stats, **tstats}
             append_jsonl(clip.frames_log, rec)
             run["frames"].append(rec)
             run["processed"] += 1
-            log(f"  [{k}/{len(todo)}] {name} {rec['total_s']:.3f} s, silhouette {stats['n_silhouette']}, lubang "
-                f"{stats['n_hole']}, batas {stats['n_boundary']}, oklusi {stats['n_occlusion']}, "
-                f"{len(data) / 1024:.1f} KiB")
+            log(f"  [{run['processed']}/{n_todo}] {name} {rec['total_s']:.3f} s, silhouette {stats['n_silhouette']}, "
+                f"lubang {stats['n_hole']}, batas {stats['n_boundary']}, oklusi {stats['n_occlusion']}, id baru "
+                f"{tstats['n_new_ids']}, {len(data) / 1024:.1f} KiB")
     finally:
         append_jsonl(clip.frames_log, {"event": "run_end", "time_utc": utc_now(), "n_done": run["processed"],
                                        "wall_s": round(time.perf_counter() - t_run, 2)})

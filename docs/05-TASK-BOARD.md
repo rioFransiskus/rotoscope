@@ -965,7 +965,7 @@ Tiga langkah, jadikan refleks:
     berkedip karena temporal [3] belum aktif → **evaluasi ulang setelah T-302 / T-303, sebelum kalibrasi T-305**; (2) L = 30 dalam
     piksel Guo-Hall (≈ 38 piksel Zhang-Suen); (3) komponen DA ±94 px di area tangan (frame 90) belum bisa dibedakan dari garis sah
 
-### T-202 · Anchor + orientasi + `track_id` · `TODO`
+### T-202 · Anchor + orientasi + `track_id` · `DONE`
 - **Kerjakan:** aturan anchor `docs/01` stage [4]: `silhouette` searah jarum jam, `silhouette_hole`
   berlawanan, anchor = titik terdekat ke anchor track yang sama di frame sebelumnya (track baru: titik
   tertinggi hair ∪ face / titik tertinggi lubang); garis terbuka dinormalkan arahnya; `track_id` dari
@@ -975,6 +975,48 @@ Tiga langkah, jadikan refleks:
 - **⚠️ Pitfall P-004:** tanpa ini garis akan tampak "berputar"
 - **Update log:**
   - [2026-09-29] Scope: anchor untuk semua tipe + `track_id` (seed jitter), resample pindah ke [5] — D-010
+  - [2026-10-03] DONE — `src/rotoscope/track.py` (baru, CPU, tanpa torch) + `vectorize.py` (frame diproses BERURUTAN):
+    orientasi (luas bertanda; silhouette + loop searah jarum jam, lubang berlawanan), anchor diputar (`points[0]` = anchor, key
+    `anchor` konstan 0; [5] membaca `points[0]`), arah garis terbuka = kesinambungan (B; track baru = aturan statis), `track_id`
+    = Chamfer simetris + penugasan optimal (mulai 1), pendekatan Y (silhouette terbesar mewarisi id). Manifest `contract`
+    `T-202`, `pending` `[]`, hash + `track.max_match_dist_px`, **`ALGO_REV` tetap 2** (fitur baru = `contract` naik; keputusan
+    Rio: `algo_rev` hanya untuk perbaikan perilaku pada kode yang sudah dikontrak). Rantai kesinambungan: key level-frame
+    `prev_sha256` (sha256 byte frame sebelumnya) + pemeriksaan frame-pengganti; `--limit N` = prefiks run penuh; stage [4] masih
+    di luar `run` (T-203). Perubahan default `max_match_dist_px` **12 → 16** (disetujui Rio; `config.py`, `configs/default.yaml`,
+    `docs/02` dalam satu langkah). Skema + aturan: `docs/01` [4]; keputusan, angka, kalibrasi, batas: `docs/04` D-010 "Hasil T-202"
+  - **Kriteria lulus (disetujui Rio sebelum implementasi) dan hasil akhir (Y@16), `test_short` / `test`:** **(a)** 100% silhouette
+    searah jarum jam dan 100% lubang berlawanan (juga loop searah) — 100% / 100%; **(b)** silhouette utama = satu `track_id`
+    sepanjang klip — 1 / 1 (tanpa Y klip `test`: 11); **(c)** lompatan anchor silhouette utama antar frame: median ≤ 3 px, p95 ≤ 12 px,
+    maks ≤ 24 px — median 1,0 / 2,24, p95 **6,0 / 9,5**, maks 10,05 / 19,0 (tanpa Y klip `test`: maks 65 px); **(d)** pembalikan arah garis
+    terbuka nol untuk track hidup ≥ 5 frame (kecuali loop) — 0 / 0; **(e)** churn dilaporkan (id baru per frame per tipe, umur track
+    median / p90 / maks; hanya silhouette utama yang berkriteria keras); **(f)** tidak ada dua strok dalam satu frame yang memakai
+    `track_id` sama — 0 / 0 frame; **(g)** hash kanonik semua field identik dengan T-201b untuk keempat tipe — identik / identik. Metrik
+    tambahan (Rio): ambiguitas = persentase padanan dengan rasio jarak kandidat terbaik kedua / terbaik < 1,5; ketidakcocokan ukuran =
+    panjang kedua strok berselisih > 3×; bobot strok-frame di track berumur ≥ 5 / ≥ 10 frame
+  - **Kriteria pemilihan ambang `max_match_dist_px`** (dibandingkan X = ambang global, Y = X + silhouette terbesar mewarisi id,
+    Z = ambang per tipe — hanya diajukan; sensitivitas {6, 8, 12, 16, 20, 24}; tabel di `docs/04`): (1) silhouette utama satu id di
+    kedua klip dan anchor lulus (c) tanpa bergantung satu kejadian — **kriteria 11(b) sendiri tidak boleh menentukan ambang** (ambang
+    global, kunci `hair+torso` 82% / 56% frame dan `torso+arm` 58–80% sudah ambigu; solusi yang hanya bertumpu pada lengan terlepas
+    frame 213–266 rapuh untuk gerak lebih cepat); (2) id baru turun / fraksi cocok naik; (3) ambiguitas dan selisih ukuran tidak naik
+    berlebihan; (4) tanpa parameter baru. Hasil: Y menyelesaikan silhouette utama di semua ambang; ambang dipilih dari
+    `group_boundary` (12 → 16 id baru −22%, 16 → 20 −11%, 20 → 24 −2%; ambiguitas +0,7 poin ke 16) → **Y + 16**. Penilaian visual Rio:
+    anchor tetap di puncak kepala, warna `track_id` bertahan, panah arah konsisten, fragmen lengan terpisah wajar sementara
+  - **Mutation check** (plugin pytest di luar repo; kode produksi tidak dimodifikasi) — tujuh mutan, semuanya membuat test
+    terkait GAGAL: (1) normalisasi orientasi mati; (2) kesinambungan arah mati; (3) pencocokan rakus pengganti optimal;
+    (4) **pemeriksaan rantai mati** (`prev_sha256` + frame-pengganti: gagal di `test_chain_b`, `test_chain_c`, `test_chain_d[edit_valid_json]`,
+    `test_successor_agrees_helper`); (5) hanya pemeriksaan frame-pengganti mati; (6) tanda sumbu tidak dikunci; (7) anchor
+    kesinambungan mati (selalu titik tertinggi; gagal di test dua puncak dan test anchor hair ∪ face). Test rantai: (a) frame k-1
+    dihitung ulang byte-identik → k TIDAK dihitung ulang; (b) k-1 berubah → k..N dihitung ulang, hasil akhir identik dengan run
+    penuh; (c) k valid tetapi k-1 hilang / berubah → k tidak valid; (d) frame dipotong / diubah isinya (JSON valid) → dipulihkan
+  - **Estimasi waktu:** median 74–93 ms/frame antar run (target ≤ 150 ms; tidak ada frame > 1 s; maks 135 ms), pelacakan sendiri
+    median 8–11 ms (maks 26 ms), pass 1 ambang 1,3 s (119 frame) / 2,7 s (283 frame); ukuran JSON 4,57 / 11,26 MB (+0,7% dari
+    T-201b); biaya terburuk hitung ulang berantai (frame 0 berubah) ≈ jumlah frame × ±80 ms (±23 s untuk 283 frame). Suite penuh
+    **698 lolos / 2 skip** (598 → 698)
+  - **Batas yang diketahui** (rincian `docs/04`): titik awal garis terbuka melompat sampai 60–127 px saat strok memanjang /
+    memendek; padanan di zona 12–16 px (bukan bukti tertukar; 4 dari ±3500 padanan bergeser oleh penugasan optimal); id oklusi
+    berkedip lahir-mati (T-302 / T-303 / T-305); fragmen lengan terpisah mendapat id baru; frame terakhir klip yang diubah tangan
+    tidak terdeteksi rantai; Y tak bersyarat. Alat: `scripts/contour_overlay.py --track` (warna per `track_id`, anchor, panah arah,
+    `--compare`, `--label`); keluaran `work/t202/` (ter-ignore)
 
 ### T-203 · `stylize.py` garis polos · `TODO`
 - **Kerjakan:** `approxPolyDP` → Catmull-Rom → resample dari anchor, render stroke tebal seragam,
@@ -988,6 +1030,12 @@ Tiga langkah, jadikan refleks:
   - **`group_boundary` loop** = `closed: false` dengan titik akhir = titik awal (25 di `test_short`, 57 di `test`): taper
     ujung **tidak boleh menipiskan sambungan** (kenali loop dari titik akhir = titik awal)
   - Konvensi koordinat pusat piksel: skala `output_width` langsung, x' = s · x (`docs/01` [4])
+  - ⚠️ **Titik awal garis terbuka melompat 60–127 px saat strok memanjang / memendek** (T-202, terukur Y@16: 7–13% strok-frame
+    memilih ujung berbeda dari aturan statis; lompatan titik awal p50 3–4,5 px, p95 18–23 px, maks 97 / 127 px; sebabnya bentuk
+    strok berubah, bukan arah terbalik). Jitter 1D berbasis panjang busur dari `points[0]` akan "pop". Pertimbangkan jitter yang
+    dikunci posisi (mis. noise 2D / fase dari titik referensi tetap) atau yang tidak bergantung pada titik awal. Untuk strok
+    tertutup `points[0]` = anchor (stabil: median 1–2 px, maks 19 px silhouette utama). [5] membaca `points[0]` (bukan `anchor`) dan
+    mengabaikan `prev_sha256`
 - **Done when:** output sudah berupa outline, bukan siluet blok
 - **Update log:**
   - [2026-09-27] Keputusan tertunda: tambah parameter `output_width` (mis. 1080) terpisah dari
@@ -1152,11 +1200,11 @@ Tiga langkah, jadikan refleks:
 |---|---|---|
 | 0 Setup | T-001 … T-005 | 5/5 |
 | 1 Skeleton | T-101 … T-108 (T-102 → a/b/c, T-104 → a/b) — ✅ **Phase 1 selesai** (🎯 milestone T-104b, T-107 DONE) | 11/11 |
-| 2 Vectorize | T-201 … T-204 (T-201 → a/b) — T-201a ✅, T-201b ✅ DONE (dengan batas kaki) | 2/5 |
+| 2 Vectorize | T-201 … T-204 (T-201 → a/b) — T-201a ✅, T-201b ✅ DONE (dengan batas kaki), T-202 ✅ DONE | 3/5 |
 | 3 Stabilize | T-301 … T-305 (T-301 SKIP) | 0/5 |
 | 4 Style | T-401 … T-406 | 0/6 |
 | 5 Fallback | T-501 … T-502 (BLOCKED) | 0/2 |
 | 6 Opsional | T-601 … T-603 | 0/3 |
 
-**Total: 37 task** (5 + 11 + 5 + 5 + 6 + 2 + 3) · Selesai: 18/37 (5 + 11 + 2; SKIP — T-301, T-601 — tidak dihitung selesai).
+**Total: 37 task** (5 + 11 + 5 + 5 + 6 + 2 + 3) · Selesai: 19/37 (5 + 11 + 3; SKIP — T-301, T-601 — tidak dihitung selesai).
 Rekonsiliasi 2026-10-01: sebelum T-104b selesai papan menulis 9/11 + 13/37, padahal 5 + 9 = 14 — total salah hitung 1.

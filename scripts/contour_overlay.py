@@ -22,6 +22,13 @@ Warna: silhouette merah, silhouette_hole cyan, group_boundary hijau, occlusion o
 (koordinat tepat di baris/kolom tepi) digambar magenta putus-putus supaya penilaian tertuju pada kontur sebenarnya.
 Koordinat strok = pusat piksel (i + 0.5) → digambar di (x · skala − 0.5).
 
+--track (T-202): mode terpisah → work/t202 (default): video overlay_track_<klip>.mp4 (warna per track_id, titik anchor
+besar untuk silhouette / lubang / loop, lingkaran titik awal + panah arah untuk garis terbuka, label #id, label
+"temporal belum aktif"), PNG kasus terburuk worst_<klip>_<jenis>_fNNNNN.png (lompatan anchor terbesar, pembalikan arah
+bila ada, id baru terbanyak, padanan paling ambigu), dan arm_<klip>_fNNNNN.png untuk frame lengan terlepas (klip test:
+213, 220, 228, 232-236, 249, 257-266) dengan panel berdampingan per --compare (default ambang 12 pendekatan X | ambang
+16 pendekatan Y; keduanya dihitung ulang dari himpunan titik, tanpa menulis ke contours/).
+
 --dropped: video TAMBAHAN overlay_<klip>_dropped.mp4 (frame yang sama; tanpa PNG / ringkasan, tidak menimpa berkas
 lain) dengan kontur yang DIBUANG filter ukuran digambar abu-abu + label luas px: lubang < min_hole_area (abu-abu
 terang) dan komponen luar < min_region_area (abu-abu gelap). Ambang dibaca dari contours/manifest.json; kontur
@@ -433,6 +440,220 @@ def write_atomic(path: Path, data: bytes) -> None:
     os.replace(tmp, path)
 
 
+# ── Mode --track (T-202): warna per track_id, anchor, arah, kasus terburuk ──
+TRACK_LABEL = "temporal belum aktif - kedip / lahir-mati strok BELUM representatif"
+TRACK_RANGES = "73-92,183-202,225-240"
+TRACK_OUT_DIR = "work/t202"
+PALETTE = ((0, 0, 230), (230, 120, 0), (0, 170, 0), (200, 0, 200), (0, 170, 230), (150, 90, 0), (0, 90, 200),
+           (110, 160, 0), (180, 0, 90), (0, 130, 130), (90, 0, 200), (60, 60, 60))   # BGR, dipilih track_id % len
+ANCHOR_RADIUS, START_RADIUS, ARROW_SPAN = 6, 4, 10   # piksel layar; ARROW_SPAN = indeks titik ujung panah
+ARM_FRAMES = (213, 220, 228, 232, 233, 234, 235, 236, 249, *range(257, 267))   # lengan terlepas di klip test
+COMPARE_DEFAULT = "12:X,16:Y"                # ambang:pendekatan (X = global, Y = silhouette terbesar mewarisi id)
+TRACK_TAG = [""]                             # label konfigurasi di legenda (--label), mis. "Y@16 (usulan)"
+
+
+def track_color(track_id: int) -> tuple:
+    return PALETTE[track_id % len(PALETTE)]
+
+
+def retrack(clip: Path, thr: float, inherit: bool) -> list[list[dict]]:
+    """Jalankan ulang pelacak (track.Tracker) atas himpunan titik strok di contours/ (tanpa menulis apa pun)."""
+    from rotoscope import track as trk
+    from rotoscope.config import load_pipeline
+    names = tuple(g for g, _ in load_pipeline().groups)
+    tr = trk.Tracker(thr, inherit_main=inherit)
+    out = []
+    for p in sorted((clip / "contours").glob("frame_*.json")):
+        i = int(p.stem.split("_")[1])
+        strokes = [dict(s) for s in read_json(p)["strokes"]]
+        gm = stb.read_groups(clip / "stable" / "groups" / f"frame_{i:05d}.png")
+        tr.step(strokes, vec.hair_face_mask(gm, names))
+        out.append(strokes)
+    return out
+
+
+def stored_frames(clip: Path) -> list[list[dict]]:
+    return [read_json(p)["strokes"] for p in sorted((clip / "contours").glob("frame_*.json"))]
+
+
+def main_silhouette(strokes: list[dict]) -> dict | None:
+    from rotoscope import track as trk
+    sil = [s for s in strokes if s["type"] == "silhouette"]
+    return max(sil, key=lambda s: abs(trk.signed_area(np.asarray(s["points"], float)))) if sil else None
+
+
+def draw_tracks(img: np.ndarray, strokes: list[dict], scale: int) -> None:
+    """Warna per track_id; tertutup / loop = titik anchor besar (points[0]); garis terbuka = lingkaran titik awal +
+    panah arah; label #id kecil di tengah strok."""
+    for s in strokes:
+        pts, color = s["points"], track_color(s["track_id"])
+        closed = bool(s["closed"])
+        arr = np.array([px(p, scale) for p in pts], np.int32).reshape(-1, 1, 2)
+        cv2.polylines(img, [arr], closed, color, 2, cv2.LINE_AA, SHIFT)
+        loop = (not closed) and len(pts) > 3 and pts[0] == pts[-1]
+        a = px(pts[0], scale)
+        a = (a[0] >> SHIFT, a[1] >> SHIFT)
+        if closed or loop:
+            cv2.circle(img, a, ANCHOR_RADIUS, (255, 255, 255), -1, cv2.LINE_AA)
+            cv2.circle(img, a, ANCHOR_RADIUS - 2, color, -1, cv2.LINE_AA)
+        else:
+            cv2.circle(img, a, START_RADIUS, (255, 255, 255), -1, cv2.LINE_AA)
+            cv2.circle(img, a, START_RADIUS - 1, color, 1, cv2.LINE_AA)
+            b = px(pts[min(ARROW_SPAN, len(pts) - 1)], scale)
+            cv2.arrowedLine(img, a, (b[0] >> SHIFT, b[1] >> SHIFT), color, 2, cv2.LINE_AA, tipLength=0.5)
+        mid = px(pts[len(pts) // 2], scale)
+        cv2.putText(img, f"#{s['track_id']}", (mid[0] >> SHIFT, mid[1] >> SHIFT), cv2.FONT_HERSHEY_SIMPLEX, 0.35,
+                    color, 1, cv2.LINE_AA)
+
+
+def render_track(clip: Path, index: int, scale: int, tag: str, strokes: list[dict], extra: list[tuple[str, tuple]]
+                 ) -> np.ndarray:
+    """Frame asli (dipucatkan) × skala + strok berwarna per track_id + legenda → BGR uint8."""
+    doc = read_json(clip / "contours" / f"frame_{index:05d}.json")
+    w, h = doc["width"], doc["height"]
+    bgr = cv2.imdecode(np.fromfile(clip / "frames" / f"frame_{index:05d}.png", np.uint8), cv2.IMREAD_COLOR)
+    if bgr is None:
+        raise StageError(f"frame {index} tidak terbaca di {clip / 'frames'}")
+    big = cv2.addWeighted(cv2.resize(bgr, (w * scale, h * scale), interpolation=cv2.INTER_LINEAR), 1 - FADE,
+                          np.full((h * scale, w * scale, 3), 255, np.uint8), FADE, 0)
+    draw_tracks(big, strokes, scale)
+    main = main_silhouette(strokes)
+    legend = [(TRACK_LABEL, (255, 255, 255)), (f"frame {index}  [{tag}]", (255, 255, 255)),
+              *([(TRACK_TAG[0], (0, 255, 255))] if TRACK_TAG[0] else []),
+              ("warna = track_id; titik besar = anchor (tertutup / loop); lingkaran + panah = titik awal garis terbuka",
+               (255, 255, 255))]
+    if main is not None:
+        legend.append((f"silhouette utama #{main['track_id']}  anchor {tuple(main['points'][0])}",
+                       track_color(main["track_id"])))
+    for s in strokes:
+        if s["type"] == "silhouette" and s is not main:
+            legend.append((f"silhouette lain #{s['track_id']} ({len(s['points'])} titik)  anchor {tuple(s['points'][0])}",
+                           track_color(s["track_id"])))
+    text_box(big, legend + extra, 6, 6, 0.45)
+    return big
+
+
+def pick_track_worst(frames: list[list[dict]]) -> list[tuple[str, int, str]]:
+    """Kasus terburuk: lompatan anchor terbesar, pembalikan arah (bila ada), id baru terbanyak, padanan paling ambigu."""
+    from rotoscope import track as trk
+    seen: set[int] = set()
+    jump = (-1.0, None)
+    newest = (-1, None)
+    rev = None
+    ambig = (None, None)
+    prev_main, prev_items = None, None
+    for k, fr in enumerate(frames):
+        m = main_silhouette(fr)
+        if m is not None and prev_main is not None:
+            d = float(np.linalg.norm(np.array(m["points"][0]) - np.array(prev_main["points"][0])))
+            if d > jump[0]:
+                jump = (d, k)
+        n_new = sum(s["track_id"] not in seen for s in fr) if k else 0
+        if n_new > newest[0]:
+            newest = (n_new, k)
+        items = [trk.make_item(s, s["track_id"]) for s in fr]
+        if prev_items is not None and items and prev_items:
+            cost = trk.cost_matrix(items, prev_items)
+            pid = {it.track_id: j for j, it in enumerate(prev_items)}
+            for i, it in enumerate(items):
+                if it.track_id not in pid:
+                    continue
+                row = np.sort(cost[i][np.isfinite(cost[i])])
+                if len(row) >= 2 and row[0] > 0 and (ambig[0] is None or row[1] / row[0] < ambig[0]):
+                    ambig = (float(row[1] / row[0]), k)
+                if (not it.cyclic) and rev is None:
+                    a, b = prev_items[pid[it.track_id]].pts, it.pts
+                    if (np.linalg.norm(b[0] - a[-1]) + np.linalg.norm(b[-1] - a[0])
+                            < np.linalg.norm(b[0] - a[0]) + np.linalg.norm(b[-1] - a[-1])):
+                        rev = k
+        seen.update(s["track_id"] for s in fr)
+        prev_main, prev_items = m, items
+    out = []
+    if jump[1] is not None:
+        out.append(("max_anchor_jump", jump[1], f"lompatan anchor silhouette utama terbesar: {jump[0]:.1f} px"))
+    if rev is not None:
+        out.append(("direction_reversal", rev, "pembalikan arah garis terbuka"))
+    if newest[1] is not None:
+        out.append(("most_new_ids", newest[1], f"id baru terbanyak: {newest[0]}"))
+    if ambig[1] is not None:
+        out.append(("most_ambiguous", ambig[1], f"padanan paling ambigu: rasio kandidat ke-2 / terbaik {ambig[0]:.2f}"))
+    return out
+
+
+def parse_compare(text: str) -> list[tuple[float, bool]]:
+    out = []
+    for part in text.split(","):
+        thr, _, mode = part.strip().partition(":")
+        out.append((float(thr), mode.upper() == "Y"))
+    return out
+
+
+def write_png(path: Path, bgr: np.ndarray) -> None:
+    ok, buf = cv2.imencode(".png", bgr)
+    if ok:
+        write_atomic(path, buf.tobytes())
+
+
+def main_track(a: argparse.Namespace) -> int:
+    """PNG kasus terburuk + sampel + video overlay T-202 ke --out-dir (default work/t202)."""
+    clip = a.work_dir
+    meta = read_json(clip / "meta.json")
+    manifest = read_json(clip / "contours" / "manifest.json")
+    if manifest.get("contract") != "T-202":
+        print("ERROR: contours/ bukan kontrak T-202 — jalankan `python -m rotoscope vectorize` dulu", file=sys.stderr)
+        return 1
+    thr0 = manifest["vectorize"]["track.max_match_dist_px"]
+    stored = stored_frames(clip)
+    out = a.out_dir
+    out.mkdir(parents=True, exist_ok=True)
+    present = set(range(len(stored)))
+    worst = pick_track_worst(stored)
+    summary = {"clip": clip.name, "threshold_stored": thr0, "worst": [{"kind": k, "frame": i, "note": n} for k, i, n in worst]}
+    for kind, i, note in worst:
+        write_png(out / f"worst_{clip.name}_{kind}_f{i:05d}.png",
+                  render_track(clip, i, a.scale, f"terburuk: {note}", stored[i], [(f"tersimpan: ambang {thr0}", (255, 255, 255))]))
+        print(f"kasus terburuk [{kind}] frame {i}: {note}")
+    arm = [i for i in ARM_FRAMES if i in present]
+    if arm:
+        variants = [(thr, inh, retrack(clip, thr, inh)) for thr, inh in parse_compare(a.compare)]
+        for i in arm:
+            panels = []
+            for thr, inh, fr in variants:
+                main = main_silhouette(fr[i])
+                others = [s["track_id"] for s in fr[i] if s["type"] == "silhouette" and s is not main]
+                extra = [(f"ambang {thr:g} px, pendekatan {'Y (terbesar mewarisi id)' if inh else 'X (global)'}: "
+                          f"utama #{main['track_id']}, komponen lain {['#' + str(t) for t in others]}", (255, 255, 255))]
+                panels.append(render_track(clip, i, a.scale, "lengan terlepas", fr[i], extra))
+            write_png(out / f"arm_{clip.name}_f{i:05d}.png", np.hstack(panels))
+        summary["arm_frames"] = arm
+        summary["arm_compare"] = [{"threshold": t, "inherit_main": inh, "main_ids": sorted({main_silhouette(f)["track_id"]
+                                  for f in fr if main_silhouette(f)})} for t, inh, fr in variants]
+        print(f"lengan terlepas: {len(arm)} frame (panel kiri-kanan = {a.compare}) → arm_{clip.name}_fNNNNN.png")
+    wanted = [i for i in parse_ranges(a.ranges) if i in present]
+    plan = {f"frame_{i:05d}": (i, "rentang") for i in wanted}
+    for _, i, _ in worst:
+        plan.setdefault(f"frame_{i:05d}", (i, "terburuk"))
+    write_atomic(out / f"summary_t202_{clip.name}.json", (json.dumps(summary, indent=2) + "\n").encode("utf-8"))
+    if a.no_video or not plan:
+        return 0
+    first = render_track(clip, next(iter(plan.values()))[0], a.scale, "x", stored[next(iter(plan.values()))[0]], [])
+    size = (first.shape[1], first.shape[0])
+
+    class TrackSource(OverlaySource):
+        def render(self, name: str) -> np.ndarray:
+            i, tag = self.plan[name]
+            return cv2.cvtColor(render_track(clip, i, a.scale, tag, stored[i],
+                                             [(f"tersimpan: ambang {thr0}", (255, 255, 255))]), cv2.COLOR_BGR2RGB)
+
+    video = out / f"overlay_track_{clip.name}.mp4"
+    tmp = video.with_name(video.name + ".tmp")
+    ex.encode(TrackSource(clip, plan, a.scale), list(plan), size, np.array([255, 255, 255], np.uint8),
+              float(meta.get("target_fps", 24)), a.crf, "medium", None, tmp)
+    os.replace(tmp, video)
+    print(f"video → {video} ({len(plan)} frame, {video.stat().st_size / 2**20:.2f} MiB)")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--work-dir", type=Path, required=True, help="folder klip, mis. work/clips/test")
@@ -448,7 +669,21 @@ def main(argv: list[str] | None = None) -> int:
                     help="HANYA tulis overlay_<klip>_dropped.mp4 (kontur yang dibuang filter ukuran, abu-abu)")
     ap.add_argument("--grad-panel", action="store_true", help="panel pendamping |grad| di kanan (video + PNG)")
     ap.add_argument("--worst", action="store_true", help="tulis PNG kasus terburuk worst_<klip>_<jenis>_fNNNNN.png")
+    ap.add_argument("--track", action="store_true",
+                    help=f"mode T-202: warna per track_id, anchor / arah, PNG kasus terburuk + lengan terlepas (bandingkan "
+                         f"--compare), video; default --out-dir {TRACK_OUT_DIR}, --ranges {TRACK_RANGES}")
+    ap.add_argument("--compare", default=COMPARE_DEFAULT,
+                    help="mode --track, frame lengan terlepas: ambang:pendekatan dipisah koma, X = global, Y = silhouette "
+                         f"terbesar mewarisi id (default {COMPARE_DEFAULT})")
+    ap.add_argument("--label", default="", help="mode --track: label konfigurasi di legenda, mis. 'Y@16 (usulan)'")
     a = ap.parse_args(argv)
+    TRACK_TAG[0] = a.label
+    if a.track:
+        if a.out_dir == Path(DEFAULT_OUT_DIR):
+            a.out_dir = Path(TRACK_OUT_DIR)
+        if a.ranges == DEFAULT_RANGES:
+            a.ranges = TRACK_RANGES
+        return main_track(a)
     clip = a.work_dir
     meta = read_json(clip / "meta.json")
     present = {int(p.stem.split("_")[1]) for p in (clip / "contours").glob("frame_*.json")}

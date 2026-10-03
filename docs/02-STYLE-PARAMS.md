@@ -98,7 +98,7 @@ vectorize:
     min_dist_px: 7           # D — jarak minimum ke batas grup (termasuk siluet)
     min_len_px: 30           # L — panjang skeleton minimum
   track:
-    max_match_dist_px: 12    # SEMENTARA — jarak rata-rata maks pencocokan track_id, dikalibrasi di T-202
+    max_match_dist_px: 16    # jarak Chamfer simetris maks pencocokan track_id (T-202; 12 → 16 disetujui Rio)
 
 # ── EXPORT [6] ─────────────────────────────────────
 export:
@@ -146,7 +146,7 @@ export:
 | `vectorize.depth_lines.lo_pct`, `hi_pct` | 0 < lo_pct < hi_pct < 100 |
 | `vectorize.depth_lines.erode_px` | int ganjil ≥ 1 |
 | `vectorize.depth_lines.min_dist_px`, `min_len_px` | ≥ 0 |
-| `vectorize.track.max_match_dist_px` | > 0 |
+| `vectorize.track.max_match_dist_px` | > 0 (default 16 px pada frame 480 px; mengubahnya membuat `contours/` basi) |
 | `export.source` | `"silhouette"` atau `"strokes"` (`strokes` diterima loader, tetapi stage [6] menolak sampai Phase 2) |
 | `export.crf` | int 0–51 |
 | `export.preset` | preset x264: `ultrafast`, `superfast`, `veryfast`, `faster`, `fast`, `medium`, `slow`, `slower`, `veryslow` |

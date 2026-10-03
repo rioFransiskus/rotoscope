@@ -495,7 +495,8 @@ def subject_depth(i: int, h: int = H, w: int = W) -> np.ndarray:
     return (np.where(xx < 10 + i, 0.0, 1.5) + 0.01 * i * (xx % 3)).astype(np.float16)
 
 
-CLIP_PARAMS = {**PARAMS, "min_region_area": 50, **DEPTH_DEFAULTS}   # subjek sintetis 24×32 jauh di bawah 800 px
+TRACK_DEFAULTS = {"track.max_match_dist_px": 16.0}
+CLIP_PARAMS = {**PARAMS, "min_region_area": 50, **DEPTH_DEFAULTS, **TRACK_DEFAULTS}   # subjek sintetis 24×32 << 800 px
 
 
 def cfg_for(work: Path, **overrides):
@@ -532,8 +533,8 @@ def test_run_writes_outputs_manifest_and_log(tmp_path):
     assert run["processed"] == N_FRAMES and run["skipped"] == 0
     assert len(frame_hashes(work)) == N_FRAMES
     m = json.loads((work / "contours" / "manifest.json").read_text(encoding="utf-8"))
-    assert m["contract"] == "T-201b" and m["stroke_types"] == list(vec.STROKE_TYPES)
-    assert m["stroke_types"][-1] == "occlusion" and m["pending"] == ["anchor", "track_id", "orientation"]
+    assert m["contract"] == "T-202" and m["stroke_types"] == list(vec.STROKE_TYPES)
+    assert m["stroke_types"][-1] == "occlusion" and m["pending"] == []
     stats = json.loads((work / "contours" / "clip_stats.json").read_text(encoding="utf-8"))
     assert m["depth_thresholds"] == {"t_high": stats["t_high"], "t_low": stats["t_low"]} and m["clip_stats"]
     assert m["vectorize"] == CLIP_PARAMS and m["seg_model"] == "0.8b" and m["stable_created_utc"] == "t0"
@@ -613,13 +614,15 @@ def test_stale_manifest_recomputed_with_warning(tmp_path, change):
     assert any("PERINGATAN" in m and expect in m for m in logs)
 
 
-def test_depth_line_params_make_stale_but_track_does_not(tmp_path):
-    """Hash = 4 parameter T-201a + depth_lines.* (T-201b); track.* (T-202) bukan masukan stage ini."""
+def test_track_and_depth_line_params_make_stale(tmp_path):
+    """Hash = 4 parameter T-201a + depth_lines.* (T-201b) + track.max_match_dist_px (T-202)."""
     work = make_work(tmp_path)
     vec.run_vectorize(cfg_for(work), log=quiet)
     run = vec.run_vectorize(cfg_for(work, **{"vectorize.track.max_match_dist_px": 20.0}), log=quiet)
-    assert run["stale"] == [] and run["processed"] == 0
-    run = vec.run_vectorize(cfg_for(work, **{"vectorize.depth_lines.min_len_px": 40.0}), log=quiet)
+    assert any("vectorize.track.max_match_dist_px: 16.0 → 20.0" in s for s in run["stale"])
+    assert run["processed"] == N_FRAMES and run["skipped"] == 0
+    run = vec.run_vectorize(cfg_for(work, **{"vectorize.track.max_match_dist_px": 20.0,
+                                             "vectorize.depth_lines.min_len_px": 40.0}), log=quiet)
     assert any("vectorize.depth_lines.min_len_px: 30.0 → 40.0" in s for s in run["stale"])
     assert run["processed"] == N_FRAMES and run["skipped"] == 0
 
@@ -629,10 +632,10 @@ def test_contract_change_marks_stale(tmp_path):
     vec.run_vectorize(cfg_for(work), log=quiet)
     p = work / "contours" / "manifest.json"
     m = json.loads(p.read_text(encoding="utf-8"))
-    m["contract"] = "T-201a"            # manifest lama (sebelum garis oklusi)
+    m["contract"] = "T-201b"            # manifest lama (sebelum anchor / orientasi / track_id)
     p.write_text(json.dumps(m), encoding="utf-8")
     run = vec.run_vectorize(cfg_for(work), log=quiet)
-    assert run["stale"] == ["contract: 'T-201a' → 'T-201b'"] and run["processed"] == N_FRAMES
+    assert run["stale"] == ["contract: 'T-201b' → 'T-202'"] and run["processed"] == N_FRAMES
 
 
 @pytest.mark.parametrize("old", [1, None])
