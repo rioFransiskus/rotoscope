@@ -925,7 +925,7 @@ Tiga langkah, jadikan refleks:
     "Hasil T-201a"): cakupan skeleton buta terhadap pengikisan thinning (pelengkap: cakupan band); 2 / 6 frame < 98% (komponen
     terisolasi 15–17 px); `docs/01` [4] + [5] + CLI, `docs/04` D-010 "Hasil T-201a" diperbarui
 
-### T-201b · Garis oklusi kedalaman · `TODO`
+### T-201b · Garis oklusi kedalaman · `DONE`
 - **Kerjakan:** kontrak stage [4] `docs/01`: dari `stable/depth_smooth` apa adanya (tanpa log kedua) →
   |grad| (Gaussian σ) → NMS → hysteresis T_high / T_low persentil per klip → hanya di dalam grup, jarak ≥
   D → skeleton ≥ L → `occlusion`; threshold per klip disimpan di `contours/clip_stats.json` (dipakai
@@ -943,6 +943,27 @@ Tiga langkah, jadikan refleks:
   - [2026-09-29] Catatan T-102b sesi 1: garis dihitung dari `depth_smooth` (ternormalisasi di [3]), bukan
     disparity mentah; nilai T_high/T_low look test (atas |grad log d|) tidak langsung berlaku, persentil
     p95/p90 menyesuaikan diri; D / L / persentil dikalibrasi ulang di T-305 — D-010
+  - [2026-10-03] DONE **dengan batas kaki** (keputusan Rio) — `src/rotoscope/vectorize.py` (CPU, tanpa torch): strok `occlusion`
+    (`closed: false`, satu grup, `strength`, loop = titik akhir = titik awal) + `contours/clip_stats.json` (pass 1 atas SEMUA
+    frame, juga dengan `--limit`); manifest `contract` `T-201b`, `algo_rev` tetap 2, `vectorize` datar 10 kunci
+    (4 T-201a + 6 `depth_lines.*`), `depth_thresholds`; syarat D memakai jarak L2 presisi dan menganggap **tepi frame sebagai
+    batas** (disengaja, `docs/01`). Pelacak T-201a dipakai ulang (hanya `thin_band` diekstrak): hash strok tipe lama identik.
+    Terukur (`test_short` 119 / `test` 283 frame): T_high / T_low 0,1200 / 0,0532 dan 0,1389 / 0,0641; 71 / 67 ms/frame (p95 78 / 75 ms,
+    0 frame > 1 s); JSON 4.5 / 11.2 MB; cakupan skeleton 99,70% / 99,51%, band 99,83% / 99,70%; titik berulang 0, loncatan 0;
+    bayangan minimum 7,000 px = D; strok oklusi/frame min / median / maks 0 / 1 / 5 dan 0 / 0 / 5. **Done-when 4/5 di kedua klip**
+    (frame 78 gagal): `left_leg` / `right_leg` berisi 0 piksel (Lower_Clothing di `torso`, D-009), jadi kaki menyilang hanya muncul
+    sebagai garis oklusi di dalam `torso`. Tepi tumpang tindih kaki ada di `depth_smooth` tetapi di bawah T_low default; normalisasi
+    [3] (log + IQR per frame) ikut melemahkannya di frame 73–83; ambang p80 / p70 memberi 5/5 tetapi tambahannya sebagian besar
+    lipatan celana. Penilaian visual Rio: garis oranye lengan melipat sah; tidak ada bayangan. Test: `tests/test_vectorize_occlusion.py`
+    (56 kasus, sintetis non-sumbu-sejajar + data nyata) + `tests/test_vectorize.py` diperbarui + `tests/skeleton_metrics.py`;
+    suite penuh 598 lolos / 2 skip (541 → 598); mutation check (D, tepi frame, NMS, hysteresis kuat, L, pemisahan per grup, junction lama)
+    semuanya membuat test gagal. Alat: `scripts/contour_overlay.py` diperluas (oklusi oranye, panel |grad|, `--worst`, ringkasan
+    JSON). Detail, sensitivitas (`work/t201b/sensitivity_*.json`), diagnostik kaki, dan batas yang diketahui: `docs/04` D-010
+    "Hasil T-201b"
+  - ⚠️ **Risiko untuk fase berikut:** (1) frame tanpa oklusi di default **34/119** (`test_short`) dan **160/283** (`test`; run kosong
+    terpanjang 28 frame; pengukuran Tahap 1 29/119 dan 149/283 — selisih karena Guo-Hall vs Zhang-Suen, `docs/04`) dan antar frame
+    berkedip karena temporal [3] belum aktif → **evaluasi ulang setelah T-302 / T-303, sebelum kalibrasi T-305**; (2) L = 30 dalam
+    piksel Guo-Hall (≈ 38 piksel Zhang-Suen); (3) komponen DA ±94 px di area tangan (frame 90) belum bisa dibedakan dari garis sah
 
 ### T-202 · Anchor + orientasi + `track_id` · `TODO`
 - **Kerjakan:** aturan anchor `docs/01` stage [4]: `silhouette` searah jarum jam, `silhouette_hole`
@@ -1005,6 +1026,10 @@ Tiga langkah, jadikan refleks:
 - **Done when:** flicker acak berkurang terukur (`iou_prev` + `label_agreement_prev` peta grup rata-rata)
 - **Update log:**
   - [2026-09-29] Objek diganti: probabilitas grup + kedalaman ternormalisasi (bukan mask biner) — D-010
+  - [2026-10-03] Dari T-201b: `normalize: log_median_iqr` melemahkan tepi kaki menyilang di frame 73–83 (pembagi IQR per frame
+    `log_iqr` ±0,33 vs median klip 0,19; gradien ±0,5–0,6 × frame lain terhadap ambang per klip). Pipeline oklusi pada depth mentah
+    linear memberi Done-when 5/5 dan frame tanpa oklusi 144 (vs 160) di `test`; efek log dan efek IQR belum dipisah. Uji metode
+    normalisasi (mis. IQR tetap per klip, domain linear) dengan metrik Done-when T-201b (`docs/04` D-010 "Hasil T-201b")
 
 ### T-303 · Optical flow warp · `TODO`
 - **Kerjakan:** `cv2.calcOpticalFlowFarneback` pada `frames/` → warp probabilitas grup + kedalaman
@@ -1028,6 +1053,12 @@ Tiga langkah, jadikan refleks:
 - **🎯 Milestone Phase 3:** flicker terkendali
 - **Update log:**
   - [2026-09-29] Task baru — D-010
+  - [2026-10-03] Catatan dari T-201b: (1) `left_leg` / `right_leg` berisi **0 piksel** di kedua klip (Lower_Clothing ada di
+    grup `torso`, D-009): kaki menyilang hanya muncul sebagai garis oklusi di dalam `torso`; kriteria uji = ≥ 80% titik strok di
+    Lower_Clothing pada frame 73 / 78 / 82 / 87 / 92 (default 4/5); (2) kalibrasi L atas thinning **Guo-Hall** (L = 30 ≈ 38 piksel
+    Zhang-Suen); (3) p80 / p70 memberi 5/5 tetapi tambahannya sebagian besar lipatan celana, jadi menurunkan persentil saja tidak cukup —
+    normalisasi di T-302 dulu; (4) bahan: `work/t201b/sensitivity_*.json`, `p80p70_extra.json`, `diag_summary.json`; (5) syarat D menganggap tepi
+    frame batas (garis oklusi tidak pernah dalam D px dari tepi)
 
 ---
 
@@ -1121,11 +1152,11 @@ Tiga langkah, jadikan refleks:
 |---|---|---|
 | 0 Setup | T-001 … T-005 | 5/5 |
 | 1 Skeleton | T-101 … T-108 (T-102 → a/b/c, T-104 → a/b) — ✅ **Phase 1 selesai** (🎯 milestone T-104b, T-107 DONE) | 11/11 |
-| 2 Vectorize | T-201 … T-204 (T-201 → a/b) — T-201a ✅ DONE | 1/5 |
+| 2 Vectorize | T-201 … T-204 (T-201 → a/b) — T-201a ✅, T-201b ✅ DONE (dengan batas kaki) | 2/5 |
 | 3 Stabilize | T-301 … T-305 (T-301 SKIP) | 0/5 |
 | 4 Style | T-401 … T-406 | 0/6 |
 | 5 Fallback | T-501 … T-502 (BLOCKED) | 0/2 |
 | 6 Opsional | T-601 … T-603 | 0/3 |
 
-**Total: 37 task** (5 + 11 + 5 + 5 + 6 + 2 + 3) · Selesai: 17/37 (5 + 11 + 1; SKIP — T-301, T-601 — tidak dihitung selesai).
+**Total: 37 task** (5 + 11 + 5 + 5 + 6 + 2 + 3) · Selesai: 18/37 (5 + 11 + 2; SKIP — T-301, T-601 — tidak dihitung selesai).
 Rekonsiliasi 2026-10-01: sebelum T-104b selesai papan menulis 9/11 + 13/37, padahal 5 + 9 = 14 — total salah hitung 1.

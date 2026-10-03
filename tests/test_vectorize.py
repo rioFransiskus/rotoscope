@@ -24,6 +24,8 @@ N_FRAMES = 4
 HAIR, FACE, TORSO, LARM = 1, 2, 3, 4          # id grup default (urutan YAML)
 NAMES = tuple(g for g, _ in load_pipeline().groups)
 PARAMS = {"min_region_area": 800, "min_hole_area": 200, "line_min_px": 5, "min_stroke_px": 6}
+DEPTH_DEFAULTS = {"depth_lines.blur_sigma": 1.0, "depth_lines.hi_pct": 95.0, "depth_lines.lo_pct": 90.0,
+                  "depth_lines.erode_px": 5, "depth_lines.min_dist_px": 7.0, "depth_lines.min_len_px": 30.0}
 SMALL = {**PARAMS, "min_region_area": 1, "min_hole_area": 1}
 REAL_CLIP = Path("work/clips/test_short")
 
@@ -472,6 +474,7 @@ def subject_groups(i: int) -> np.ndarray:
 def make_work(tmp_path: Path, n: int = N_FRAMES, h: int = H, w: int = W) -> Path:
     work = tmp_path / "work"
     (work / "stable" / "groups").mkdir(parents=True)
+    (work / "stable" / "depth_smooth").mkdir(parents=True)
     (work / "meta.json").write_text(json.dumps({"source_path": "C:/clips/a.mp4", "frame_count": n,
                                                 "working_width": w, "working_height": h,
                                                 "frame_index_start": 0}), encoding="utf-8")
@@ -482,10 +485,17 @@ def make_work(tmp_path: Path, n: int = N_FRAMES, h: int = H, w: int = W) -> Path
          "clip": stage_common.clip_identity(work), "created_utc": "t0"}), encoding="utf-8")
     for i in range(n):
         stb.write_groups(work / "stable" / "groups" / f"frame_{i:05d}.png", subject_groups(i))
+        stb.write_depth_smooth(work / "stable" / "depth_smooth" / f"frame_{i:05d}.npy", subject_depth(i, h, w))
     return work
 
 
-CLIP_PARAMS = {**PARAMS, "min_region_area": 50}       # subjek sintetis 24×32 jauh di bawah 800 px
+def subject_depth(i: int, h: int = H, w: int = W) -> np.ndarray:
+    """depth_smooth sintetis float16: tangga kedalaman + sedikit variasi per frame (ambang klip bukan nol)."""
+    xx = np.arange(w)[None, :] + 0 * np.arange(h)[:, None]
+    return (np.where(xx < 10 + i, 0.0, 1.5) + 0.01 * i * (xx % 3)).astype(np.float16)
+
+
+CLIP_PARAMS = {**PARAMS, "min_region_area": 50, **DEPTH_DEFAULTS}   # subjek sintetis 24×32 jauh di bawah 800 px
 
 
 def cfg_for(work: Path, **overrides):
@@ -522,8 +532,10 @@ def test_run_writes_outputs_manifest_and_log(tmp_path):
     assert run["processed"] == N_FRAMES and run["skipped"] == 0
     assert len(frame_hashes(work)) == N_FRAMES
     m = json.loads((work / "contours" / "manifest.json").read_text(encoding="utf-8"))
-    assert m["contract"] == "T-201a" and m["stroke_types"] == list(vec.STROKE_TYPES)
-    assert m["pending"] == ["occlusion", "anchor", "track_id", "orientation"]
+    assert m["contract"] == "T-201b" and m["stroke_types"] == list(vec.STROKE_TYPES)
+    assert m["stroke_types"][-1] == "occlusion" and m["pending"] == ["anchor", "track_id", "orientation"]
+    stats = json.loads((work / "contours" / "clip_stats.json").read_text(encoding="utf-8"))
+    assert m["depth_thresholds"] == {"t_high": stats["t_high"], "t_low": stats["t_low"]} and m["clip_stats"]
     assert m["vectorize"] == CLIP_PARAMS and m["seg_model"] == "0.8b" and m["stable_created_utc"] == "t0"
     assert m["clip"] == stage_common.clip_identity(work) and m["frame_size"] == {"width": W, "height": H}
     d = json.loads((work / "contours" / "frame_00002.json").read_text(encoding="utf-8"))
@@ -601,13 +613,15 @@ def test_stale_manifest_recomputed_with_warning(tmp_path, change):
     assert any("PERINGATAN" in m and expect in m for m in logs)
 
 
-def test_depth_line_params_do_not_make_stale(tmp_path):
-    """Hash hanya parameter T-201a: parameter T-201b / T-202 yang sudah ada di config tidak membuat basi."""
+def test_depth_line_params_make_stale_but_track_does_not(tmp_path):
+    """Hash = 4 parameter T-201a + depth_lines.* (T-201b); track.* (T-202) bukan masukan stage ini."""
     work = make_work(tmp_path)
     vec.run_vectorize(cfg_for(work), log=quiet)
-    run = vec.run_vectorize(cfg_for(work, **{"vectorize.depth_lines.min_len_px": 40.0,
-                                             "vectorize.track.max_match_dist_px": 20.0}), log=quiet)
+    run = vec.run_vectorize(cfg_for(work, **{"vectorize.track.max_match_dist_px": 20.0}), log=quiet)
     assert run["stale"] == [] and run["processed"] == 0
+    run = vec.run_vectorize(cfg_for(work, **{"vectorize.depth_lines.min_len_px": 40.0}), log=quiet)
+    assert any("vectorize.depth_lines.min_len_px: 30.0 → 40.0" in s for s in run["stale"])
+    assert run["processed"] == N_FRAMES and run["skipped"] == 0
 
 
 def test_contract_change_marks_stale(tmp_path):
@@ -615,10 +629,10 @@ def test_contract_change_marks_stale(tmp_path):
     vec.run_vectorize(cfg_for(work), log=quiet)
     p = work / "contours" / "manifest.json"
     m = json.loads(p.read_text(encoding="utf-8"))
-    m["contract"] = "T-201b"
+    m["contract"] = "T-201a"            # manifest lama (sebelum garis oklusi)
     p.write_text(json.dumps(m), encoding="utf-8")
     run = vec.run_vectorize(cfg_for(work), log=quiet)
-    assert run["stale"] == ["contract: 'T-201b' → 'T-201a'"] and run["processed"] == N_FRAMES
+    assert run["stale"] == ["contract: 'T-201a' → 'T-201b'"] and run["processed"] == N_FRAMES
 
 
 @pytest.mark.parametrize("old", [1, None])
@@ -712,18 +726,31 @@ def test_groups_config_differs_from_stable_rejected(tmp_path):
         vec.run_vectorize(cfg, log=quiet)
 
 
-def test_missing_group_frame_rejected_and_limit_needs_only_selected(tmp_path):
+def test_missing_group_or_depth_frame_rejected_even_with_limit(tmp_path):
+    """Ambang per klip dihitung dari SELURUH klip → frame hilang menghentikan run, juga dengan --limit."""
     work = make_work(tmp_path)
     (work / "stable" / "groups" / "frame_00003.png").unlink()
-    with pytest.raises(StageError, match="stable/groups belum lengkap"):
-        vec.run_vectorize(cfg_for(work), log=quiet)
-    assert vec.run_vectorize(cfg_for(work), limit=3, log=quiet)["processed"] == 3
+    for limit in (None, 3):
+        with pytest.raises(StageError, match="stable/groups belum lengkap"):
+            vec.run_vectorize(cfg_for(work), limit=limit, log=quiet)
+    stb.write_groups(work / "stable" / "groups" / "frame_00003.png", subject_groups(3))
+    (work / "stable" / "depth_smooth" / "frame_00003.npy").unlink()
+    for limit in (None, 3):
+        with pytest.raises(StageError, match="stable/depth_smooth belum lengkap"):
+            vec.run_vectorize(cfg_for(work), limit=limit, log=quiet)
 
 
 def test_corrupt_group_frame_rejected(tmp_path):
     work = make_work(tmp_path)
     (work / "stable" / "groups" / "frame_00001.png").write_bytes(b"bukan png")
     with pytest.raises(StageError, match="rusak"):
+        vec.run_vectorize(cfg_for(work), log=quiet)
+
+
+def test_corrupt_depth_frame_rejected(tmp_path):
+    work = make_work(tmp_path)
+    (work / "stable" / "depth_smooth" / "frame_00001.npy").write_bytes(b"bukan npy")
+    with pytest.raises(StageError, match="depth_smooth frame_00001 rusak"):
         vec.run_vectorize(cfg_for(work), log=quiet)
 
 

@@ -1,17 +1,21 @@
-"""Stage [4] vectorize (T-201a): stable/groups/*.png → contours/frame_*.json + contours/manifest.json
-+ contours/frames.jsonl (D-010). Kontrak lengkap: docs/01 [4].
+"""Stage [4] vectorize (T-201a + T-201b): stable/groups/*.png + stable/depth_smooth/*.npy → contours/frame_*.json
++ contours/manifest.json + contours/clip_stats.json + contours/frames.jsonl (D-010). Kontrak lengkap: docs/01 [4].
 
-T-201a = siluet + lubang + batas grup SAJA. Garis oklusi + clip_stats.json = T-201b; anchor, orientasi,
-`track_id` = T-202 (sengaja TIDAK ditulis: key tiap strok persis {type, closed, groups, points}, supaya [5]
-gagal keras kalau memakai nilai yang belum ada). CPU saja, tanpa torch. Per frame:
+T-201a = siluet + lubang + batas grup; T-201b = garis oklusi kedalaman (langkah 3 di bawah) + clip_stats.json
+(ambang per klip, pass 1 atas SELURUH klip); anchor, orientasi, `track_id` = T-202 (sengaja TIDAK ditulis: key
+strok persis {type, closed, groups, points} (+ `strength` untuk occlusion), supaya [5] gagal keras kalau memakai
+nilai yang belum ada). CPU saja, tanpa torch. Per frame:
   1. Siluet: foreground (grup ≠ 0) di-pad 1 px background (kontur tetap tertutup di tepi frame) →
      cv2.findContours RETR_CCOMP / CHAIN_APPROX_NONE. Kontur luar < min_region_area dibuang, lubang <
      min_hole_area dibuang. Ukuran = JUMLAH PIKSEL (komponen foreground 8-arah / komponen background
      4-arah yang terlingkup), bukan cv2.contourArea (bias berlawanan untuk kontur luar vs lubang).
   2. Batas grup per pasangan (a, b), a < b menurut urutan YAML, keduanya ≠ 0: band = piksel a bertetangga
-     3×3 b ∪ piksel b bertetangga a → komponen 8-arah < line_min_px dibuang → thinning (Zhang-Suen) →
+     3×3 b ∪ piksel b bertetangga a → komponen 8-arah < line_min_px dibuang → thinning (Guo-Hall) →
      tracing (junction = crossing number ≥ 3 dilepas, jalur disambung ke junction, jalur < min_stroke_px dibuang, dua jalur yang
      tersisa di satu junction digabung). Loop tertutup = closed:false dengan titik akhir = titik awal.
+  3. Oklusi: |grad| depth_smooth (Gaussian σ → Sobel / 8) → NMS 4 bin → hysteresis 8-arah (T_high / T_low = persentil
+     per klip di foreground ter-erode) → hanya piksel foreground berjarak ≥ min_dist_px dari batas grup (termasuk
+     background dan tepi frame) → per grup: filter komponen, thinning, skeleton < min_len_px dibuang, tracing.
 
 Koordinat = ruang kontinu: piksel (i, j) menempati [i, i+1) × [j, j+1), titik disimpan di PUSAT piksel
 (i+0.5, j+0.5). Run titik di baris/kolom tepi frame (mis. y = H−0.5) = kontur yang menempel tepi; [5]
@@ -53,7 +57,8 @@ CONTOURS_DIRNAME = "contours"
 MANIFEST_FILENAME = "manifest.json"
 FRAMES_LOG_FILENAME = "frames.jsonl"
 FRAME_SUFFIX = ".json"
-CONTRACT = "T-201a"          # T-201b / T-202 menaikkan ini → output lama otomatis basi
+CLIP_STATS_FILENAME = "clip_stats.json"
+CONTRACT = "T-201b"          # T-202 menaikkan ini → output lama otomatis basi
 # Naik 1 setiap perubahan PERILAKU algoritma tanpa perubahan parameter (output lama otomatis basi, peringatan
 # menyebut algo_rev lama → baru). 1 = junction ≥ 3 tetangga + Zhang-Suen; 2 = crossing number + prune sudut
 # tangga + klaster junction + Guo-Hall.
@@ -63,10 +68,23 @@ BACKGROUND_NAME = "background"
 TYPE_SILHOUETTE = "silhouette"
 TYPE_HOLE = "silhouette_hole"
 TYPE_BOUNDARY = "group_boundary"
-STROKE_TYPES = (TYPE_SILHOUETTE, TYPE_HOLE, TYPE_BOUNDARY)   # urutan = rank sortir
+TYPE_OCCLUSION = "occlusion"
+STROKE_TYPES = (TYPE_SILHOUETTE, TYPE_HOLE, TYPE_BOUNDARY, TYPE_OCCLUSION)   # urutan = rank sortir
 STROKE_KEYS = ("type", "closed", "groups", "points")
-PENDING = ("occlusion", "anchor", "track_id", "orientation")
+OCCLUSION_KEYS = STROKE_KEYS + ("strength",)
+PENDING = ("anchor", "track_id", "orientation")
 PARAM_KEYS = ("min_region_area", "min_hole_area", "line_min_px", "min_stroke_px")  # parameter T-201a
+DEPTH_KEYS = ("blur_sigma", "hi_pct", "lo_pct", "erode_px", "min_dist_px", "min_len_px")   # vectorize.depth_lines.*
+DEPTH_PREFIX = "depth_lines."                # kunci datar di dict parameter / manifest: "depth_lines.hi_pct"
+
+# ── Garis oklusi (T-201b): konstanta struktural, bukan parameter style ──
+SOBEL_NORM = 8.0                             # Sobel 3×3 pada ramp satuan = 8 → |grad| dalam selisih depth_smooth / px
+NMS_BIN_EDGES = (22.5, 67.5, 112.5, 157.5)   # derajat; bin 0 = horizontal, 1 = 45°, 2 = vertikal, 3 = 135° (y ke bawah)
+NMS_NEIGHBORS = (((0, -1), (0, 1)), ((-1, -1), (1, 1)), ((-1, 0), (1, 0)), ((-1, 1), (1, -1)))   # (dy, dx) per bin
+DIST_MASK = cv2.DIST_MASK_PRECISE            # distanceTransform eksak (bukan aproksimasi chamfer 3×3)
+STRENGTH_DECIMALS = 3                        # pembulatan `strength`
+PERCENTILE_METHOD = "linear"                 # interpolasi persentil (= np.percentile default)
+CLIP_STATS_RESULTS = ("t_high", "t_low", "n_values")   # field hasil di clip_stats.json (sisanya = masukan)
 
 # ── Konstanta struktural (bukan parameter style; sama dengan RING_KERNEL di stabilize) ──
 PAD_PX = 1                                   # padding background di sekeliling foreground / band
@@ -84,16 +102,19 @@ COORDS_INFO = {"space": "continuous", "origin": "top-left corner of pixel (0, 0)
                "point": "pixel center (i + 0.5, j + 0.5)", "decimals": COORD_DECIMALS}
 
 # Kunci manifest yang harus sama untuk resume; beda → output basi (dihapus + dihitung ulang).
-MANIFEST_MATCH_KEYS = ("contract", "algo_rev", "stroke_types", "vectorize", "vectorize_hash", "groups_hash", "stabilize_hash",
-                       "seg_model", "stable_created_utc", "frame_size", CLIP_KEY)
+MANIFEST_MATCH_KEYS = ("contract", "algo_rev", "stroke_types", "vectorize", "vectorize_hash", "depth_thresholds",
+                       "groups_hash", "stabilize_hash", "seg_model", "stable_created_utc", "frame_size", CLIP_KEY)
 
 DEFAULT_CONFIG = Path("configs") / "default.yaml"
 
 
 # ── Parameter + hash ───────────────────────────────
 def vectorize_params(cfg: PipelineConfig) -> dict:
-    """Hanya parameter T-201a (bukan seluruh section `vectorize`): depth_lines / track milik T-201b / T-202."""
-    return {k: getattr(cfg.vectorize, k) for k in PARAM_KEYS}
+    """4 parameter T-201a + `depth_lines.*` (T-201b), dict DATAR ('depth_lines.hi_pct'). `track.*` (T-202) tidak
+    ikut: bukan masukan stage ini."""
+    out = {k: getattr(cfg.vectorize, k) for k in PARAM_KEYS}
+    out.update({DEPTH_PREFIX + k: getattr(cfg.vectorize.depth_lines, k) for k in DEPTH_KEYS})
+    return out
 
 
 def params_hash(params: dict) -> str:
@@ -470,11 +491,31 @@ def thin_mask(mask: np.ndarray) -> np.ndarray:
     return cv2.ximgproc.thinning((mask > 0).astype(np.uint8) * 255, thinningType=THINNING_TYPE) > 0
 
 
+def thin_band(band: np.ndarray, line_min_px: int) -> tuple[np.ndarray, int, int] | None:
+    """Mask bool (seluruh frame) → (skeleton, ox, oy) atau None kalau kosong sesudah filter.
+
+    Crop ke bounding box + PAD_PX, komponen 8-arah < line_min_px dibuang SEBELUM thinning, lalu thinning
+    (THINNING_TYPE). `skel` = array bool crop; piksel global = (px + ox, py + oy). Dipakai batas grup dan oklusi.
+    """
+    if not band.any():
+        return None
+    x, y, w, h = cv2.boundingRect(band.astype(np.uint8))
+    crop = cv2.copyMakeBorder(band[y:y + h, x:x + w].astype(np.uint8), PAD_PX, PAD_PX, PAD_PX, PAD_PX,
+                              cv2.BORDER_CONSTANT, value=0)
+    n, lab, cst, _ = cv2.connectedComponentsWithStats(crop, connectivity=8)
+    keep = np.zeros(n, bool)
+    keep[1:] = cst[1:, cv2.CC_STAT_AREA] >= line_min_px
+    crop = keep[lab].astype(np.uint8)
+    if not crop.any():
+        return None
+    return thin_mask(crop), x - PAD_PX, y - PAD_PX
+
+
 def pair_skeletons(gmap: np.ndarray, line_min_px: int) -> list[tuple[int, int, np.ndarray, int, int]]:
     """Skeleton pasca-thinning per pasangan grup (a, b), a < b, keduanya ≠ 0: [(a, b, skel, ox, oy)].
 
     `skel` = array bool (crop band + PAD_PX); piksel global = (px + ox, py + oy). Band = piksel a bertetangga 3×3
-    b ∪ piksel b bertetangga a, komponen 8-arah < line_min_px dibuang SEBELUM thinning (Zhang-Suen). Fungsi
+    b ∪ piksel b bertetangga a, komponen 8-arah < line_min_px dibuang SEBELUM thinning (`thin_band`). Fungsi
     publik: dipakai group_boundary_strokes dan metrik cakupan di tests/.
     """
     ids = [int(g) for g in np.unique(gmap) if g != stb.BACKGROUND_ID]
@@ -483,18 +524,9 @@ def pair_skeletons(gmap: np.ndarray, line_min_px: int) -> list[tuple[int, int, n
     for ai, a in enumerate(ids):
         ma = gmap == a
         for b in ids[ai + 1:]:
-            band = (ma & dil[b]) | ((gmap == b) & dil[a])
-            if not band.any():
-                continue
-            x, y, w, h = cv2.boundingRect(band.astype(np.uint8))
-            crop = cv2.copyMakeBorder(band[y:y + h, x:x + w].astype(np.uint8), PAD_PX, PAD_PX, PAD_PX, PAD_PX,
-                                      cv2.BORDER_CONSTANT, value=0)
-            n, lab, cst, _ = cv2.connectedComponentsWithStats(crop, connectivity=8)
-            keep = np.zeros(n, bool)
-            keep[1:] = cst[1:, cv2.CC_STAT_AREA] >= line_min_px
-            crop = keep[lab].astype(np.uint8)
-            if crop.any():
-                out.append((a, b, thin_mask(crop), x - PAD_PX, y - PAD_PX))
+            thinned = thin_band((ma & dil[b]) | ((gmap == b) & dil[a]), line_min_px)
+            if thinned is not None:
+                out.append((a, b, *thinned))
     return out
 
 
@@ -510,6 +542,137 @@ def group_boundary_strokes(gmap: np.ndarray, names: tuple[str, ...], line_min_px
         for poly in polys:
             out.append({"type": TYPE_BOUNDARY, "closed": False, "groups": [names[a - 1], names[b - 1]],
                         "points": [_point(px + ox, py + oy) for py, px in poly], "_pair": (a, b)})
+    return out, stats
+
+
+# ── Garis oklusi (T-201b) ──────────────────────────
+def read_depth_smooth(path: Path, h: int, w: int) -> np.ndarray | None:
+    """stable/depth_smooth/*.npy → float32 (H, W); None kalau tidak terbaca / ukuran salah / tidak finite."""
+    try:
+        z = np.load(path, allow_pickle=False)
+    except (OSError, ValueError):
+        return None
+    if z.shape != (h, w) or z.dtype.kind != "f":
+        return None
+    z = z.astype(np.float32)
+    return z if np.isfinite(z).all() else None
+
+
+def depth_gradient(depth: np.ndarray, blur_sigma: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """|grad| + komponen (gx, gy) float32: Gaussian σ → Sobel 3×3 / SOBEL_NORM (selisih depth_smooth per piksel)."""
+    z = depth.astype(np.float32)
+    if blur_sigma > 0:
+        z = cv2.GaussianBlur(z, (0, 0), blur_sigma)
+    gx = cv2.Sobel(z, cv2.CV_32F, 1, 0, ksize=3) / SOBEL_NORM
+    gy = cv2.Sobel(z, cv2.CV_32F, 0, 1, ksize=3) / SOBEL_NORM
+    return np.sqrt(gx * gx + gy * gy), gx, gy
+
+
+def inner_region(gmap: np.ndarray, erode_px: int) -> np.ndarray:
+    """Foreground ter-erode (kernel persegi erode_px × erode_px). Di luar frame = background (BORDER_CONSTANT 0)."""
+    return cv2.erode((gmap != stb.BACKGROUND_ID).astype(np.uint8), np.ones((erode_px, erode_px), np.uint8),
+                     borderType=cv2.BORDER_CONSTANT, borderValue=0).astype(bool)
+
+
+def boundary_distance(gmap: np.ndarray) -> np.ndarray:
+    """Jarak L2 (px, presisi) tiap piksel ke piksel batas grup terdekat. Batas = piksel dengan tetangga 3×3 berlabel
+    beda, termasuk batas ke background dan TEPI FRAME (peta di-pad PAD_PX background, sama dengan siluet: sengaja,
+    supaya garis oklusi tidak menduplikasi kontur siluet yang menempel tepi frame)."""
+    lm = cv2.copyMakeBorder(gmap.astype(np.uint8), PAD_PX, PAD_PX, PAD_PX, PAD_PX, cv2.BORDER_CONSTANT, value=0)
+    bnd = cv2.dilate(lm, KERNEL_3X3) != cv2.erode(lm, KERNEL_3X3)
+    d = cv2.distanceTransform((~bnd).astype(np.uint8), cv2.DIST_L2, DIST_MASK)
+    return d[PAD_PX:-PAD_PX, PAD_PX:-PAD_PX]
+
+
+def nms_mask(mag: np.ndarray, gx: np.ndarray, gy: np.ndarray) -> np.ndarray:
+    """True di piksel yang besarnya ≥ kedua tetangga searah gradien (arah dikuantisasi 4 bin: 0 / 45 / 90 / 135°)."""
+    ang = (np.rad2deg(np.arctan2(gy, gx)) + 180.0) % 180.0
+    b = np.digitize(ang, NMS_BIN_EDGES) % len(NMS_NEIGHBORS)
+    p = np.pad(mag, 1, mode="edge")
+    h, w = mag.shape
+    keep = np.zeros(mag.shape, bool)
+    for k, ((dy1, dx1), (dy2, dx2)) in enumerate(NMS_NEIGHBORS):
+        keep |= ((b == k) & (mag >= p[1 + dy1:1 + dy1 + h, 1 + dx1:1 + dx1 + w])
+                 & (mag >= p[1 + dy2:1 + dy2 + h, 1 + dx2:1 + dx2 + w]))
+    return keep & (mag > 0)
+
+
+def hysteresis_mask(cand: np.ndarray, mag: np.ndarray, t_low: float, t_high: float) -> np.ndarray:
+    """Komponen 8-arah piksel kandidat > t_low dipertahankan kalau memuat ≥ 1 piksel > t_high."""
+    weak = cand & (mag > t_low)
+    k, lab = cv2.connectedComponents(weak.astype(np.uint8), connectivity=8)
+    strong = np.zeros(k, bool)
+    strong[np.unique(lab[weak & (mag > t_high)])] = True
+    strong[0] = False
+    return strong[lab]
+
+
+def percentile_linear(values: np.ndarray, pct: float) -> float:
+    """Persentil eksak, interpolasi linear (= np.percentile default), float64. `values` HARUS sudah terurut."""
+    pos = (len(values) - 1) * pct / 100.0
+    lo = int(np.floor(pos))
+    hi = min(lo + 1, len(values) - 1)
+    frac = pos - lo
+    return float(values[lo]) * (1.0 - frac) + float(values[hi]) * frac
+
+
+def depth_params(params: dict) -> dict:
+    """Parameter depth_lines dari dict datar `vectorize_params` (kunci 'depth_lines.<nama>')."""
+    return {k: params[f"{DEPTH_PREFIX}{k}"] for k in DEPTH_KEYS}
+
+
+def occlusion_masks(gmap: np.ndarray, depth: np.ndarray, dp: dict, t_high: float, t_low: float) -> dict:
+    """Tahap mask garis oklusi: NMS + hysteresis (di foreground ter-erode) → syarat 'jarak ≥ D dari batas grup'.
+    Return {"mag", "hyst", "dist_ok", "eligible"}: bool (H, W) kecuali mag (float32)."""
+    mag, gx, gy = depth_gradient(depth, dp["blur_sigma"])
+    hyst = hysteresis_mask(nms_mask(mag, gx, gy) & inner_region(gmap, dp["erode_px"]), mag, t_low, t_high)
+    eligible = (gmap != stb.BACKGROUND_ID) & (boundary_distance(gmap) >= dp["min_dist_px"])
+    return {"mag": mag, "hyst": hyst, "eligible": eligible, "dist_ok": hyst & eligible}
+
+
+def keep_long_components(skel: np.ndarray, min_len: float) -> np.ndarray:
+    """Buang komponen skeleton 8-arah dengan jumlah piksel < min_len."""
+    n, lab, st, _ = cv2.connectedComponentsWithStats(skel.astype(np.uint8), connectivity=8)
+    keep = np.zeros(n, bool)
+    keep[1:] = st[1:, cv2.CC_STAT_AREA] >= min_len
+    return keep[lab]
+
+
+def occlusion_strokes(gmap: np.ndarray, depth: np.ndarray, names: tuple[str, ...], params: dict,
+                      t_high: float | None, t_low: float | None) -> tuple[list[dict], dict]:
+    """Peta grup + depth_smooth + ambang klip → strok `occlusion` (terbuka, SATU grup, `strength`) + statistik.
+
+    Per grup (mask garis ∩ grup, jadi satu strok selalu satu grup, juga saat D = 0): filter komponen < line_min_px →
+    thinning → komponen skeleton < min_len_px (L) dibuang → `trace_skeleton` (min_stroke_px). `strength` = rata-rata
+    |grad| di titik strok (penutup loop tidak dihitung dua kali), STRENGTH_DECIMALS desimal. t_high / t_low = None
+    (klip tanpa foreground) → tanpa strok.
+    """
+    stats = {"occ_px_hyst": 0, "occ_px_dist": 0, "occ_px_len": 0, "n_occlusion": 0,
+             "occ_loops": 0, "occ_spurs_dropped": 0, "occ_short_dropped": 0}
+    if t_high is None or t_low is None:
+        return [], stats
+    dp = depth_params(params)
+    m = occlusion_masks(gmap, depth, dp, t_high, t_low)
+    stats["occ_px_hyst"], stats["occ_px_dist"] = int(m["hyst"].sum()), int(m["dist_ok"].sum())
+    out: list[dict] = []
+    for gid in (int(g) for g in np.unique(gmap[m["dist_ok"]])):
+        thinned = thin_band(m["dist_ok"] & (gmap == gid), params["line_min_px"])
+        if thinned is None:
+            continue
+        skel, ox, oy = thinned
+        skel = keep_long_components(skel, dp["min_len_px"])
+        stats["occ_px_len"] += int(skel.sum())
+        polys, tstats = trace_skeleton(skel, params["min_stroke_px"])
+        stats["occ_loops"] += tstats["loops"]
+        stats["occ_spurs_dropped"] += tstats["spurs_dropped"]
+        stats["occ_short_dropped"] += tstats["short_dropped"]
+        for poly in polys:
+            body = poly[:-1] if _is_loop(poly) else poly
+            strength = float(np.mean([m["mag"][py + oy, px + ox] for py, px in body], dtype=np.float64))
+            out.append({"type": TYPE_OCCLUSION, "closed": False, "groups": [names[gid - 1]],
+                        "points": [_point(px + ox, py + oy) for py, px in poly],
+                        "strength": round(strength, STRENGTH_DECIMALS), "_pair": (gid, 0)})
+    stats["n_occlusion"] = len(out)
     return out, stats
 
 
@@ -536,6 +699,18 @@ def vectorize_gmap(gmap: np.ndarray, names: tuple[str, ...], params: dict) -> tu
              "n_boundary": sum(s["type"] == TYPE_BOUNDARY for s in strokes),
              **sstats, **bstats, "edge_points": edge}
     return strokes, stats
+
+
+def vectorize_frame(gmap: np.ndarray, depth: np.ndarray, names: tuple[str, ...], params: dict,
+                    t_high: float | None, t_low: float | None) -> tuple[list[dict], dict]:
+    """Satu frame T-201b: strok tipe lama (`vectorize_gmap`, tidak berubah) + `occlusion`. `occlusion` berperingkat
+    terakhir di STROKE_TYPES, jadi urutannya sama dengan sortir gabungan."""
+    strokes, stats = vectorize_gmap(gmap, names, params)
+    occ, ostats = occlusion_strokes(gmap, depth, names, params, t_high, t_low)
+    occ.sort(key=_sort_key)
+    for s in occ:
+        s.pop("_pair", None)
+    return strokes + occ, {**stats, **ostats}
 
 
 def frame_document(index: int, width: int, height: int, source: dict, strokes: list[dict]) -> bytes:
@@ -568,6 +743,10 @@ class Clip:
     @property
     def frames_log(self) -> Path:
         return self.contours_dir / FRAMES_LOG_FILENAME
+
+    @property
+    def clip_stats_path(self) -> Path:
+        return self.contours_dir / CLIP_STATS_FILENAME
 
     def frame_path(self, name: str) -> Path:
         return self.contours_dir / (Path(name).stem + FRAME_SUFFIX)
@@ -629,12 +808,77 @@ def require_groups(clip: Clip, names) -> None:
                          f"{Path(missing[0]).stem} — jalankan stage [3]: {cli_cmd('stabilize', clip.work_dir)}")
 
 
+def require_depth(clip: Clip, names) -> None:
+    missing = [n for n in names if not clip.stable_clip.depth_smooth_path(n).is_file()]
+    if missing:
+        raise StageError(f"stable/depth_smooth belum lengkap: {len(missing)} dari {len(names)} frame hilang, mis. "
+                         f"{Path(missing[0]).stem} — jalankan stage [3]: {cli_cmd('stabilize', clip.work_dir)}")
+
+
+def load_frame_inputs(clip: Clip, name: str, n_groups: int) -> tuple[np.ndarray, np.ndarray]:
+    """(peta grup, depth_smooth float32) satu frame; rusak / ukuran salah → StageError dengan perintah [3]."""
+    gmap = stb.read_groups(clip.stable_clip.groups_path(name))
+    if gmap is None or gmap.shape != (clip.height, clip.width) or int(gmap.max()) > n_groups:
+        raise StageError(f"peta grup {Path(name).stem} rusak / ukuran salah — jalankan ulang stage [3]: "
+                         f"{cli_cmd('stabilize', clip.work_dir)}")
+    depth = read_depth_smooth(clip.stable_clip.depth_smooth_path(name), clip.height, clip.width)
+    if depth is None:
+        raise StageError(f"depth_smooth {Path(name).stem} rusak / ukuran salah / tidak finite — jalankan ulang "
+                         f"stage [3]: {cli_cmd('stabilize', clip.work_dir)}")
+    return gmap, depth
+
+
+# ── clip_stats.json (T-201b): ambang per klip ──────
+def clip_stats_inputs(params: dict, clip: Clip, stable: dict) -> dict:
+    """Semua yang menentukan ambang. File clip_stats dipakai ulang hanya kalau blok ini sama persis."""
+    dp = depth_params(params)
+    return {"contract": CONTRACT, "algo_rev": ALGO_REV, "blur_sigma": dp["blur_sigma"], "erode_px": dp["erode_px"],
+            "hi_pct": dp["hi_pct"], "lo_pct": dp["lo_pct"], "sobel_norm": SOBEL_NORM,
+            "percentile_method": PERCENTILE_METHOD, "n_frames": len(clip.names),
+            "frame_size": {"width": clip.width, "height": clip.height},
+            "stable": {"manifest": f"stable/{stb.MANIFEST_FILENAME}", "created_utc": stable["created_utc"],
+                       "groups_hash": stable["groups_hash"], "stabilize_hash": stable["stabilize_hash"],
+                       "seg_model": stable["seg"]["model"]},
+            CLIP_KEY: clip_identity(clip.work_dir)}
+
+
+def compute_clip_stats(clip: Clip, params: dict, inputs: dict, names: tuple[str, ...]) -> dict:
+    """Pass 1: |grad| di foreground ter-erode dari SEMUA frame klip → T_high / T_low (persentil eksak). Nilai
+    dikumpulkan float32 (±71 MB untuk 283 frame), diurutkan di tempat; tanpa cache antar frame."""
+    dp = depth_params(params)
+    chunks = []
+    for name in clip.names:
+        gmap, depth = load_frame_inputs(clip, name, len(names))
+        chunks.append(depth_gradient(depth, dp["blur_sigma"])[0][inner_region(gmap, dp["erode_px"])])
+    values = np.concatenate(chunks) if chunks else np.zeros(0, np.float32)
+    del chunks
+    values.sort()
+    stats = {**inputs, "n_values": int(values.size), "t_high": None, "t_low": None}
+    if values.size:
+        stats["t_high"] = percentile_linear(values, dp["hi_pct"])
+        stats["t_low"] = percentile_linear(values, dp["lo_pct"])
+    return stats
+
+
+def load_clip_stats(clip: Clip, inputs: dict) -> dict | None:
+    """clip_stats.json yang ada, kalau blok masukannya sama persis dengan `inputs`; selain itu None (hitung ulang)."""
+    try:
+        s = json.loads(clip.clip_stats_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(s, dict) or {k: v for k, v in s.items() if k not in CLIP_STATS_RESULTS} != inputs:
+        return None
+    ok = all(s.get(k) is None or isinstance(s.get(k), float) for k in ("t_high", "t_low"))
+    return s if ok and isinstance(s.get("n_values"), int) else None
+
+
 # ── Manifest ───────────────────────────────────────
-def build_manifest(cfg: PipelineConfig, clip: Clip, stable: dict) -> dict:
+def build_manifest(cfg: PipelineConfig, clip: Clip, stable: dict, clip_stats: dict) -> dict:
     params = vectorize_params(cfg)
     return {"stage": "vectorize", "contract": CONTRACT, "algo_rev": ALGO_REV, "stroke_types": list(STROKE_TYPES),
             "pending": list(PENDING), "vectorize": params, "vectorize_hash": params_hash(params),
-            "groups_hash": stable["groups_hash"], "stabilize_hash": stable["stabilize_hash"],
+            "depth_thresholds": {"t_high": clip_stats["t_high"], "t_low": clip_stats["t_low"]},
+            "clip_stats": CLIP_STATS_FILENAME, "groups_hash": stable["groups_hash"], "stabilize_hash": stable["stabilize_hash"],
             "seg_model": stable["seg"]["model"], "stable_created_utc": stable["created_utc"],
             "frame_size": {"width": clip.width, "height": clip.height}, CLIP_KEY: clip_identity(clip.work_dir),
             "coords": dict(COORDS_INFO), "created_utc": utc_now()}
@@ -679,16 +923,25 @@ def restart_outputs(clip: Clip) -> None:
 # ── Run ────────────────────────────────────────────
 def run_vectorize(cfg: PipelineConfig, *, restart: bool = False, limit: int | None = None,
                   log: Callable[[str], None] = print) -> dict:
-    """Jalankan stage [4] (T-201a). Return ringkasan run."""
+    """Jalankan stage [4] (T-201b). Return ringkasan run."""
     if limit is not None and limit < 1:
         raise StageError(f"--limit harus ≥ 1, dapat {limit}")
     clip = load_clip(cfg.paths.work_dir)
     selected = clip.names[:limit] if limit else clip.names
     stable = load_stable(clip, cfg)
-    require_groups(clip, selected)
+    # Ambang per klip dari SELURUH klip (juga dengan --limit: hasil N frame = prefiks run penuh) → semua frame dibaca
+    require_groups(clip, clip.names)
+    require_depth(clip, clip.names)
     names = tuple(g for g, _ in cfg.groups)
     params = vectorize_params(cfg)
-    manifest = build_manifest(cfg, clip, stable)
+    inputs = clip_stats_inputs(params, clip, stable)
+    clip_stats = load_clip_stats(clip, inputs)
+    if clip_stats is None:
+        t0 = time.perf_counter()
+        clip_stats = compute_clip_stats(clip, params, inputs, names)
+        log(f"[4] pass 1 (ambang per klip, {len(clip.names)} frame): T_high {clip_stats['t_high']}, T_low "
+            f"{clip_stats['t_low']} ({time.perf_counter() - t0:.1f} s)")
+    manifest = build_manifest(cfg, clip, stable, clip_stats)
     source = frame_source(manifest)
 
     stale = []
@@ -709,13 +962,16 @@ def run_vectorize(cfg: PipelineConfig, *, restart: bool = False, limit: int | No
     todo = [(i, n) for i, n in zip(clip.indices[:len(selected)], selected)
             if not frame_valid(clip.frame_path(n), i, clip, source)]
     n_skip = len(selected) - len(todo)
-    log(f"[4] vectorize ({CONTRACT}: silhouette + silhouette_hole + group_boundary): {len(selected)} frame dipilih, "
-        f"{n_skip} valid dilewati, {len(todo)} diproses")
+    log(f"[4] vectorize ({CONTRACT}: silhouette + silhouette_hole + group_boundary + occlusion): {len(selected)} "
+        f"frame dipilih, {n_skip} valid dilewati, {len(todo)} diproses")
 
-    run = {"selected": len(selected), "skipped": n_skip, "processed": 0, "stale": stale, "frames": []}
+    run = {"selected": len(selected), "skipped": n_skip, "processed": 0, "stale": stale, "frames": [],
+           "clip_stats": clip_stats}
     if not todo:
         return run
     ensure_dir(clip.contours_dir)
+    if load_clip_stats(clip, inputs) != clip_stats:
+        write_json_atomic(clip.clip_stats_path, clip_stats)
     if not clip.manifest_path.is_file():
         write_json_atomic(clip.manifest_path, manifest)
     t_run = time.perf_counter()
@@ -724,12 +980,9 @@ def run_vectorize(cfg: PipelineConfig, *, restart: bool = False, limit: int | No
     try:
         for k, (index, name) in enumerate(todo, 1):
             t0 = time.perf_counter()
-            gmap = stb.read_groups(clip.stable_clip.groups_path(name))
-            if (gmap is None or gmap.shape != (clip.height, clip.width) or int(gmap.max()) > len(names)):
-                raise StageError(f"peta grup {Path(name).stem} rusak / ukuran salah — jalankan ulang stage [3]: "
-                                 f"{cli_cmd('stabilize', clip.work_dir)}")
+            gmap, depth = load_frame_inputs(clip, name, len(names))
             t1 = time.perf_counter()
-            strokes, stats = vectorize_gmap(gmap, names, params)
+            strokes, stats = vectorize_frame(gmap, depth, names, params, clip_stats["t_high"], clip_stats["t_low"])
             t2 = time.perf_counter()
             data = frame_document(index, clip.width, clip.height, source, strokes)
             write_bytes_atomic(clip.frame_path(name), data)
@@ -742,7 +995,8 @@ def run_vectorize(cfg: PipelineConfig, *, restart: bool = False, limit: int | No
             run["frames"].append(rec)
             run["processed"] += 1
             log(f"  [{k}/{len(todo)}] {name} {rec['total_s']:.3f} s, silhouette {stats['n_silhouette']}, lubang "
-                f"{stats['n_hole']}, batas {stats['n_boundary']}, {len(data) / 1024:.1f} KiB")
+                f"{stats['n_hole']}, batas {stats['n_boundary']}, oklusi {stats['n_occlusion']}, "
+                f"{len(data) / 1024:.1f} KiB")
     finally:
         append_jsonl(clip.frames_log, {"event": "run_end", "time_utc": utc_now(), "n_done": run["processed"],
                                        "wall_s": round(time.perf_counter() - t_run, 2)})

@@ -1,16 +1,24 @@
-"""Alat sekali pakai T-201a (seperti look_test.py; BUKAN bagian src/): overlay kontur [4] di atas frame asli.
+"""Alat sekali pakai T-201a / T-201b (seperti look_test.py; BUKAN bagian src/): overlay kontur [4] di atas frame asli.
 
-    python scripts/contour_overlay.py --work-dir work/clips/test [--out-dir work/t201a]
-        [--ranges 73-92,183-202,225-240] [--hole-frames 20] [--scale 2] [--samples 80,190,233] [--suffix _fix1]
+    python scripts/contour_overlay.py --work-dir work/clips/test [--out-dir work/t201b]
+        [--ranges 73-92,183-202,225-240,90] [--hole-frames 20] [--scale 2] [--samples 80,190,233] [--suffix _fix1]
+        [--grad-panel] [--worst]
 
 Membaca <work-dir>/contours/frame_*.json + frames/ (TIDAK menulis apa pun di folder klip). Menulis ke --out-dir
-(default work/t201a, ter-ignore):
-  overlay_<klip>.mp4   frame di --ranges + sampel frame ber-lubang, skala --scale (default 2×), H.264 lewat
-                       export.encode; label "tanpa garis oklusi / anchor - BELUM representatif"
+(default work/t201b, ter-ignore):
+  overlay_<klip>.mp4   frame di --ranges + sampel frame ber-lubang + 3 frame tanpa oklusi, skala --scale (default 2×),
+                       H.264 lewat export.encode; label "temporal belum aktif - getaran antar frame BELUM representatif"
   sample_<klip>_fNNNNN.png   frame --samples (+ satu frame ber-lubang)
-  summary_<klip>.json  angka stage [4] dari contours/frames.jsonl + JSON frame (waktu, ukuran, strok per tipe, ...)
+  summary_<klip>.json  angka stage [4] dari contours/frames.jsonl + JSON frame (waktu, ukuran, strok per tipe, oklusi:
+                       linimasa piksel hysteresis / D / L, run frame kosong, kriteria wilayah Lower_Clothing frame 73-92)
 
-Warna: silhouette merah, silhouette_hole cyan, group_boundary hijau. Run titik yang menempel TEPI FRAME
+--grad-panel: panel pendamping di kanan = |grad| depth_smooth dipotong di T_high (gelap = kuat), area yang memenuhi
+syarat D (jarak >= D dari batas grup / siluet / tepi frame) diarsir teal; garis oklusi digambar di atasnya. Untuk menilai
+apakah garis yang hilang memang lemah gradiennya atau terbuang syarat D / L.
+--worst: PNG kasus terburuk worst_<klip>_<jenis>_fNNNNN.png (+ panel): oklusi terdekat ke batas (kandidat bayangan),
+strok oklusi terpendek yang lolos L, frame dengan strok oklusi terbanyak, frame 90 (komponen DA +-94 px di area tangan).
+
+Warna: silhouette merah, silhouette_hole cyan, group_boundary hijau, occlusion oranye. Run titik yang menempel TEPI FRAME
 (koordinat tepat di baris/kolom tepi) digambar magenta putus-putus supaya penilaian tertuju pada kontur sebenarnya.
 Koordinat strok = pusat piksel (i + 0.5) → digambar di (x · skala − 0.5).
 
@@ -34,17 +42,28 @@ import numpy as np
 from rotoscope import export as ex
 from rotoscope import stabilize as stb
 from rotoscope import vectorize as vec
+from rotoscope.config import load_class_names
 from rotoscope.stage_common import StageError, read_jsonl
 
 SHIFT = 4                                    # bit subpiksel cv2.polylines
-COLORS = {"silhouette": (0, 0, 255), "silhouette_hole": (255, 255, 0), "group_boundary": (0, 200, 0)}   # BGR
+COLORS = {"silhouette": (0, 0, 255), "silhouette_hole": (255, 255, 0), "group_boundary": (0, 200, 0),
+          "occlusion": (0, 140, 255)}   # BGR; oklusi oranye
 EDGE_COLOR = (255, 0, 255)
 DASH_ON, DASH_OFF = 3, 3                     # panjang dash (segmen) untuk run tepi
 FADE = 0.45                                  # frame asli dipucatkan ke putih supaya garis menonjol
 DROP_HOLE_COLOR, DROP_REGION_COLOR = (170, 170, 170), (80, 80, 80)    # abu-abu terang / gelap
-LABEL = "tanpa garis oklusi / anchor - BELUM representatif"
-DEFAULT_RANGES = "73-92,183-202,225-240"
+LABEL = "temporal belum aktif - getaran antar frame BELUM representatif"
+DEFAULT_RANGES = "73-92,183-202,225-240,90"
 DEFAULT_SAMPLES = "80,190,233"
+DEFAULT_OUT_DIR = "work/t201b"
+N_NO_OCCLUSION_FRAMES = 3                    # frame tanpa oklusi yang ikut di video
+LEG_FRAMES = (73, 78, 82, 87, 92)            # Done-when T-201b (kriteria wilayah Lower_Clothing)
+LEG_CLASS = "Lower_Clothing"
+LEG_FRACTION = 0.8                           # strok lolos bila >= 80% titiknya di piksel Lower_Clothing
+REF_LEN_T102C = {73: 64, 78: 73, 82: 89, 87: 154, 92: 38}   # docs/05 log T-102c (|grad log d| mentah): orde besaran saja
+DEBUG_FRAME = 90
+HATCH_PERIOD, HATCH_WIDTH = 6, 2             # arsir diagonal area yang memenuhi syarat D (piksel frame)
+HATCH_COLOR = (160, 140, 0)                  # BGR teal gelap
 
 
 def parse_ranges(text: str) -> list[int]:
@@ -161,9 +180,42 @@ def draw_dropped(img: np.ndarray, drops: list[dict], scale: int) -> None:
                     (20, 20, 20), 1, cv2.LINE_AA)
 
 
-def render(clip: Path, index: int, scale: int, tag: str, dropped: dict | None = None) -> np.ndarray:
+def panel_context(clip: Path) -> dict:
+    """Parameter + ambang untuk panel |grad| (dari contours/manifest.json + clip_stats.json)."""
+    params = read_json(clip / "contours" / "manifest.json")["vectorize"]
+    stats = read_json(clip / "contours" / "clip_stats.json")
+    return {"params": params, "t_high": stats["t_high"], "t_low": stats["t_low"]}
+
+
+def grad_panel(clip: Path, index: int, scale: int, ctx: dict, strokes: list[dict]) -> np.ndarray:
+    """Panel pendamping BGR: |grad| depth_smooth dipotong di T_high (gelap = kuat), area foreground yang memenuhi
+    syarat D diarsir teal, garis oklusi (oranye) di atasnya."""
+    gmap = stb.read_groups(clip / "stable" / "groups" / f"frame_{index:05d}.png")
+    h, w = gmap.shape
+    depth = vec.read_depth_smooth(clip / "stable" / "depth_smooth" / f"frame_{index:05d}.npy", h, w)
+    if gmap is None or depth is None:
+        raise StageError(f"input panel frame {index} tidak terbaca di {clip / 'stable'}")
+    dp = vec.depth_params(ctx["params"])
+    mag = vec.depth_gradient(depth, dp["blur_sigma"])[0]
+    gray = (255 - np.clip(mag / ctx["t_high"], 0, 1) * 255).astype(np.uint8)
+    img = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+    img[gmap == stb.BACKGROUND_ID] = (235, 235, 235)
+    eligible = (gmap != stb.BACKGROUND_ID) & (vec.boundary_distance(gmap) >= dp["min_dist_px"])
+    yy, xx = np.mgrid[0:h, 0:w]
+    img[eligible & ((xx + yy) % HATCH_PERIOD < HATCH_WIDTH)] = HATCH_COLOR
+    big = cv2.resize(img, (w * scale, h * scale), interpolation=cv2.INTER_NEAREST)
+    draw_strokes(big, [s for s in strokes if s["type"] == "occlusion"], w, h, scale)
+    text_box(big, [(f"|grad| depth_smooth, dipotong di T_high {ctx['t_high']:.4f} (gelap = kuat)", (255, 255, 255)),
+                   (f"T_low {ctx['t_low']:.4f}; arsir teal = memenuhi syarat D >= {dp['min_dist_px']:g} px", HATCH_COLOR),
+                   ("oranye = garis oklusi yang dipancarkan", COLORS["occlusion"])], 6, 6)
+    return big
+
+
+def render(clip: Path, index: int, scale: int, tag: str, dropped: dict | None = None,
+           panel: dict | None = None) -> np.ndarray:
     """Frame asli (dipucatkan) × skala + strok + legenda → RGB uint8. `dropped` = {min_region_area, min_hole_area}
-    → kontur yang dibuang filter ukuran ikut digambar (abu-abu + luas px)."""
+    → kontur yang dibuang filter ukuran ikut digambar (abu-abu + luas px). `panel` = panel_context → panel |grad|
+    di kanan (lebar ×2)."""
     doc = read_json(clip / "contours" / f"frame_{index:05d}.json")
     w, h = doc["width"], doc["height"]
     bgr = cv2.imdecode(np.fromfile(clip / "frames" / f"frame_{index:05d}.png", np.uint8), cv2.IMREAD_COLOR)
@@ -178,6 +230,7 @@ def render(clip: Path, index: int, scale: int, tag: str, dropped: dict | None = 
               (f"silhouette {kinds['silhouette']} (merah)", COLORS["silhouette"]),
               (f"silhouette_hole {kinds['silhouette_hole']} (cyan)", COLORS["silhouette_hole"]),
               (f"group_boundary {kinds['group_boundary']} (hijau)", COLORS["group_boundary"]),
+              (f"occlusion {kinds['occlusion']} (oranye)", COLORS["occlusion"]),
               (f"tepi frame {st['edge_segments']} seg (magenta putus-putus)", EDGE_COLOR)]
     if dropped is not None:
         gmap = stb.read_groups(clip / "stable" / "groups" / f"frame_{index:05d}.png")
@@ -191,21 +244,24 @@ def render(clip: Path, index: int, scale: int, tag: str, dropped: dict | None = 
                    (f"DIBUANG komponen luar < {dropped['min_region_area']} px: {len(drops) - n_hole} "
                     f"(abu-abu gelap)", (150, 150, 150))]
     text_box(big, legend, 6, 6)
+    if panel is not None:
+        big = np.hstack([big, grad_panel(clip, index, scale, panel, doc["strokes"])])
     return cv2.cvtColor(big, cv2.COLOR_BGR2RGB)
 
 
 class OverlaySource(ex.FrameSource):
     kind = "overlay"
 
-    def __init__(self, clip: Path, plan: dict[str, tuple[int, str]], scale: int, dropped: dict | None = None):
-        self.clip, self.plan, self.scale, self.dropped = clip, plan, scale, dropped
+    def __init__(self, clip: Path, plan: dict[str, tuple[int, str]], scale: int, dropped: dict | None = None,
+                 panel: dict | None = None):
+        self.clip, self.plan, self.scale, self.dropped, self.panel = clip, plan, scale, dropped, panel
 
     def check(self, names: list[str]) -> None:
         pass
 
     def render(self, name: str) -> np.ndarray:
         index, tag = self.plan[name]
-        return render(self.clip, index, self.scale, tag, self.dropped)
+        return render(self.clip, index, self.scale, tag, self.dropped, self.panel)
 
 
 def hole_frames(records: dict[str, dict], exclude: set[int], n: int) -> list[int]:
@@ -220,7 +276,113 @@ def pct(vals: list[float], q: float) -> float:
     return float(np.percentile(vals, q)) if vals else 0.0
 
 
+def empty_runs(indices: list[int], empty: list[bool]) -> list[dict]:
+    """Run frame berurutan (indeks naik 1) dengan empty=True → [{start, length}]."""
+    runs: list[dict] = []
+    for i, e in zip(indices, empty):
+        if not e:
+            continue
+        if runs and runs[-1]["start"] + runs[-1]["length"] == i:
+            runs[-1]["length"] += 1
+        else:
+            runs.append({"start": i, "length": 1})
+    return runs
+
+
+def lower_clothing_region(clip: Path, index: int, strokes: list[dict]) -> list[dict]:
+    """Per strok: jumlah titik, titik di piksel Lower_Clothing (seg/classmap) dan fraksinya. Hanya dibaca alat ini."""
+    cm = cv2.imdecode(np.fromfile(clip / "seg" / "classmap" / f"frame_{index:05d}.png", np.uint8), cv2.IMREAD_UNCHANGED)
+    lc = load_class_names().index(LEG_CLASS)
+    out = []
+    for s in strokes:
+        inside = sum(int(cm[int(y), int(x)]) == lc for x, y in s["points"])
+        out.append({"points": len(s["points"]), "inside": inside, "fraction": inside / len(s["points"]),
+                    "group": s["groups"][0]})
+    return out
+
+
+def occlusion_summary(clip: Path, rs: list[dict]) -> dict:
+    """Blok `occlusion` ringkasan: linimasa per frame, run frame kosong, kriteria wilayah Lower_Clothing (Done-when)."""
+    idx = [r["index"] for r in rs]
+    n_occ = [r["n_occlusion"] for r in rs]
+    runs = empty_runs(idx, [n == 0 for n in n_occ])
+    lengths = sorted(r["length"] for r in runs)
+    stats = read_json(clip / "contours" / "clip_stats.json")
+    legs, per_group = {}, {}
+    for i in range(73, 93):
+        if i not in idx:
+            continue
+        occ = [s for s in read_json(clip / "contours" / f"frame_{i:05d}.json")["strokes"] if s["type"] == "occlusion"]
+        if 73 <= i <= 92:
+            per_group[str(i)] = {g: sum(s["groups"][0] == g for s in occ) for g in sorted({s["groups"][0] for s in occ})}
+        if i in LEG_FRAMES:
+            reg = lower_clothing_region(clip, i, occ)
+            legs[str(i)] = {"strokes": len(occ), "pass_80pct": any(r["fraction"] >= LEG_FRACTION for r in reg),
+                            "best_fraction": max((r["fraction"] for r in reg), default=0.0),
+                            "longest_px_in_region": max((r["inside"] for r in reg), default=0),
+                            "total_px_in_region": sum(r["inside"] for r in reg), "ref_T102c_px": REF_LEN_T102C[i]}
+    return {
+        "thresholds": {k: stats[k] for k in ("t_high", "t_low", "hi_pct", "lo_pct", "n_values")},
+        "strokes_per_frame": {"min": min(n_occ), "median": float(np.median(n_occ)), "max": max(n_occ)},
+        "frames_without_occlusion": sum(n == 0 for n in n_occ),
+        "empty_runs": {"count": len(runs), "longest": max(lengths, default=0),
+                       "longest_at": next((r["start"] for r in runs if r["length"] == max(lengths)), None),
+                       "length_distribution": {str(k): lengths.count(k) for k in sorted(set(lengths))}},
+        "pixels_per_frame": {k: {"min": min(r[k] for r in rs), "median": float(np.median([r[k] for r in rs])),
+                                 "max": max(r[k] for r in rs)} for k in ("occ_px_hyst", "occ_px_dist", "occ_px_len")},
+        "timeline": [[r["index"], r["occ_px_hyst"], r["occ_px_dist"], r["occ_px_len"], r["n_occlusion"]] for r in rs],
+        "done_when_legs": {"frames": legs, "frames_passing": sum(v["pass_80pct"] for v in legs.values()),
+                           "needed": 4},
+        "occlusion_per_group_73_92": per_group,
+        "loops_total": sum(r["occ_loops"] for r in rs),
+        "spurs_dropped_total": sum(r["occ_spurs_dropped"] for r in rs),
+        "short_dropped_total": sum(r["occ_short_dropped"] for r in rs)}
+
+
+def worst_cases(clip: Path, indices: list[int]) -> list[tuple[str, int, str]]:
+    """Kasus terburuk (jenis, frame, keterangan): oklusi terdekat ke strok tipe lain (kandidat bayangan), strok oklusi
+    terpendek yang lolos L, frame dengan strok oklusi terbanyak, dan frame DEBUG_FRAME."""
+    from scipy.spatial import cKDTree
+
+    nearest = (None, None)
+    shortest = (None, None)
+    most = (-1, None)
+    for i in indices:
+        strokes = read_json(clip / "contours" / f"frame_{i:05d}.json")["strokes"]
+        occ = [s for s in strokes if s["type"] == "occlusion"]
+        oth = [p for s in strokes if s["type"] != "occlusion" for p in s["points"]]
+        if occ and oth:
+            d = float(cKDTree(np.array(oth, float)).query(np.array([p for s in occ for p in s["points"]], float))[0].min())
+            if nearest[0] is None or d < nearest[0]:
+                nearest = (d, i)
+        for s in occ:
+            if shortest[0] is None or len(s["points"]) < shortest[0]:
+                shortest = (len(s["points"]), i)
+        if len(occ) > most[0]:
+            most = (len(occ), i)
+    out = []
+    if nearest[1] is not None:
+        out.append(("nearest_boundary", nearest[1], f"oklusi terdekat ke batas: {nearest[0]:.2f} px"))
+    if shortest[1] is not None:
+        out.append(("shortest_stroke", shortest[1], f"strok oklusi terpendek: {shortest[0]} titik"))
+    if most[1] is not None:
+        out.append(("most_strokes", most[1], f"strok oklusi terbanyak: {most[0]}"))
+    if DEBUG_FRAME in indices:
+        out.append(("frame90", DEBUG_FRAME, "komponen DA +-94 px area tangan (T-102c)"))
+    return out
+
+
 def summarize(clip: Path) -> dict:
+    """Ringkasan [4]: bagian T-201a + blok `occlusion` (T-201b) bila contours/ memuatnya."""
+    out = summarize_base(clip)
+    recs = {r["frame"]: r for r in read_jsonl(clip / "contours" / "frames.jsonl") if r.get("event") == "frame"}
+    rs = [recs[k] for k in sorted(recs)]
+    if rs and "n_occlusion" in rs[0] and (clip / "contours" / "clip_stats.json").is_file():
+        out["occlusion"] = occlusion_summary(clip, rs)
+    return out
+
+
+def summarize_base(clip: Path) -> dict:
     """Angka [4] dari contours/frames.jsonl (record frame terakhir per frame) + manifest."""
     cdir = clip / "contours"
     recs = {r["frame"]: r for r in read_jsonl(cdir / "frames.jsonl") if r.get("event") == "frame"}
@@ -274,7 +436,7 @@ def write_atomic(path: Path, data: bytes) -> None:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--work-dir", type=Path, required=True, help="folder klip, mis. work/clips/test")
-    ap.add_argument("--out-dir", type=Path, default=Path("work/t201a"))
+    ap.add_argument("--out-dir", type=Path, default=Path(DEFAULT_OUT_DIR))
     ap.add_argument("--ranges", default=DEFAULT_RANGES, help="indeks frame, mis. 73-92,183-202")
     ap.add_argument("--hole-frames", type=int, default=20, help="jumlah frame ber-lubang tambahan")
     ap.add_argument("--samples", default=DEFAULT_SAMPLES, help="indeks frame untuk PNG sampel")
@@ -284,6 +446,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--suffix", default="", help="akhiran nama keluaran (mis. _fix1) supaya tidak menimpa berkas lama")
     ap.add_argument("--dropped", action="store_true",
                     help="HANYA tulis overlay_<klip>_dropped.mp4 (kontur yang dibuang filter ukuran, abu-abu)")
+    ap.add_argument("--grad-panel", action="store_true", help="panel pendamping |grad| di kanan (video + PNG)")
+    ap.add_argument("--worst", action="store_true", help="tulis PNG kasus terburuk worst_<klip>_<jenis>_fNNNNN.png")
     a = ap.parse_args(argv)
     clip = a.work_dir
     meta = read_json(clip / "meta.json")
@@ -309,25 +473,38 @@ def main(argv: list[str] | None = None) -> int:
         plan[f"frame_{i:05d}"] = (i, "rentang")
     for i in holes:
         plan.setdefault(f"frame_{i:05d}", (i, "ber-lubang"))
+    no_occ = sorted(r["index"] for r in recs.values() if r.get("n_occlusion") == 0 and r["index"] not in wanted)
+    if len(no_occ) > N_NO_OCCLUSION_FRAMES:
+        no_occ = [no_occ[round(k * (len(no_occ) - 1) / (N_NO_OCCLUSION_FRAMES - 1))] for k in range(N_NO_OCCLUSION_FRAMES)]
+    for i in no_occ:
+        plan.setdefault(f"frame_{i:05d}", (i, "tanpa oklusi"))
 
     dropped = None
+    panel = panel_context(clip) if a.grad_panel and not a.dropped else None
     if a.dropped:
         params = read_json(clip / "contours" / "manifest.json")["vectorize"]
         dropped = {k: params[k] for k in ("min_region_area", "min_hole_area")}
     else:
         for i in [x for x in parse_ranges(a.samples) if x in present] + holes[:1]:
-            img = render(clip, i, a.scale, "sampel")
+            img = render(clip, i, a.scale, "sampel", None, panel)
             ok, buf = cv2.imencode(".png", cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
             if ok:
                 write_atomic(a.out_dir / f"sample_{clip.name}_f{i:05d}{a.suffix}.png", buf.tobytes())
+        if a.worst:
+            for kind, i, note in worst_cases(clip, sorted(present)):
+                img = render(clip, i, a.scale, f"terburuk: {note}", None, panel_context(clip))
+                ok, buf = cv2.imencode(".png", cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+                if ok:
+                    write_atomic(a.out_dir / f"worst_{clip.name}_{kind}_f{i:05d}{a.suffix}.png", buf.tobytes())
+                    print(f"kasus terburuk [{kind}] frame {i}: {note}")
     if a.no_video or not plan:
         return 0
-    first = render(clip, next(iter(plan.values()))[0], a.scale, "x", dropped)
+    first = render(clip, next(iter(plan.values()))[0], a.scale, "x", dropped, panel)
     size = (first.shape[1], first.shape[0])
     out = a.out_dir / f"overlay_{clip.name}{a.suffix}{'_dropped' if a.dropped else ''}.mp4"
     tmp = out.with_name(out.name + ".tmp")
     names = list(plan)
-    ex.encode(OverlaySource(clip, plan, a.scale, dropped), names, size, np.array([255, 255, 255], np.uint8),
+    ex.encode(OverlaySource(clip, plan, a.scale, dropped, panel), names, size, np.array([255, 255, 255], np.uint8),
               float(meta.get("target_fps", 24)), a.crf, "medium", None, tmp)
     os.replace(tmp, out)
     print(f"video → {out} ({len(names)} frame, {out.stat().st_size / 2**20:.2f} MiB)")

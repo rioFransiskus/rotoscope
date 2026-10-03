@@ -109,7 +109,7 @@ internal yang dipanggil cli, bukan cara pakai utama.
 | Subperintah | Fungsi |
 |---|---|
 | `run <video>` | ingest → segment → depth → stabilize → export |
-| `ingest\|segment\|depth\|stabilize\|vectorize\|export <video> [flag stage]` | satu stage; sisa argumen diteruskan apa adanya ke `main(argv)` stage (flag stage tidak diparse ulang di cli). `vectorize` (T-201a): flag `--restart --limit`, CPU in-process, `--restart` tanpa `--yes`; **belum ada di `run`** (masuk bersama [5] di T-203) |
+| `ingest\|segment\|depth\|stabilize\|vectorize\|export <video> [flag stage]` | satu stage; sisa argumen diteruskan apa adanya ke `main(argv)` stage (flag stage tidak diparse ulang di cli). `vectorize` (T-201a, T-201b): flag `--restart --limit` (`--limit N` tetap membaca SEMUA frame untuk ambang per klip, `clip_stats.json`), CPU in-process, `--restart` tanpa `--yes`; **belum ada di `run`** (masuk bersama [5] di T-203) |
 | `download [--config P] [--seg-model 0.8b\|0.4b]` | unduh checkpoint (online, sekali jalan): Sapiens2-seg (default **0.8b**; `--seg-model 0.4b` = fallback) **dan** Depth Anything V2 Small + model card. Subprocess mewarisi environment; **tidak** memaksa `HF_HUB_OFFLINE=1` (run biasa offline) |
 
 - **Folder kerja per klip:** `<paths.work_dir>/clips/<stem>/`; `stem` = nama video disanitasi dengan fungsi yang sama
@@ -406,13 +406,16 @@ dan temporal fill tidak cukup. D-002 (pose hanya fallback, bukan primary) tetap 
 
 ### [4] `vectorize.py` (CPU)
 
-**Status:** **T-201a `DONE`** (siluet + lubang + batas grup, 2026-10-02) — strok `silhouette`, `silhouette_hole`,
-`group_boundary`. **Belum ada:** garis oklusi + `clip_stats.json` (T-201b) dan `anchor` / `track_id` / normalisasi
-orientasi (T-202). Subperintah sendiri `python -m rotoscope vectorize <video>`; **belum masuk urutan `run`** sampai T-203
-(lihat "CLI" dan [5]). Bagian di bawah bertanda *(T-201a)* sudah diimplementasi dan diukur; selebihnya masih rencana.
+**Status:** **T-201a `DONE`** (siluet + lubang + batas grup, 2026-10-02) dan **T-201b `DONE`** (garis oklusi +
+`clip_stats.json`, 2026-10-03, **dengan batas kaki** — lihat langkah 3) — strok `silhouette`, `silhouette_hole`,
+`group_boundary`, `occlusion`. **Belum ada:** `anchor` / `track_id` / normalisasi orientasi (T-202). Subperintah sendiri
+`python -m rotoscope vectorize <video>`; **belum masuk urutan `run`** sampai T-203 (lihat "CLI" dan [5]). Bagian di bawah
+bertanda *(T-201a)* / *(T-201b)* sudah diimplementasi dan diukur; selebihnya masih rencana.
 
-- **In (T-201a):** `stable/groups/`, `stable/manifest.json`, `meta.json`; config `groups`, `vectorize.min_region_area`,
-  `min_hole_area`, `line_min_px`, `min_stroke_px`. `stable/depth_smooth/` baru dibaca di T-201b.
+- **In (T-201a + T-201b):** `stable/groups/`, `stable/depth_smooth/`, `stable/manifest.json`, `meta.json`; config `groups`,
+  `vectorize.min_region_area`, `min_hole_area`, `line_min_px`, `min_stroke_px`, `vectorize.depth_lines.*` (`blur_sigma`,
+  `hi_pct`, `lo_pct`, `erode_px`, `min_dist_px`, `min_len_px`). `stable/depth_smooth/` dibaca di T-201b (float16, harus
+  ada untuk SEMUA frame klip, juga dengan `--limit`; hilang / rusak → berhenti, exit 1).
 - **Langkah:**
   1. **Siluet** *(T-201a)* = batas foreground (`groups ≠ 0`) **TERMASUK lubang**: `cv2.findContours` mode
      `RETR_CCOMP` (2 level: kontur luar + lubang) dengan `CHAIN_APPROX_NONE`, bukan `RETR_EXTERNAL` saja. Ruang negatif
@@ -428,12 +431,44 @@ orientasi (T-202). Subperintah sendiri `python -m rotoscope vectorize <video>`; 
      polyline terbuka. Tidak termasuk batas dengan background (itu sudah menjadi `silhouette` / `silhouette_hole`).
      Batas di dalam satu grup tidak ada (sudah digabung di [3]). Per pasangan: band = piksel a bertetangga 3×3 b ∪ piksel
      b bertetangga a → komponen 8-arah < `line_min_px` dibuang → thinning → tracing (langkah 4).
-  3. **Garis oklusi** dari `depth_smooth` **apa adanya — tanpa log kedua** (normalisasi sudah di [3]):
-     |grad| (Gaussian σ `depth_lines.blur_sigma` → Sobel) → NMS searah gradien (4 bin arah; non-maximum
-     suppression = hanya piksel puncak tepi) → hysteresis (8-arah) dengan T_high / T_low = persentil
-     **per klip** (`hi_pct` / `lo_pct`) di foreground ter-erode (`erode_px`) → hanya di dalam satu grup,
-     jarak ke batas grup terdekat (termasuk siluet) ≥ `min_dist_px` (D) → skeleton, komponen < `min_len_px`
-     (L) dibuang.
+  3. **Garis oklusi** *(T-201b)* dari `depth_smooth` **apa adanya — tanpa log kedua** (normalisasi sudah di [3]).
+     Urutan operasi akhir (`occlusion_masks` + `occlusion_strokes`):
+     1. |grad| = Gaussian σ `depth_lines.blur_sigma` → Sobel 3×3 **÷ 8** (`SOBEL_NORM`: Sobel pada ramp satuan = 8, jadi
+        |grad| = selisih `depth_smooth` per piksel) → besar + (gx, gy).
+     2. NMS searah gradien, 4 bin arah (0° / 45° / 90° / 135°, y ke bawah; non-maximum suppression = hanya piksel puncak
+        tepi, `mag ≥` kedua tetangga searah gradien), hanya di **foreground ter-erode**: `erode_px` × `erode_px` persegi,
+        `BORDER_CONSTANT 0` (di luar frame = background).
+     3. Hysteresis 8-arah: komponen piksel > T_low dipertahankan bila memuat ≥ 1 piksel > T_high. T_high / T_low =
+        persentil `hi_pct` / `lo_pct` **per klip** (default 95 / 90) dari |grad| di foreground ter-erode, SEMUA frame
+        (lihat "Threshold per klip" dan `clip_stats.json`).
+     4. Syarat jarak: hanya piksel foreground yang berjarak **L2 presisi** (`distanceTransform`, `DIST_MASK_PRECISE`) ≥
+        `min_dist_px` (D, default 7) dari piksel batas grup terdekat. Batas = piksel dengan tetangga 3×3 berlabel beda,
+        **termasuk batas dengan background dan TEPI FRAME** (peta di-pad 1 px background, sama dengan siluet). Memperlakukan
+        tepi frame sebagai batas itu **disengaja** (keputusan Rio): foreground menyentuh tepi bawah di semua frame, jadi tanpa
+        itu garis oklusi menduplikasi `silhouette` di dasar frame. Konsekuensinya garis oklusi tidak pernah dalam D px dari
+        tepi frame.
+     5. **Per grup** (mask ∩ `groups == g`, jadi satu strok selalu satu grup, juga saat D = 0): filter komponen 8-arah
+        < `line_min_px` (M) → thinning Guo-Hall → komponen skeleton 8-arah < `min_len_px` (L, **jumlah piksel skeleton**) dibuang
+        → tracing (langkah 4). **L dihitung dalam piksel Guo-Hall**: Guo-Hall membuang sudut tangga yang dipertahankan
+        Zhang-Suen, jadi skeleton ±20–25% lebih pendek — L = 30 setara ±38 piksel Zhang-Suen (terukur di klip `test`:
+        10 frame jadi kosong, 2 frame sebaliknya, dibanding pengukuran Tahap 1 yang memakai Zhang-Suen). T-305 mengkalibrasi
+        L atas Guo-Hall.
+     - **Loop:** konvensi sama dengan `group_boundary` (`closed: false`, titik akhir = titik awal). **Tidak ada komponen
+       lintas grup:** mask dipisah per grup sebelum thinning (terukur: 0 komponen mask lintas grup).
+     - **`strength`** = rata-rata |grad| (nilai sebelum NMS, float64) di titik strok (titik penutup loop tidak dihitung dua
+       kali), dibulatkan 3 desimal (`STRENGTH_DECIMALS`).
+     - **Persentil** eksak dan deterministik: nilai |grad| dikumpulkan (float32, ±71 MB untuk 283 frame), diurutkan, lalu
+       interpolasi linear (`PERCENTILE_METHOD = "linear"`, = `np.percentile` default).
+     - ⚠️ **Batas kaki (diketahui, keputusan Rio 2026-10-03):** `left_leg` / `right_leg` berisi **0 piksel** di kedua klip
+       (Lower_Clothing ada di grup `torso`, D-009), jadi kaki menyilang hanya bisa muncul sebagai garis oklusi **di dalam
+       `torso`**. Kriteria Done-when dinilai per wilayah: strok yang ≥ 80% titiknya di piksel Lower_Clothing
+       (`seg/classmap`) pada frame 73 / 78 / 82 / 87 / 92, lolos bila ≥ 4 dari 5 frame. Default (D 7, L 30, p95 / p90):
+       **4/5** di kedua klip (frame 78 gagal). Tepi tumpang tindih kaki **ada** di `depth_smooth` (jelas di panel |grad|
+       level rendah) tetapi di bawah T_low default; ambang p80 / p70 menaikkan jadi 5/5 tetapi tambahannya sebagian besar
+       lipatan celana. Normalisasi [3] (log + pembagi IQR per frame) melemahkan gradien di frame 73–83 (`log_iqr` ±0,33 vs
+       median klip 0,19). Kalibrasi: normalisasi di **T-302**, ambang di **T-305**; default **tidak diubah**.
+     - ⚠️ **Frame tanpa garis oklusi:** 34/119 (`test_short`) dan 160/283 (`test`) di default (run kosong terpanjang 9 dan 28
+       frame). Frame tanpa strok `occlusion` adalah output valid (`"strokes"` tanpa tipe itu); [5] jangan menganggapnya error.
   4. **Filter komponen garis** 8-arah < `vectorize.line_min_px` (M = 5) pada mask garis (batas grup +
      oklusi) **sebelum thinning**; lalu thinning → tracing jadi polyline → jalur < `vectorize.min_stroke_px` (6) dibuang.
      **Tracing batas grup** *(T-201a, `ALGO_REV` 2)*:
@@ -457,21 +492,28 @@ orientasi (T-202). Subperintah sendiri `python -m rotoscope vectorize <video>`; 
        menempel siluet berhenti di baris piksel terluar (koordinat sama dengan kontur siluet, selisih ≤ 1 px), tanpa snapping.
   5. **Anchor + orientasi + `track_id`** (P-004; **T-202, belum ada**) — aturan di bawah. Frame diproses **berurutan**
      (pencocokan dengan frame sebelumnya). T-201a **sengaja tidak menulisnya** (lihat "Status T-201a").
-- **Threshold per klip:** T_high / T_low dihitung sekali dari **seluruh** klip dan disimpan di
+- **Threshold per klip** *(T-201b)*: T_high / T_low dihitung sekali dari **seluruh** klip (pass 1 atas SEMUA frame, sebelum
+  frame pertama diproses — juga dengan `--limit N`, jadi hasil N frame = prefiks run penuh) dan disimpan di
   `contours/clip_stats.json` — `--preview N` memakai nilai ini, bukan persentil dari N frame preview.
   Persentil menyesuaikan diri dengan distribusi `depth_smooth`, tapi D / L / persentil dikalibrasi
-  ulang di T-305.
+  ulang di T-305. Terukur (default): `test_short` T_high 0,1200 / T_low 0,0532 (7.913.162 nilai); `test` 0,1389 / 0,0641
+  (18.545.710 nilai).
+  - **Isi `clip_stats.json`:** masukan (`contract`, `algo_rev`, `blur_sigma`, `erode_px`, `hi_pct`, `lo_pct`, `sobel_norm`,
+    `percentile_method`, `n_frames`, `frame_size`, `stable` {manifest, created_utc, groups_hash, stabilize_hash, seg_model},
+    `clip`) + hasil (`n_values`, `t_high`, `t_low`; `null` bila klip tanpa foreground). Ditulis atomik.
+  - **Basi:** file dipakai ulang HANYA bila blok masukannya sama persis (field hasil tidak dibandingkan); beda → pass 1
+    dihitung ulang dan file ditulis ulang. `--restart` menghapus `contours/` (termasuk file ini).
 
 **Out:**
 
 | path | isi | disk / klip |
 |---|---|---|
-| `contours/frame_%05d.json` | polyline bertipe, titik rapat (±1 px, 1 desimal) | T-201a terukur: 4.4 MB (119 frame, 36.9 KB/frame), 11.0 MB (283 frame, 38.9 KB/frame); 20–60 MB *est.* untuk 360 frame sesudah oklusi |
+| `contours/frame_%05d.json` | polyline bertipe, titik rapat (±1 px, 1 desimal) | T-201b terukur: 4.5 MB (119 frame, 37.3 KB/frame), 11.2 MB (283 frame, 38.6 KB/frame) (oklusi pada default tipis: median 0–1 strok/frame); ±14 MB *est.* untuk 360 frame |
 | `contours/manifest.json` *(T-201a)* | lihat "Manifest [4]" di bawah | < 2 KB |
-| `contours/frames.jsonl` *(T-201a)* | log per frame: waktu, ukuran, jumlah strok per tipe, statistik filter (lubang / komponen dibuang, loop, spur), titik menempel tepi | ±100 KB |
-| `contours/clip_stats.json` *(T-201b, belum ada)* | T_high / T_low, persentil, jumlah nilai, referensi `stable/manifest.json` | kecil |
+| `contours/frames.jsonl` *(T-201a, T-201b)* | log per frame: waktu, ukuran, jumlah strok per tipe, statistik filter (lubang / komponen dibuang, loop, spur), titik menempel tepi; T-201b menambah `n_occlusion`, `occ_px_hyst` (piksel setelah NMS + hysteresis), `occ_px_dist` (sesudah syarat D), `occ_px_len` (skeleton sesudah L), `occ_loops`, `occ_spurs_dropped`, `occ_short_dropped` | ±100 KB |
+| `contours/clip_stats.json` *(T-201b)* | T_high / T_low, persentil, jumlah nilai, referensi `stable/manifest.json` (lihat "Threshold per klip") | < 2 KB |
 
-**Skema JSON (D-010, Q4) — skema akhir; T-201a menulis subset (lihat "Status T-201a" di bawah):**
+**Skema JSON (D-010, Q4) — skema akhir; T-201a / T-201b menulis subset (lihat "Status T-201a / T-201b" di bawah):**
 
 ```json
 {"frame_index": 87, "width": 480, "height": 854,
@@ -483,7 +525,7 @@ orientasi (T-202). Subperintah sendiri `python -m rotoscope vectorize <video>`; 
    "points": [[x, y], …], "anchor": 0},
   {"track_id": 7, "type": "group_boundary", "closed": false, "groups": ["left_arm", "torso"],
    "points": [[x, y], …]},
-  {"track_id": 12, "type": "occlusion", "closed": false, "groups": ["left_leg"],
+  {"track_id": 12, "type": "occlusion", "closed": false, "groups": ["torso"],
    "points": [[x, y], …], "strength": 0.034}]}
 ```
 
@@ -492,18 +534,22 @@ orientasi (T-202). Subperintah sendiri `python -m rotoscope vectorize <video>`; 
 | `silhouette` | true | `["background"]` | kontur luar foreground |
 | `silhouette_hole` | true | `["background"]` | lubang foreground (ruang negatif tertutup) |
 | `group_boundary` | false | 2 grup (urut sesuai YAML) | batas antar grup |
-| `occlusion` | false | 1 grup | lompatan kedalaman di dalam grup; `strength` = rata-rata |grad| |
+| `occlusion` | false | 1 grup | lompatan kedalaman di dalam grup; `strength` = rata-rata |grad| (3 desimal); loop = titik akhir = titik awal |
 
-**Status T-201a (skema yang benar-benar ditulis):** key tiap strok **persis** `{type, closed, groups, points}` untuk
-`silhouette`, `silhouette_hole`, `group_boundary`. `track_id` dan `anchor` **tidak ditulis** (keputusan Rio, opsi a):
+**Status T-201a / T-201b (skema yang benar-benar ditulis):** key tiap strok **persis** `{type, closed, groups, points}` untuk
+`silhouette`, `silhouette_hole`, `group_boundary`, dan `{type, closed, groups, points, strength}` untuk `occlusion`
+(T-201b; `strength` selalu ada, `closed` selalu `false`, `groups` selalu satu grup). `track_id` dan `anchor` **tidak ditulis**
+(keputusan Rio, opsi a):
 nilai sementara (`track_id` = indeks urut, `anchor` = 0) membuat animasi tampak salah tanpa pesan error (seed jitter
 melompat, garis "berputar", P-004 / P-007); tanpa nilai, [5] yang membacanya gagal dengan `KeyError`. Test mengunci key set
-dan manifest menandai `pending: ["occlusion", "anchor", "track_id", "orientation"]`. `strength` (oklusi) juga belum ada.
-Titik tertutup (`closed: true`) **tidak** mengulang titik pertama; `group_boundary` loop mengulangnya (lihat langkah 4).
+dan manifest menandai `pending: ["anchor", "track_id", "orientation"]` (T-201b mencoretnya `occlusion`).
+Titik tertutup (`closed: true`) **tidak** mengulang titik pertama; `group_boundary` dan `occlusion` loop mengulangnya (lihat langkah 4).
+Urutan strok: tipe (silhouette, silhouette_hole, group_boundary, occlusion), lalu pasangan grup, titik (y, x) terkecil, ...;
+strok tipe lama **byte-identik** dengan T-201a (hash per tipe diverifikasi; JSON frame ditulis ulang karena `contract` naik).
 **Orientasi** silhouette / lubang = arah mentah `findContours` (tidak dijanjikan), titik awal = titik pertama
 `findContours` (urutan raster, tidak bermakna); garis terbuka: titik awal = ujung dengan (y, x) terkecil. T-202 menormalkan
 semuanya. Blok `source` frame: `seg_model`, `groups_hash`, `stabilize_hash` disalin dari `stable/manifest.json` yang
-dibaca (bukan dihitung ulang dari config), `vectorize_hash` = hash parameter T-201a.
+dibaca (bukan dihitung ulang dari config), `vectorize_hash` = hash 10 parameter T-201a + `depth_lines.*` (T-201b).
 
 **Konvensi koordinat (T-201a):** ruang kontinu — piksel (i, j) menempati [i, i+1) × [j, j+1), titik disimpan di **pusat
 piksel** (i + 0.5, j + 0.5). [5] menskalakan ke `output_width` langsung: x' = s · x, s = `output_width` / `width` (dengan
@@ -520,18 +566,22 @@ terdeteksi persis dari koordinatnya (tanpa field skema baru; `edge_points` per f
 penanganan (sembunyikan / pudarkan / gambar) = **T-203, wajib sebelum implementasi** (lihat [5]). `group_boundary` tidak
 butuh padding: garis yang sampai tepi berakhir di tepi (terbuka, sah).
 
-**Manifest [4]** (`contours/manifest.json`, prinsip #4): `stage`, `contract` (`"T-201a"`; T-201b / T-202 menaikkannya →
-output lama otomatis basi), `algo_rev`, `stroke_types`, `pending`, `vectorize` (**hanya 4 parameter T-201a**:
-`min_region_area`, `min_hole_area`, `line_min_px`, `min_stroke_px`) + `vectorize_hash`, `groups_hash`, `stabilize_hash`,
-`seg_model` (dari `stable/manifest.json`), `stable_created_utc`, `frame_size`, `clip` (identitas klip, T-108), `coords`,
-`created_utc`. Hash hanya 4 parameter, bukan seluruh section `vectorize`: `depth_lines.*` (T-201b) dan `track.*` (T-202) sudah
-ada di config tetapi bukan masukan T-201a, jadi mengubahnya tidak membuat siluet basi; T-201b / T-202 menaikkan `contract`
-dan mendefinisikan subset hash barunya.
+**Manifest [4]** (`contours/manifest.json`, prinsip #4): `stage`, `contract` (`"T-201b"`; T-202 menaikkannya →
+output lama otomatis basi; manifest `"T-201a"` lama basi otomatis), `algo_rev`, `stroke_types` (4 tipe, termasuk
+`occlusion`), `pending` (`["anchor", "track_id", "orientation"]`), `vectorize` (dict **datar** 10 kunci: 4 parameter T-201a
+`min_region_area`, `min_hole_area`, `line_min_px`, `min_stroke_px` + 6 `depth_lines.blur_sigma`, `depth_lines.hi_pct`,
+`depth_lines.lo_pct`, `depth_lines.erode_px`, `depth_lines.min_dist_px`, `depth_lines.min_len_px`) + `vectorize_hash`,
+`depth_thresholds` (`{t_high, t_low}`, salinan dari `clip_stats.json`) + `clip_stats` (nama file), `groups_hash`,
+`stabilize_hash`, `seg_model` (dari `stable/manifest.json`), `stable_created_utc`, `frame_size`, `clip` (identitas klip,
+T-108), `coords`, `created_utc`. Hash = 4 parameter T-201a + `depth_lines.*`; `track.*` (T-202) belum ikut (bukan masukan
+stage ini) — T-202 menaikkan `contract` dan menambahnya. Mengubah `depth_lines.*` membuat `contours/` basi; mengubah `track.*`
+tidak.
 - **`algo_rev`** = konstanta bilangan bulat di `vectorize.py` (`ALGO_REV`), naik 1 **setiap perbaikan PERILAKU algoritma
   tanpa perubahan parameter** (sekarang 2: 1 = junction ≥ 3 tetangga + Zhang-Suen; 2 = crossing number + prune + klaster +
-  Guo-Hall). Ikut perbandingan basi: peringatan menyebut `algo_rev` lama → baru (manifest lama tanpa `algo_rev` →
+  Guo-Hall). T-201b **tidak** menaikkannya (pelacak bersama tidak berubah; `contract` yang naik sudah membuat output lama
+  basi). Ikut perbandingan basi: peringatan menyebut `algo_rev` lama → baru (manifest lama tanpa `algo_rev` →
   `None → 2`), `contours/` dihitung ulang otomatis.
-- **Basi** (CPU murah, deterministik): field manifest berubah (parameter T-201a, `contract`, `algo_rev`, grup, `stabilize_hash`,
+- **Basi** (CPU murah, deterministik): field manifest berubah (parameter T-201a + `depth_lines.*`, `depth_thresholds`, `contract`, `algo_rev`, grup, `stabilize_hash`,
   `seg_model`, `stable_created_utc` — jadi [4] basi bila [3] dihitung ulang —, `frame_size`, `clip`) → `contours/` dihapus +
   dihitung ulang dengan peringatan. `contours/` tanpa manifest → ditolak. `--restart` menghapus `contours/` saja; `--limit
   N` = N frame pertama; resume: frame valid (JSON terbaca, `frame_index` / ukuran / `source` cocok) dilewati; frame tanpa
@@ -579,7 +629,15 @@ dan mendefinisikan subset hash barunya.
   berlaku.
 - ⚠️ **`group_boundary` loop** = `closed: false` dengan titik akhir = titik awal (57 loop di `test`, 25 di `test_short`;
   terutama `hair|face` dan `torso|left_arm`). Taper ujung di [5] **jangan menipiskan sambungan** loop: kenali loop dari
-  titik akhir = titik awal dan perlakukan sebagai tertutup untuk taper.
+  titik akhir = titik awal dan perlakukan sebagai tertutup untuk taper. Berlaku juga untuk loop `occlusion` (4 di
+  `test`, 5 di `test_short`).
+- ⚠️ **Strok `occlusion` (T-201b):** (1) `strength` (rata-rata |grad|, 3 desimal) tersedia untuk memodulasi tebal / opacity
+  tetapi skalanya per klip (bergantung normalisasi [3], akan berubah di T-302): jangan dipakai sebagai ambang absolut;
+  (2) **temporal [3] belum aktif** (T-302/T-303), jadi garis oklusi antar frame masih berkedip (muncul / hilang, bergeser):
+  frame tanpa `occlusion` valid (34/119 dan 160/283 di default, run kosong terpanjang 28 frame) — [5] jangan mengira itu
+  error dan jangan menginterpolasi antar frame; (3) garis oklusi tidak pernah dalam ≥ D px dari siluet / batas grup /
+  tepi frame (ujungnya terpotong di D, jadi tidak menyambung ke garis siluet atau batas grup); (4) tanpa `anchor` /
+  `track_id` (T-202), seed jitter belum bisa dibentuk untuk tipe ini.
 - ⚠️ **Urutan `run`:** T-203 memasukkan [4] dan [5] ke urutan `run` (`ingest → segment → depth → stabilize → vectorize →
   stylize → export`), ke tabel restart DAG (bagian "CLI"), dan menyalakan `export.source: "strokes"` (sekarang ditolak).
 
@@ -639,7 +697,8 @@ C: sisa ±54 GB → arahkan `paths.work_dir` ke drive lain kalau banyak klip dis
 | [2c] | DA-V2 Small fp32 | 424 MiB (cek ≥ 500 bebas) | ±1 mnt (0.185 s/frame) |
 | [3] spasial | CPU | – | ±43 s (0.12 s/frame, T-106) |
 | [4] T-201a | CPU | – | ±11 s (29–30 ms/frame rata-rata, p95 34–35 ms, maks 50 ms; 283 frame 8.5 s) |
-| [4] oklusi, [5] | CPU | – | belum diukur |
+| [4] T-201b (+ oklusi) | CPU | – | 67–71 ms/frame rata-rata (p95 75–78 ms, maks 96 ms, 0 frame > 1 s), pass 2 saja; pass 1 ambang (baca ulang + gradien semua frame) tidak diukur terpisah |
+| [5] | CPU | – | belum diukur |
 
 ---
 

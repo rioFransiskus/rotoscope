@@ -70,3 +70,66 @@ def measure(gmap: np.ndarray, names: tuple[str, ...], params: dict) -> dict:
     return {"skeleton": total, "uncovered": uncovered,
             "coverage": 100.0 * (1 - uncovered / total) if total else 100.0,
             "runs": runs, "pairs": pairs, "integrity": integrity(strokes)}
+
+
+# ── Garis oklusi (T-201b) ──────────────────────────
+K5 = np.ones((5, 5), np.uint8)
+SHADOW_TOLERANCE_PX = 0.5      # titik strok = pusat piksel; jarak D dihitung antar pusat piksel → selisih ≤ 0,5 px
+
+
+def shadow_distance(occlusion: list[dict], others: list[dict]) -> float | None:
+    """'Bayangan': jarak minimum (px) dari titik oklusi mana pun ke titik silhouette / silhouette_hole /
+    group_boundary terdekat. Syarat lulus: ≥ min_dist_px − SHADOW_TOLERANCE_PX. None kalau salah satunya kosong."""
+    from scipy.spatial import cKDTree
+
+    a = [p for s in occlusion for p in s["points"]]
+    b = [p for s in others for p in s["points"]]
+    if not a or not b:
+        return None
+    return float(cKDTree(np.array(b, float)).query(np.array(a, float))[0].min())
+
+
+def occlusion_measure(gmap: np.ndarray, depth: np.ndarray, names: tuple[str, ...], params: dict,
+                      t_high: float, t_low: float) -> dict:
+    """Metrik objektif garis oklusi satu frame (tanpa mata):
+    - skeleton: % piksel skeleton (≥ L) yang berada ≤ 1 px dari titik strok (cakupan skeleton);
+    - band: % piksel band (komponen mask pra-thinning yang skeleton-nya lolos L) ≤ 2 px dari titik strok — pelengkap,
+      karena cakupan skeleton buta terhadap pengikisan thinning;
+    - components / strokes: fragmentasi; integrity: titik berulang + loncatan; shadow: jarak minimum ke strok tipe lain;
+    - per_group: jumlah strok oklusi per grup."""
+    dp = vec.depth_params(params)
+    strokes, stats = vec.occlusion_strokes(gmap, depth, names, params, t_high, t_low)
+    masks = vec.occlusion_masks(gmap, depth, dp, t_high, t_low)
+    cov = np.zeros(gmap.shape, np.uint8)
+    for s in strokes:
+        for y, x in pixels(s):
+            cov[y, x] = 1
+    near1, near2 = cv2.dilate(cov, K3).astype(bool), cv2.dilate(cov, K5).astype(bool)
+    skel_n = skel_unc = band_n = band_unc = components = 0
+    for gid in (int(g) for g in np.unique(gmap[masks["dist_ok"]])):
+        mask = masks["dist_ok"] & (gmap == gid)
+        thinned = vec.thin_band(mask, params["line_min_px"])
+        if thinned is None:
+            continue
+        skel, ox, oy = thinned
+        skel = vec.keep_long_components(skel, dp["min_len_px"])
+        full = np.zeros(gmap.shape, bool)
+        ys, xs = np.nonzero(skel)
+        full[ys + oy, xs + ox] = True
+        if not full.any():
+            continue
+        components += cv2.connectedComponents(full.astype(np.uint8), connectivity=8)[0] - 1
+        _, lab = cv2.connectedComponents(mask.astype(np.uint8), connectivity=8)
+        ids = np.unique(lab[full])
+        band = np.isin(lab, ids[ids > 0])
+        skel_n, skel_unc = skel_n + int(full.sum()), skel_unc + int((full & ~near1).sum())
+        band_n, band_unc = band_n + int(band.sum()), band_unc + int((band & ~near2).sum())
+    others = vec.vectorize_gmap(gmap, names, params)[0]
+    per_group: dict[str, int] = {}
+    for s in strokes:
+        per_group[s["groups"][0]] = per_group.get(s["groups"][0], 0) + 1
+    return {"strokes": len(strokes), "components": components, "skeleton": skel_n, "band": band_n,
+            "skeleton_coverage": 100.0 * (1 - skel_unc / skel_n) if skel_n else 100.0,
+            "band_coverage": 100.0 * (1 - band_unc / band_n) if band_n else 100.0,
+            "integrity": integrity(strokes), "shadow": shadow_distance(strokes, others),
+            "per_group": per_group, "stats": stats}
