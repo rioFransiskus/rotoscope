@@ -816,6 +816,123 @@ orientasi + `track_id`".
   dilewati).
 - **Penyimpangan dan catatan proses:** lihat butir "Penyimpangan dari rencana Tahap 1" dan "Catatan proses" (`sed -i`) di atas.
 
+#### Keputusan T-302, 2026-10-05 (Rio menyetujui rencana Tahap 1 dengan koreksi; ditulis sebelum kode)
+
+Pengukuran Tahap 1 (prototipe baca-saja, `work/t302/stage1/`) pada `test_short` (119) dan `test` (283): flip-flop (piksel A→B→A ≤ 2 frame)
+rata-rata 136,8 / 194,0 per 10k piksel foreground; jendela statis ±30; `iou_prev` 0,937 / 0,901; `label_agreement_prev` 0,984 / 0,961.
+
+1. **Kernel:** "EMA dua arah" = kernel eksponensial simetris TERPOTONG, bobot ρ^|k| · q, dinormalisasi; ρ = (1 − α) / (1 + α); radius R dari
+   `TAIL_MASS = 0,01` dengan batas atas `R_MAX = 8`. Bukan IIR dua arah. Frame t hanya bergantung pada input mentah t−R..t+R (tanpa
+   rantai) → resume per frame sah. `mask_ema_alpha` = bobot frame tengah setelah normalisasi. α = 0,7 (R = 2) DISETUJUI; α = 0,55 DITOLAK
+   (IoU grup minimum 0,22, rasio luas lengan 0,92 di `test`; α = 0,4: IoU grup minimum 0, rasio luas lengan 0,62).
+2. **Kriteria lulus (menggantikan "iou_prev + label_agreement_prev rata-rata naik"):** batas TIDAK diturunkan agar lolos.
+   - **Hipotesis (BELUM terbukti):** α = 0,7 sudah menghilangkan hampir semua derau yang bisa dihilangkan; sisa flip-flop = gerak nyata.
+     Dasar: derau murni (jendela statis) hanya 15–22% dari rata-rata klip, dan penurunan flip-flop 18–19% pada α = 0,7 hampir sama dengan
+     porsi itu. Penurunan ≥ 50% hanya di α ≤ 0,4 dan sebagian besar menghapus gerak sah. Hasil ukur jendela statis (Tahap 3) menguji atau
+     membantah hipotesis ini; hasilnya dicatat di "Hasil T-302". **Hasil ukur (Tahap 3, 2026-10-05): hipotesis TIDAK didukung.** Jendela
+     statis (otomatis: kecepatan centroid ≤ 3 px/frame dan XOR ≤ 6%, ≥ 10 frame; `test_short` 26–40, `test` 15–24 + 26–40), flip-flop per 10k,
+     α 1,0 → 0,85 → 0,7 → 0,55: 28,6 → 21,6 → 16,8 → 13,0 (`test_short`; −24% / −41% / −54%) dan 29,4 → 23,7 → 18,8 → 14,5 (`test`;
+     −19% / −36% / −51%). Pada α 0,7 masih tersisa 59–64% dari baseline dan kurva masih turun ke α 0,55, jadi bukan lantai derau; sisanya
+     tidak bisa dipisah dari gerak sah tanpa kebenaran dasar, dan menurunkannya lebih jauh dibayar kesetiaan (IoU grup minimum 0,22 di `test`
+     pada α 0,55).
+   - (a) DERAU: flip-flop di JENDELA STATIS turun ≥ X% pada α = 0,7. Jendela statis dipilih OTOMATIS (≥ 10 frame berurutan dengan kecepatan
+     centroid ≤ batas dan XOR foreground ≤ batas; batas + aturan ditulis di "Hasil T-302", tanpa nomor frame tetap). X ditetapkan SESUDAH
+     mengukur α {1,0; 0,85; 0,7; 0,55} pada kedua klip, bukan ditebak.
+   - (b) KESETIAAN: IoU grup rata-rata ≥ 0,985, centroid error maks ≤ 3 px, IoU grup minimum ≥ 0,60, rasio luas lengan ≥ 0,99 di jendela gerak
+     cepat (dipilih otomatis dengan aturan kecepatan tinggi) dan ≥ 0,975 di semua frame.
+   - (c) HILIR: vectorize (+ stylize bila perlu) pada salinan `stable/` temporal di scratchpad vs baseline T-202: id baru per frame dan umur
+     track untuk `group_boundary` dan `occlusion`, lahir / mati strok oklusi per frame: tidak lebih buruk dari baseline.
+   - (d) KEDALAMAN: CV p95 |grad| varian terpilih < baseline A dan Done-when kaki ≥ 4/5 (target 5/5).
+   - (e) FRAME GAGAL SINTETIS: pemulihan IoU ≥ baseline (α = 0,7, q = 0,25).
+   - `iou_prev` dan `label_agreement_prev` hanya DILAPORKAN (didominasi gerak).
+3. **Normalisasi kedalaman:** B (`log_median`: log max(d, eps) − median foreground, tanpa pembagi IQR) = default. A (`log_median_iqr`) tetap sebagai
+   enum kompatibilitas. D (affine linear) DIBUANG (titik di luar Lower_Clothing 12,3% vs 5,5%; CV gradien tidak membaik). C (IQR tetap per
+   klip) tidak diimplementasikan: C = B ÷ konstanta dan ambang T_high / T_low persentil per klip menghilangkan skala, jadi metrik identik.
+   Mengganti default A → B mengubah garis oklusi klip asli (226 → 248 strok di `test`) → T-305 mengkalibrasi ulang persentil.
+4. **EMA kedalaman:** default MATI (`stabilize.depth.temporal: false`) sampai T-303. Prototipe: strok oklusi 248 → 691 (α 0,7), Done-when
+   kaki tidak monoton (frame 78 gagal di α 0,7) → dugaan ghost edge; Tahap 3 tetap mengukur on / off.
+5. **`--limit N`:** frame t ditulis hanya bila jendela [t−R, t+R] LENGKAP (dipotong hanya di tepi KLIP). Input ada sampai min(N + R, T) − 1 →
+   semua N frame ditulis, byte-identik dengan run penuh. Input di luar N tidak ada → hanya frame berjendela lengkap yang ditulis (< N), pesan +
+   perintah. Alasan: frame berjendela terpotong dianggap valid oleh resume padahal beda dari run penuh.
+6. **`optical_flow_blend` ≠ 0** saat `temporal.enabled` dan T-303 belum ada: TIDAK ditolak; peringatan SATU KALI per run + manifest [3] mencatat
+   `temporal.optical_flow: "inactive (T-303)"` (docs/01, docs/02).
+7. **Pengaman cut:** `stabilize.temporal.cut_diff` (selisih absolut rata-rata abu-abu 48 px lebar, 0–1), default 0,08 (maks terukur 0,038;
+   negatif palsu = frame hantu, positif palsu hanya mengurangi smoothing satu frame); 0 = mati. Jendela kernel dipotong di cut.
+8. **`boil_preserve`:** p_out = (1 − b) · p_smooth + b · p_raw sebelum argmax; default TIDAK diubah (T-304).
+9. **`qc_fail_weight`:** mekanisme di kernel, uji SINTETIS (dua skenario: luas < 0,63 × median, `iou_prev` < 0,55) pada salinan; nilai 0,25 tetap
+   SEMENTARA, kalibrasi nyata menunggu klip kedua (sebelum T-305). Frame gagal berurutan 1 / 2 / 3 / 5 diukur; > R tidak pulih penuh.
+10. **Regresi:** α = 1,0 (R = 0) → `stable/` byte-identik dengan keadaan sebelum T-302 (groups + depth_smooth, kedua klip); aturan seri classmap
+    tetap di produksi.
+11. **Ekspektasi:** hasil konkret T-302 = normalisasi B (Done-when kaki 4/5 → 5/5, CV gradien turun) + infrastruktur temporal (kernel, bobot QC,
+    cut, `boil_preserve`); penurunan boiling yang terlihat menunggu T-303. Video sebelum / sesudah mungkin tampak hampir sama.
+12. **Default `temporal.enabled: true`** hanya di Tahap 4 setelah Rio menilai; Tahap 2–3 memakai config sementara di scratchpad.
+
+**Koreksi Rio setelah laporan Tahap 3 (2026-10-05), menggantikan butir bertentangan di atas:**
+
+13. **Konfigurasi yang dikirim = α 0,7 + b 0,3 (default config)**, diterima sebagai batas bawah yang dikalibrasi ulang di T-303. Kriteria kesetiaan
+    (`test_short` / `test`): IoU grup rata-rata 0,9915 / 0,9915, IoU grup minimum 0,921 / 0,725, centroid error maks 1,09 / 1,41 px, rasio luas lengan
+    jendela cepat min 0,997 / 0,997 dan semua frame min 0,977 / 0,983 — SEMUA lulus; derau statis −31% / −26%. **b 0 = pembanding:** rasio luas
+    lengan semua frame min 0,9737 di `test_short` frame 39 (batas 0,975, kurang 0,0013) dan 0,9752 di `test` — dicatat jujur, bukan kegagalan
+    konfigurasi yang dikirim. Batas tidak diturunkan.
+14. **X untuk kriteria (a): 25% pada b 0,3 dan 35% pada b 0.** Dasar = ukuran terendah dikurangi margin (b 0,3: −31% / −26%; b 0: −41% / −36%).
+    Ini **PENJAGA REGRESI, bukan bukti kualitas** (tidak menunjukkan bahwa derau yang tersisa wajar).
+15. **Hipotesis "α 0,7 menghilangkan hampir semua derau yang bisa dihilangkan" DIBANTAH:** statis −36..−41% pada b 0, kurva masih turun ke
+    α 0,55 (−51..−54%). **Implikasi (hipotesis kerja, belum diukur per jendela):** satu α untuk seluruh klip = kompromi — jendela statis diduga
+    menoleransi α rendah, jendela cepat butuh α ≥ 0,85 (terukur: flip-flop jendela cepat hanya −5..−17% di semua α, dan di α 0,55 rasio lengan jendela cepat
+    `test` turun ke 0,9815 serta centroid error maks 5,6–5,9 px di seluruh klip; lokasinya belum dipisah per jendela). Kesetiaan dalam jendela statis pada α rendah BELUM diukur.
+    Tuas struktural = adaptif gerak (T-303: optical flow; pembanding murah: α adaptif per frame dari aturan kecepatan centroid + XOR yang sama).
+16. **Kriteria (c) `occlusion` = dilaporkan, bukan syarat.** Alasan: temporal grup tidak bekerja pada tepi kedalaman (EMA kedalaman mati), jadi churn oklusi
+    tidak diharapkan membaik, dan "id baru per frame" menghukum bertambahnya jumlah strok. Dilaporkan per STROK-FRAME (id baru / strok per frame;
+    `test_short` / `test`): baseline A 0,351 / 0,462; B mati 0,327 / 0,431; B α 0,7 b 0 0,359 / 0,446; B α 0,7 b 0,3 0,353 / 0,439 (id baru per frame
+    mentah: 0,525 / 0,369 → 0,576 / 0,394 pada b 0,3; strok per frame 1,50 → 1,63 / 0,80 → 0,90). Per strok-frame = baseline (± 0,01) atau lebih baik.
+    **Syarat (c) hanya `group_boundary`:** LULUS — b 0: id baru per frame −25% / −13% (0,517 → 0,390 / 0,702 → 0,610), umur rata-rata +24% / +12% (13,9 →
+    17,3 / 10,9 → 12,2); b 0,3 (dikirim): −16% / −10%, umur +14% / +9% (15,9 / 11,9).
+17. **`qc_fail_weight` default 0,25 → 0,1** (config.py, configs/default.yaml, docs/02 satu langkah; tetap SEMENTARA); satu-satunya perubahan default di Tahap 3.
+    Dasar: q harus < ρ (0,176 pada α 0,7); q 0,25 hanya memulihkan frame gagal tunggal; q 0,1 memulihkan ≤ 2 berurutan (IoU foreground 0,963) dan tepi klip
+    (0,957 / 0,942); biaya positif palsu kecil. **Batas yang diketahui:** 3+ berurutan tidak pulih penuh (3 berurutan 0,80, 5 berurutan 0,67) dengan R = 2.
+    Test sintetis diperbarui (1, 2 berurutan, tepi pada q 0,1; 3 berurutan = batas).
+18. **Rencana Tahap 4** (BELUM dikerjakan): default `temporal.enabled: true`, `mask_ema_alpha` 0,7, `boil_preserve` 0,3 (tidak berubah), `depth.normalize`
+    `log_median`, `depth.temporal` false, `cut_diff` 0,08, `qc_fail_weight` 0,1; lalu `run` klip asli.
+19. **Catatan proses (pelanggaran):** `tests/test_stabilize_temporal.py` (berkas baru sesi ini) sekali diedit lewat skrip Python di shell, bukan Edit/Write
+    (melanggar CLAUDE.md). Diperiksa sesudahnya: `py_compile` lolos; tanpa BOM; tanpa karakter kontrol; satu newline di akhir; akhir baris CRLF seragam
+    (599 dari 599 baris; sama dengan `test_vectorize.py` / `test_cli.py` di working tree, `git ls-files --eol`: index LF, `core.autocrlf=true`); tidak ada perbaikan
+    yang perlu.
+
+#### Hasil T-302 (2026-10-05): temporal [3] tanpa optical flow — DONE
+
+- **Keputusan:** lihat blok "Keputusan T-302" di atas (butir 1–19). Default yang dikirim: `temporal.enabled` true, α 0,7 (R = 2), b 0,3, `cut_diff` 0,08,
+  `qc_fail_weight` 0,1, `depth.normalize` `log_median`, `depth.temporal` false. Implementasi: kernel eksponensial simetris terpotong, `src/rotoscope/stabilize.py`
+  (`TemporalPlan`, `FrameCache`, `build_plan`, `kernel_radius`, `cut_scores`, `qc_fail_flags`).
+- **Alternatif ditolak:** EMA dua arah IIR (butuh simpan hasil maju ±1–2 GB, tiap frame bergantung seluruh riwayat); α 0,55 / 0,4 (IoU grup minimum 0,22 / 0, rasio luas
+  lengan 0,92 / 0,62); normalisasi affine linear (D) dan IQR tetap per klip (C ≡ B); EMA kedalaman tanpa flow; menolak `optical_flow_blend` ≠ 0 (default 0,4 akan memblokir
+  `enabled: true`); `--limit` dengan jendela terpotong atau "N − R frame"; histogram untuk deteksi cut (tidak lebih terpisah).
+- **Angka terukur** (`test_short` 119 / `test` 283; pengukuran pada salinan scratchpad; α 0,7):
+  - Regresi α = 1,0: `stable/` byte-identik dengan sebelum T-302 (0 dari 119 + 283 frame berbeda; tiga konfigurasi). Determinisme, `--limit` + run penuh, resume, basi: identik / sesuai.
+  - b 0,3 (dikirim) vs b 0: flip-flop jendela statis −31% / −26% vs −41% / −36% (α 0,85 b 0: −24% / −19%; α 0,55 b 0: −54% / −51%); jendela cepat −10% / −11% vs −15% / −17%;
+    IoU grup rata-rata 0,9915 vs 0,988; IoU grup minimum 0,921 / 0,725 vs 0,902 / 0,667; centroid error maks 1,09 / 1,41 vs 1,88 / 2,08 px; rasio luas lengan semua frame
+    min 0,977 / 0,983 vs 0,9737 (f39) / 0,9752; lag luas ≈ 0 (−0,005 / −0,008 frame).
+  - Hilir (vs baseline T-202): `group_boundary` id baru per frame 0,517 → 0,432 / 0,702 → 0,635 (b 0,3), umur rata-rata 13,9 → 15,9 / 10,9 → 11,9; `occlusion` per strok-frame
+    0,351 / 0,462 → 0,353 / 0,439. Kedalaman B: CV p95 |grad| 0,160 / 0,274 (A 0,320 / 0,332), Done-when kaki 5/5 (A 4/5), titik strok oklusi di luar Lower_Clothing
+    5,4% / 9,4% (A 8,3% / 11,3%; angka b 0). EMA kedalaman (mati): id oklusi baru per frame ×3 (1,12 / 1,48), Done-when 4/5.
+  - Frame gagal sintetis (q 0,1): 1 frame pulih (IoU foreground 0,97 / 0,90), 2 berurutan 0,963, tepi klip 0,957 / 0,942; 3 berurutan 0,80, 5 berurutan 0,67.
+  - Biaya: 0,15 s/frame (43 s untuk `test`), memori puncak 146–174 MB, `stable/` tidak berubah ukuran. `run` penuh tanpa GPU: `test_short` 70 s, `test` 142 s (termasuk cek
+    seg / depth).
+  - Test: 917 lolos / 2 skip (864 → 917; setelah default baru: BASELINE hash kanonik contours nyata di `test_vectorize_track.py` diperbarui, frame 64 dikeluarkan dari
+    cakupan batas nyata di `test_vectorize.py` — 97,62% karena dua komponen skeleton terisolasi dibuang, sama dengan frame 38 / 40); mutation check 9/9 gagal sebagaimana mestinya (`scripts/t302_mutations.py`).
+- **Penilaian visual Rio:** jendela statis `cmp_*_26-40`: kedip piksel di batas grup berkurang, JELAS. Jendela cepat 73–92 / 183–202 / 225–240: tanpa hantu atau lag.
+  `before` vs `after_a0.7_b0.3` (garis akhir): "pop" garis SAMA (belum berubah). `after_b0` vs `after_b0.3`: tidak jelas. Frame 197: bercak hijau di lengan = salah label
+  segmentasi yang juga ada di mentah.
+- **Batas yang diketahui:** (a) satu α untuk seluruh klip = kompromi; "pop" garis akhir tidak berubah → perbaikan boiling yang terlihat menunggu T-303 (optical flow / α adaptif);
+  (b) EMA kedalaman tanpa flow merusak garis oklusi (id baru ×3) → mati; (c) 3+ frame gagal QC berurutan tidak pulih penuh (R = 2), tepi klip butuh q ≤ ρ; (d) `qc_fail_weight`
+  dan `cut_diff` dikalibrasi hanya pada dua klip uji dengan 0 frame gagal dan 0 cut; (e) b 0 melanggar rasio luas lengan 0,975 tipis (0,9737) — b 0,3 dikirim; (f) salah label
+  segmentasi (bercak hijau f197) tidak diperbaiki temporal (juga di mentah); (g) `optical_flow_blend` ≠ 0 diabaikan dengan peringatan di setiap run default.
+- **Bahan T-303 / T-304 / T-305:** T-303: baseline "pop" garis akhir (sama) + pembanding murah α adaptif per frame (statis 0,55 / cepat ≥ 0,85) yang harus dikalahkan flow; kalibrasi
+  ulang α; EMA kedalaman dengan flow. T-304: b 0 vs 0,3 tidak jelas secara visual; boil yang diinginkan lebih baik dari jitter sengaja (T-402, P-003). T-305: bercak hijau f197
+  (filter pulau N), kalibrasi ulang persentil `hi_pct` / `lo_pct` pada `log_median` (T_high / T_low 0,0291 / 0,0125 dan 0,0257 / 0,0112), klip kedua untuk `qc_fail_weight` /
+  `cut_diff`.
+- **Penyimpangan dan catatan proses:** satu edit lewat skrip Python di shell (butir 19). Dua skrip scratchpad diperbaiki dan dijalankan ulang (kunci hasil `occlusion` tertimpa;
+  default `boil_preserve` 0,3 tertukar dengan b 0 di satu run hilir); tidak ada efek ke repo.
+
 ---
 
 ## Pitfall yang sudah diketahui

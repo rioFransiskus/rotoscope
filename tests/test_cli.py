@@ -566,7 +566,8 @@ def _conf(tmp_path: Path, wrong: Path, out: Path | None = None, source: str | No
     conf = tmp_path / "c.yaml"
     out_line = f'  out_dir: "{out.as_posix()}"\n' if out else ""
     src_line = f"export:\n  source: {source}\n" if source else ""
-    conf.write_text(f'paths:\n  work_dir: "{wrong.as_posix()}"\n{out_line}{src_line}', encoding="utf-8")
+    spatial = "stabilize:\n  temporal:\n    enabled: false\n"      # klip uji tanpa frames/ + qc_report.json
+    conf.write_text(f'paths:\n  work_dir: "{wrong.as_posix()}"\n{out_line}{src_line}{spatial}', encoding="utf-8")
     return conf
 
 

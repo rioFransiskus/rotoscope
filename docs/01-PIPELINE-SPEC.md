@@ -384,20 +384,40 @@ dan temporal fill tidak cukup. D-002 (pose hanya fallback, bukan primary) tetap 
 
 ### [3] `stabilize.py` — stage tersulit, alokasikan waktu paling banyak (CPU)
 - **In:** `seg/probs/`, `seg/classmap/` (tie-break seri, T-106), `seg/manifest.json`, `depth/`,
-  `depth/manifest.json`, `depth/frames.jsonl` (status `finite`), `frames/` (untuk optical flow, T-303),
-  `qc_report.json` (bobot temporal, T-302 — tidak dibaca selama temporal mati); config `groups`, `stabilize`
+  `depth/manifest.json`, `depth/frames.jsonl` (status `finite`), `frames/` (deteksi cut T-302 — dibaca hanya bila temporal aktif,
+  R > 0, `cut_diff` > 0; optical flow = T-303), `qc_report.json` (bobot temporal T-302 — dibaca hanya bila temporal aktif dan R > 0;
+  tidak ada / frame tanpa baris → berhenti + perintah `segment`); config `groups`, `stabilize`
 - **Langkah:**
   1. Probabilitas kelas → **probabilitas grup** (jumlah per grup / 255, float32). Definisi grup:
      `groups:` di `configs/default.yaml` (lihat 02). Tanpa temporal, argmax dihitung dari jumlah uint8
      per grup (integer, eksak — sama dengan argmax float32). `classes` di `seg/manifest.json` wajib sama
      persis dengan `sapiens2_classes.json` (urutan kelas menentukan pemetaan ke grup).
-  2. **Temporal** (kalau `stabilize.temporal.enabled`): EMA (rata-rata bergerak berbobot) + warp
-     optical flow Farnebäck (`cv2.calcOpticalFlowFarneback`, gerakan per piksel antar frame) pada
-     probabilitas grup. Frame gagal QC diberi bobot `stabilize.temporal.qc_fail_weight`. Formula +
-     arah (satu arah vs dua arah maju–mundur, disarankan dua arah karena offline) → T-302/T-303.
+  2. **Temporal** (T-302, kalau `stabilize.temporal.enabled`; **tanpa optical flow** — warp Farnebäck = T-303):
+     **kernel eksponensial simetris TERPOTONG** (bukan EMA IIR dua arah) pada jumlah grup:
+     - frame t: `p_t = Σ_k w_k · S_(t+k) / Σ_k w_k`, `w_k = ρ^|k| · q_(t+k)`, k = −R..+R, ρ = (1 − α) / (1 + α),
+       α = `mask_ema_alpha` (≈ bobot frame tengah; α = 1 → R = 0 → persis jalur spasial T-106, byte-identik);
+       `q` = 1, atau `qc_fail_weight` bila frame itu gagal QC (`fail_reasons` tidak kosong di `qc_report.json`);
+     - **R** = bilangan bulat terkecil dengan `2ρ^(R+1) / (1 + ρ) < TAIL_MASS` (0,01), maks `R_MAX` (8): α 0,85 / 0,7 → 2,
+       0,55 → 4, 0,4 → 5, 0,3 → 7. Konstanta modul `stabilize.py`, bukan parameter YAML;
+     - jendela dipotong di tepi klip (bobot dinormalisasi ulang atas frame yang ada, tanpa frame virtual) dan di **cut**;
+       jumlah bobot < `WEIGHT_SUM_MIN` → hanya frame tengah. Akumulasi float32, urutan naik k = −R..+R (deterministik);
+       frame t hanya bergantung pada input mentah t−R..t+R (tanpa rantai) → resume per frame dan `--limit` sah;
+     - **cut**: selisih absolut rata-rata abu-abu (thumbnail `CUT_THUMB_WIDTH` = 48 px lebar, INTER_AREA) antara frame t−1 dan t,
+       0–1; `> stabilize.temporal.cut_diff` (0,08; 0 = mati) → jendela tidak melintasi t−1 | t. Daftar cut tercatat di manifest
+       (`temporal.cut_frames`) dan di log. Maks terukur klip uji 0,038 (0 cut);
+     - **`boil_preserve` b**: `p = (1 − b) · p_halus + b · S_t` sebelum argmax (0 = stabilisasi penuh, 1 = tanpa stabilisasi);
+     - **`qc_fail_weight`** q SEMENTARA 0,1: frame gagal ikut jendela tetangga dengan bobot kecil, dan dirinya sendiri diisi tetangga.
+       **Hubungan dengan ρ:** frame gagal hanya diisi tetangga bila q < ρ (bobot tetangga langsung; ρ = 0,176 pada α 0,7); q 0,25 > ρ
+       hanya memulihkan frame gagal TUNGGAL. Terukur sintetis (α 0,7, R = 2, IoU foreground vs frame asli): q 0,1 memulihkan 1 frame
+       (0,97 / 0,90), 2 berurutan (0,963) dan tepi klip (0,957 / 0,942); 3 berurutan 0,80, 5 berurutan 0,67 — **batas yang diketahui:
+       tidak lebih dari 2 berurutan pada q berapa pun dengan R = 2** (3+ berurutan tidak pulih penuh). Biaya positif palsu (frame sehat
+       yang ditandai gagal) kecil: frame itu tetap berbobot ρ-tetangga. Kalibrasi nyata menunggu klip kedua;
+     - **`optical_flow_blend` ≠ 0** saat temporal aktif: DIABAIKAN dengan satu peringatan per run; manifest mencatat
+       `temporal.optical_flow: "inactive (T-303)"` ("off" bila 0). `mask_ema_alpha` dikalibrasi ulang di T-303 (kriteria T-302 =
+       batas bawah).
   3. argmax → peta grup. **Seri eksak** → grup dari `seg/classmap` (argmax logits tanpa pembulatan)
      kalau grup itu ikut seri; selain itu id terkecil. Jumlah piksel seri dicatat per frame (klip uji
-     5–43 px/frame). Setelah temporal aktif (T-302) seri eksak jarang, tapi aturan tetap berlaku.
+     5–43 px/frame). Setelah temporal aktif (T-302) seri eksak jarang (argmax float32), tapi aturan tetap berlaku.
   4. **Filter pulau** pada peta GRUP: komponen 8-arah sebuah grup (termasuk background, jadi lubang
      kecil di badan ikut terisi) < `stabilize.island_min_px` (N = 30) → grup mayoritas di cincin 1 px
      sekelilingnya. Satu lintasan: cincin dibaca dari peta sebelum filter (urutan tidak berpengaruh).
@@ -409,28 +429,36 @@ dan temporal fill tidak cukup. D-002 (pose hanya fallback, bukan primary) tetap 
      normalisasi (`BORDER_REPLICATE`) + 0.5 untuk grup asli piksel; background ikut dihitung. Seri →
      grup asli; seri antara grup lain → id terkecil. K = 1 → mati.
   6. **Kedalaman:** normalisasi **per frame** (disparity DA hanya benar sampai skala + offset per
-     frame; kedalaman mentah tidak boleh langsung di-EMA), lalu temporal (kalau
-     `stabilize.depth.temporal`). Metode normalisasi dipilih + diuji di T-302. Kandidat:
-     - **affine:** (disparity − median foreground) / IQR foreground — menghilangkan skala **dan**
-       offset per frame;
-     - **log** (`log_median_iqr`, **diimplementasi T-106**): `(log max(d, log_eps) − median) /
-       max(IQR, iqr_min)` — menghilangkan skala saja, **tidak** offset. Median + IQR (p75 − p25) dari
-       foreground = peta grup bersih ≠ 0 frame itu; foreground kosong → seluruh frame
-       (`region: "frame"` di log). IQR < `iqr_min` → pembagi di-clamp (`iqr_clamped` di log).
+     frame; kedalaman mentah tidak boleh langsung di-EMA), lalu temporal (kalau `temporal.enabled` **dan**
+     `stabilize.depth.temporal`; default mati sampai T-303). `stabilize.depth.normalize` (T-302, diukur pada kedua klip uji):
+     - **`log_median_iqr` (A, T-106, kompatibilitas):** `(log max(d, log_eps) − median) / max(IQR, iqr_min)`. Median + IQR
+       (p75 − p25) dari foreground = peta grup bersih ≠ 0 frame itu; foreground kosong → seluruh frame (`region: "frame"` di
+       log). IQR < `iqr_min` → pembagi di-clamp (`iqr_clamped` di log). Pembagi IQR per frame membuat gradien antar frame tidak
+       konsisten (CV p95 |grad| 0,32 / 0,33; Done-when kaki 4/5) dan melemahkan tepi kaki di frame 73–83;
+     - **`log_median` (B, T-302; DEFAULT):** `log max(d, log_eps) − median` (tanpa pembagi; `iqr_min` tidak
+       dipakai). CV p95 |grad| 0,157 / 0,270, Done-when kaki 5/5. Ambang T_high / T_low di [4] = persentil per klip, jadi skala
+       konstan tidak berpengaruh;
+     - **ditolak:** affine linear `(d − median) / IQR` (CV tidak membaik; 12,3% titik strok di luar Lower_Clothing vs 5,5%);
+       IQR tetap per klip (C = B ÷ konstanta, metrik identik; menambah pass 1 dan state per klip).
+     - **EMA kedalaman:** kernel yang sama (α, R, bobot QC, potongan cut) pada kedalaman ternormalisasi float32; statistik foreground
+       tiap frame di jendela memakai peta grup akhir frame itu → jangkauan input = R (grup) + R (kedalaman). Ukuran (prototipe):
+       strok oklusi 248 → 691 (α 0,7), Done-when kaki tidak monoton → default mati.
      - **Background** memakai transformasi yang sama (nilai kontinu + finite): NaN merusak blur/Sobel di
        [4], nilai konstan membuat lompatan palsu di siluet. Range `log_eps` / `iqr_min` (02) menjamin hasil
        muat float16; tidak finite → berhenti dengan error.
      - Frame `finite: false` di `depth/frames.jsonl` disalin ke `stable/frames.jsonl` (`depth_finite`),
        tanpa perlakuan khusus selama temporal mati.
-- Optical flow tidak di-cache (±1.2 GB/klip) — dihitung ulang (±20–50 ms/frame *est.*).
-- Phase 1–2: `stabilize.temporal.enabled: false` (hanya langkah 1, 3–6 tanpa temporal).
+- Optical flow (T-303) tidak di-cache (±1.2 GB/klip) — dihitung ulang (±20–50 ms/frame *est.*).
+- Default sejak T-302 DONE: `stabilize.temporal.enabled: true` (α 0,7, R = 2, b 0,3, `cut_diff` 0,08, `qc_fail_weight` 0,1, normalisasi
+  `log_median`, `depth.temporal: false`); langkah 2 tanpa optical flow (T-303). `enabled: false` = hanya langkah 1, 3–6 (spasial, jalur T-106).
+  Temporal butuh `frames/` + `qc_report.json` (klip yang di-ingest + di-segment lewat `run` memilikinya).
 - ⚠️ Jangan over-smooth. Sedikit boil = hand-drawn feel (`boil_preserve`), bukan nol (P-001).
 
 | path | isi | dtype | resolusi | disk / klip |
 |---|---|---|---|---|
 | `stable/groups/frame_%05d.png` | id grup: 0 = background, 1..G = urutan `groups:` di YAML | uint8 | kerja | ±2.4 MB (±6.6 KB/frame, terukur T-106) |
 | `stable/depth_smooth/frame_%05d.npy` | kedalaman ternormalisasi per frame (+ temporal) | float16 | kerja | 295 MB (820 KB/frame) |
-| `stable/manifest.json` | section `stabilize` + `stabilize_hash`, `groups` + `groups_hash`, referensi `seg/manifest.json` (model, model id, revision, precision, processor, `num_labels`, frame_size, classes, `created_utc`) + `depth/manifest.json` (model id, revision, lisensi, precision, processor, ukuran input, output, frame_size, `created_utc`), frame_size, `clip` (identitas klip, T-108) | – | – | kecil |
+| `stable/manifest.json` | **`temporal`** (T-302: `{enabled: false}`, atau `enabled`, `radius`, `depth_radius`, `cut_frames`, `qc_fail_frames`, `optical_flow`), section `stabilize` + `stabilize_hash`, `groups` + `groups_hash`, referensi `seg/manifest.json` (model, model id, revision, precision, processor, `num_labels`, frame_size, classes, `created_utc`) + `depth/manifest.json` (model id, revision, lisensi, precision, processor, ukuran input, output, frame_size, `created_utc`), frame_size, `clip` (identitas klip, T-108) | – | – | kecil |
 | `stable/frames.jsonl` | log per frame: waktu per langkah, piksel seri, piksel berubah di filter pulau / mode, luas foreground, `depth_finite`, statistik normalisasi (region, median + IQR log, clamp) + min / median / maks `depth_smooth` | – | – | kecil |
 
 - **Tulis atomik + `*.tmp`:** aturan sama dengan [2] (helper `stage_common.py`).
@@ -447,7 +475,14 @@ dan temporal fill tidak cukup. D-002 (pose hanya fallback, bukan primary) tetap 
   [3] lama tanpa `clip` → basi sekali (dihitung ulang; output byte-identik pada klip uji, 566 file). [4] ikut
   basi; [2] tidak. Output tanpa manifest → ditolak. `--restart` menghapus `stable/` saja. [3] tidak punya
   `--adopt`.
-- `stabilize.temporal.enabled: true` → berhenti (belum diimplementasi, T-302/T-303).
+- **`--limit N` dengan temporal (T-302):** frame t ditulis hanya bila SELURUH jendela inputnya ada — rentang `needed(t)` = jendela
+  kedalaman × jendela grup, dipotong hanya di tepi KLIP (dan cut). Input seg / depth / qc ada sampai min(N + R_total, T) − 1 → semua N
+  frame ditulis, byte-identik dengan run penuh (R_total = R grup + R kedalaman bila `depth.temporal`). Input di luar N tidak ada → hanya
+  frame berjendela lengkap yang ditulis (< N), sisanya DITUNDA dengan peringatan + perintah (`segment` / `depth --limit X+1`); tidak
+  pernah ada frame berjendela terpotong oleh `--limit` yang ditulis (resume akan menganggapnya valid padahal beda dari run penuh).
+  Temporal mati: R = 0 → perilaku lama (hanya input N frame pertama).
+- **Basi (T-302):** `temporal` di manifest (radius, cut, frame gagal QC, status optical flow) ikut dibandingkan; setelan temporal apa pun
+  (α, b, `cut_diff`, `qc_fail_weight`, normalisasi, `depth.temporal`, `enabled`) sudah ada di `stabilize_hash` → `stable/` basi.
 - **CLI** (T-104b): `python -m rotoscope stabilize <video> [--config PATH] [--restart] [--limit N]`; di dalam `run`
   dipanggil in-process `stabilize.main([--work-dir <folder klip>, …])` (`--work-dir DIR` menang atas
   `paths.work_dir`). `--restart` stage CPU tidak butuh `--yes`. Exit code sama dengan [2]: 0 sukses, 1 prasyarat

@@ -76,7 +76,8 @@ def make_work(tmp_path: Path, n: int = N_FRAMES, h: int = H, w: int = W) -> Path
 
 
 def cfg_for(work: Path, **overrides):
-    return load_pipeline(overrides={"paths.work_dir": str(work), **overrides})
+    """Config uji spasial (T-106): temporal MATI (default config sejak T-302 = aktif, butuh frames/ + qc_report.json)."""
+    return load_pipeline(overrides={"paths.work_dir": str(work), "stabilize.temporal.enabled": False, **overrides})
 
 
 def quiet(_msg: str) -> None:
@@ -433,12 +434,6 @@ def test_corrupt_probs_rejected(tmp_path):
         stb.run_stabilize(cfg_for(work), log=quiet)
 
 
-def test_temporal_enabled_rejected(tmp_path):
-    work = make_work(tmp_path)
-    with pytest.raises(StageError, match="T-302"):
-        stb.run_stabilize(cfg_for(work, **{"stabilize.temporal.enabled": True}), log=quiet)
-
-
 def test_limit_must_be_positive(tmp_path):
     with pytest.raises(StageError, match="--limit"):
         stb.run_stabilize(cfg_for(make_work(tmp_path)), limit=0, log=quiet)
@@ -447,7 +442,7 @@ def test_limit_must_be_positive(tmp_path):
 # ── Entry point ────────────────────────────────────
 def _write_cfg(tmp_path: Path, work: Path) -> Path:
     p = tmp_path / "cfg.yaml"
-    p.write_text(f"paths:\n  work_dir: '{work.as_posix()}'\n", encoding="utf-8")
+    p.write_text(f"paths:\n  work_dir: '{work.as_posix()}'\nstabilize:\n  temporal:\n    enabled: false\n", encoding="utf-8")
     return p
 
 

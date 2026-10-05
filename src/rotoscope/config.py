@@ -70,7 +70,7 @@ DEPTH_MODEL_ID_REQUIRED = "Small"               # DA-V2 Base/Large = CC-BY-NC
 PRECISIONS = ("fp16", "fp32")                   # tanpa bf16 (Turing, P-005)
 PROBS_DTYPES = ("uint8",)
 VRAM_MAX_MIB = 4096
-NORMALIZE_METHODS = ("log_median_iqr",)         # diperluas di T-302 (kandidat: affine)
+NORMALIZE_METHODS = ("log_median_iqr", "log_median")   # T-302: B = log_median (affine / IQR tetap per klip ditolak)
 LOG_EPS_MIN, LOG_EPS_MAX = 1e-12, 0.01          # stabilize.depth.log_eps
 IQR_MIN_MIN, IQR_MIN_MAX = 1e-3, 1.0            # stabilize.depth.iqr_min
 STROKE_TYPES = ("silhouette", "silhouette_hole", "group_boundary", "occlusion")
@@ -173,19 +173,20 @@ DEFAULT_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
 
 @dataclass(frozen=True)
 class TemporalConfig:
-    enabled: bool = False
+    enabled: bool = True
     mask_ema_alpha: float = 0.7
     optical_flow_blend: float = 0.4
     boil_preserve: float = 0.3
-    qc_fail_weight: float = 0.25
+    qc_fail_weight: float = 0.1
+    cut_diff: float = 0.08
 
 
 @dataclass(frozen=True)
 class StabilizeDepthConfig:
-    normalize: str = "log_median_iqr"
+    normalize: str = "log_median"
     log_eps: float = 1.0e-6
     iqr_min: float = 0.01
-    temporal: bool = True
+    temporal: bool = False
 
 
 @dataclass(frozen=True)
@@ -707,6 +708,7 @@ def _validate_pipeline(c: PipelineConfig) -> None:
     _unit("stabilize.temporal.optical_flow_blend", t.optical_flow_blend)
     _unit("stabilize.temporal.boil_preserve", t.boil_preserve)
     _unit("stabilize.temporal.qc_fail_weight", t.qc_fail_weight)
+    _unit("stabilize.temporal.cut_diff", t.cut_diff)
     _at_least("stabilize.island_min_px", c.stabilize.island_min_px, 0)
     _odd("stabilize.mode_k", c.stabilize.mode_k, 1)
     _choice("stabilize.depth.normalize", c.stabilize.depth.normalize, NORMALIZE_METHODS)

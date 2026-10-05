@@ -281,6 +281,14 @@ def chain(tmp_path, monkeypatch):
     dest = clip_dir(tmp_path)
     dest.parent.mkdir(parents=True)
     shutil.move(str(work), str(dest))
+    # temporal (default sejak T-302) butuh frames/ (cut) + qc_report.json (bobot)
+    import cv2
+    import numpy as np
+    (dest / "frames").mkdir()
+    for i in range(tst.N_FRAMES):
+        (dest / "frames" / f"frame_{i:05d}.png").write_bytes(cv2.imencode(".png", np.full((tst.H, tst.W, 3), 90, np.uint8))[1].tobytes())
+    (dest / "qc_report.json").write_text(json.dumps({"stage": "segment_qc", "frames": [
+        {"frame": f"frame_{i:05d}.png", "index": i, "fail_reasons": []} for i in range(tst.N_FRAMES)]}), encoding="utf-8")
     # manifest seg / depth dibuat ulang untuk meta.json baru (identitas klip)
     from rotoscope.stage_common import clip_identity
     for d in ("seg", "depth"):

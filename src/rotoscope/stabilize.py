@@ -1,20 +1,28 @@
 """Stage [3] stabilize: seg/probs + seg/classmap + depth/ → stable/groups/*.png + stable/depth_smooth/*.npy
 + stable/manifest.json + stable/frames.jsonl (D-010). Kontrak lengkap: docs/01 [3].
 
-T-106 = SPASIAL SAJA (`stabilize.temporal.enabled: false`); temporal (EMA + optical flow) = T-302/T-303.
-CPU saja, tanpa torch. Per frame:
+T-106 = spasial; T-302 = temporal (kernel simetris, tanpa optical flow; optical flow = T-303). CPU saja, tanpa
+torch. Per frame:
   1. probabilitas kelas uint8 (29, H, W) → probabilitas grup = jumlah per grup / 255. argmax dihitung
      dari jumlah integer (eksak, sama dengan argmax float32). Seri eksak → grup dari seg/classmap
      (argmax logits tanpa pembulatan) kalau grup itu ikut seri, selain itu id terkecil.
+  2. Temporal (`stabilize.temporal.enabled`): kernel eksponensial simetris TERPOTONG pada jumlah grup,
+     bobot ρ^|k|·q_(t+k) (ρ = (1−α)/(1+α), q = 1 atau qc_fail_weight), dinormalisasi; jendela [t−R, t+R]
+     dipotong di tepi klip dan di cut (`cut_diff`); `boil_preserve` b: p = (1−b)·p_halus + b·p_mentah.
+     Frame t hanya bergantung pada input mentah t−R..t+R (tanpa rantai).
   3. argmax → peta grup (0 = background, 1..G = urutan `groups:`).
   4. Filter pulau: komponen 8-arah sebuah grup (termasuk background) < N px → grup mayoritas di cincin
      1 px sekelilingnya, dibaca dari peta sebelum filter (satu lintasan). Seri → id terkecil.
   5. Mode filter K×K: grup yang paling sering muncul di jendela; background ikut; seri → grup asli
      piksel, seri antara grup lain → id terkecil.
-  6. Kedalaman log_median_iqr: (log max(d, eps) − median) / max(IQR, iqr_min), statistik dari foreground
-     peta grup bersih (kosong → seluruh frame). Transformasi yang sama dipakai di background (nilai
-     kontinu + finite, tanpa lompatan palsu di siluet).
-(Langkah 2 = temporal, belum ada.)
+  6. Kedalaman: `log_median_iqr` (A): (log max(d, eps) − median) / max(IQR, iqr_min); `log_median` (B):
+     log max(d, eps) − median. Statistik dari foreground peta grup bersih (kosong → seluruh frame).
+     Transformasi yang sama dipakai di background (nilai kontinu + finite, tanpa lompatan palsu di siluet).
+     `stabilize.depth.temporal` (+ temporal.enabled): kernel yang sama pada kedalaman ternormalisasi.
+
+`--limit N`: frame t ditulis hanya bila jendela inputnya LENGKAP (dipotong hanya di tepi KLIP atau di cut);
+frame yang jendelanya butuh input di luar yang ada ditunda + dilaporkan (tidak pernah ditulis dengan jendela
+terpotong, supaya resume tidak menganggapnya valid).
 
 Manifest berbeda (grup / parameter stabilize / input [2]/[2c] / identitas klip berubah) → output lama BASI:
 dihapus dan dihitung ulang otomatis dengan peringatan (stage CPU murah + deterministik). Manifest lama tanpa
@@ -47,6 +55,7 @@ from rotoscope import segment as seg
 from rotoscope.config import (
     ConfigError, PipelineConfig, ensure_dir, load_class_names, load_pipeline, section_hash, to_dict,
 )
+from rotoscope.ingest import FRAMES_DIRNAME
 from rotoscope.stage_common import (
     CLIP_KEY, EXIT_OK, EXIT_PRECONDITION, StageError, add_work_dir_arg, append_jsonl, clean_tmp, cli_cmd,
     clip_identity, describe_identity, last_frame_records, load_frame_list, reconfigure_stdio, utc_now,
@@ -65,14 +74,26 @@ DEPTH_DTYPE = np.float16
 BACKGROUND_ID = 0
 SECONDS_PER_FRAME_ESTIMATE = 0.11       # hanya untuk pesan estimasi (terukur T-204, CPU, 480x854); bukan parameter
 PROBS_SCALE = seg.PROBS_SCALE          # probabilitas grup = jumlah uint8 per grup / 255
+SECONDS_PER_FRAME_TEMPORAL = 0.15       # idem, temporal aktif (prototipe T-302 Tahap 1: 0,10–0,16 s)
 RING_KERNEL = np.ones((3, 3), np.uint8)  # cincin 1 px (8-arah) di filter pulau
+NORMALIZE_A, NORMALIZE_B = "log_median_iqr", "log_median"
 OUTPUT_INFO = {
     "groups": "id grup uint8 PNG: 0 = background, 1..G = urutan groups: di YAML",
-    "depth_smooth": "float16 (H, W): (log max(d, log_eps) − median fg) / max(IQR fg, iqr_min), per frame",
+    "depth_smooth": "float16 (H, W): log max(d, log_eps) − median fg, dibagi max(IQR fg, iqr_min) hanya bila "
+                    "stabilize.depth.normalize = log_median_iqr; per frame (+ kernel temporal bila depth.temporal)",
 }
 
+# ── Temporal (T-302): konstanta struktural, bukan parameter YAML ──
+TAIL_MASS = 0.01          # radius R: bobot ekor di luar R < 1% dari total (kernel tak terpotong)
+R_MAX = 8                 # batas atas radius R
+WEIGHT_SUM_MIN = 1e-6     # jumlah bobot jendela < ini → hanya frame tengah (dipakai apa adanya)
+CUT_THUMB_WIDTH = 48      # lebar thumbnail abu-abu untuk skor selisih frame (tinggi mengikuti aspek)
+GRAY_MAX = 255.0
+OPTICAL_FLOW_INACTIVE = "inactive (T-303)"
+OPTICAL_FLOW_OFF = "off"
+
 # Kunci manifest yang harus sama untuk resume; beda → output basi (dihapus + dihitung ulang).
-MANIFEST_MATCH_KEYS = ("stabilize_hash", "groups_hash", "seg", "depth", "frame_size", CLIP_KEY)
+MANIFEST_MATCH_KEYS = ("stabilize_hash", "groups_hash", "seg", "depth", "frame_size", CLIP_KEY, "temporal")
 SEG_REF_KEYS = ("model", "model_id", "revision", "precision", "processor", "num_labels", "frame_size",
                 "classes", "created_utc")
 DEPTH_REF_KEYS = ("model_id", "revision", "license", "precision", "processor", "input_size", "output",
@@ -175,28 +196,176 @@ def clean_groups(sums: np.ndarray, tie_groups: np.ndarray, island_min_px: int, m
 
 
 # ── Langkah 6: kedalaman ───────────────────────────
-def normalize_depth(disparity: np.ndarray, fg: np.ndarray, log_eps: float, iqr_min: float) -> tuple[np.ndarray, dict]:
-    """log_median_iqr per frame → (float16 (H, W), statistik).
+def normalize_depth_f32(disparity: np.ndarray, fg: np.ndarray, log_eps: float, iqr_min: float,
+                        method: str = NORMALIZE_A) -> tuple[np.ndarray, dict]:
+    """Normalisasi per frame → (float32 (H, W), info {region, med, iqr, clamped}); float16 + statistik: `finish_depth`.
 
-    Statistik (median, IQR = p75 − p25) dari foreground; foreground kosong → seluruh frame. IQR < iqr_min
-    → pembagi = iqr_min. Background memakai transformasi yang sama.
+    `log_median_iqr` (A): (log − median) / max(IQR, iqr_min). `log_median` (B, T-302): log − median, tanpa
+    pembagi (IQR per frame membuat gradien antar frame tidak konsisten; ambang T_high / T_low per klip =
+    persentil, jadi skala konstan tidak berpengaruh). Statistik (median, IQR = p75 − p25) dari foreground;
+    foreground kosong → seluruh frame. Background memakai transformasi yang sama.
     """
     lg = np.log(np.maximum(disparity.astype(np.float32), np.float32(log_eps)))
     region = "foreground" if fg.any() else "frame"
     vals = lg[fg] if region == "foreground" else lg.ravel()
     p25, med, p75 = (float(v) for v in np.percentile(vals, (25, 50, 75)))
     iqr = p75 - p25
-    clamped = iqr < iqr_min
-    out32 = (lg - np.float32(med)) / np.float32(iqr_min if clamped else iqr)
+    clamped = method == NORMALIZE_A and iqr < iqr_min
+    if method == NORMALIZE_A:
+        out32 = (lg - np.float32(med)) / np.float32(iqr_min if clamped else iqr)
+    elif method == NORMALIZE_B:
+        out32 = lg - np.float32(med)
+    else:
+        raise StageError(f"stabilize.depth.normalize '{method}' tidak dikenal")
+    return out32, {"region": region, "med": med, "iqr": iqr, "clamped": bool(clamped)}
+
+
+def finish_depth(out32: np.ndarray, info: dict) -> tuple[np.ndarray, dict]:
+    """float32 → float16 (harus finite) + statistik untuk frames.jsonl."""
     with np.errstate(over="ignore"):
         out = out32.astype(DEPTH_DTYPE)
     if not np.isfinite(out).all():
-        raise StageError(f"depth_smooth tidak finite / meluap float16 (median {med:.4g}, IQR {iqr:.4g}) — "
-                         f"cek depth/ dan stabilize.depth.log_eps / iqr_min")
+        raise StageError(f"depth_smooth tidak finite / meluap float16 (median {info['med']:.4g}, IQR "
+                         f"{info['iqr']:.4g}) — cek depth/ dan stabilize.depth.log_eps / iqr_min")
     o = out.astype(np.float32)
-    return out, {"region": region, "log_median": round(med, 5), "log_iqr": round(iqr, 5),
-                 "iqr_clamped": bool(clamped), "min": round(float(o.min()), 4),
+    return out, {"region": info["region"], "log_median": round(info["med"], 5), "log_iqr": round(info["iqr"], 5),
+                 "iqr_clamped": info["clamped"], "min": round(float(o.min()), 4),
                  "median": round(float(np.median(o)), 4), "max": round(float(o.max()), 4)}
+
+
+def normalize_depth(disparity: np.ndarray, fg: np.ndarray, log_eps: float, iqr_min: float,
+                    method: str = NORMALIZE_A) -> tuple[np.ndarray, dict]:
+    """Normalisasi per frame, tanpa temporal → (float16 (H, W), statistik)."""
+    return finish_depth(*normalize_depth_f32(disparity, fg, log_eps, iqr_min, method))
+
+
+# ── Langkah 2: temporal (T-302) ────────────────────
+def kernel_rho(alpha: float) -> float:
+    """ρ kernel bobot ρ^|k|; bobot frame tengah setelah normalisasi (tanpa terpotong) = α."""
+    return (1.0 - alpha) / (1.0 + alpha)
+
+
+def kernel_radius(alpha: float) -> int:
+    """R terkecil dengan bobot ekor 2ρ^(R+1)/(1+ρ) < TAIL_MASS (maks R_MAX); α = 1 → 0."""
+    rho = kernel_rho(alpha)
+    if rho <= 0.0:
+        return 0
+    r = 0
+    while r < R_MAX and 2.0 * rho ** (r + 1) / (1.0 + rho) >= TAIL_MASS:
+        r += 1
+    return r
+
+
+def shot_bounds(cut_before: Sequence[bool]) -> tuple[tuple[int, ...], tuple[int, ...]]:
+    """cut_before[k] = ada cut antara frame k−1 dan k → (posisi awal, posisi akhir inklusif) shot tiap frame."""
+    n = len(cut_before)
+    start, end = [0] * n, [n - 1] * n
+    for k in range(1, n):
+        start[k] = k if cut_before[k] else start[k - 1]
+    for k in range(n - 2, -1, -1):
+        end[k] = k if cut_before[k + 1] else end[k + 1]
+    return tuple(start), tuple(end)
+
+
+def frame_thumb(path: Path, width: int = CUT_THUMB_WIDTH) -> np.ndarray:
+    """Frame → abu-abu float32 diperkecil ke `width` px (INTER_AREA), tinggi mengikuti aspek."""
+    try:
+        im = cv2.imdecode(np.fromfile(path, np.uint8), cv2.IMREAD_GRAYSCALE)
+    except OSError:
+        im = None
+    if im is None:
+        raise StageError(f"{path} tidak terbaca (deteksi cut) — jalankan ulang stage [1] ingest")
+    h, w = im.shape
+    return cv2.resize(im, (width, max(1, round(h * width / w))), interpolation=cv2.INTER_AREA).astype(np.float32)
+
+
+def cut_scores(thumbs: Sequence[np.ndarray]) -> list[float]:
+    """Skor selisih frame: rata-rata |selisih| abu-abu thumbnail / 255 (0–1); skor frame 0 = 0."""
+    return [0.0] + [float(np.abs(b - a).mean()) / GRAY_MAX for a, b in zip(thumbs, thumbs[1:])]
+
+
+def detect_cuts(scores: Sequence[float], cut_diff: float) -> list[bool]:
+    """cut_before[k] = skor k > cut_diff; cut_diff = 0 → tidak ada cut."""
+    return [cut_diff > 0 and s > cut_diff for s in scores]
+
+
+@dataclass(frozen=True)
+class TemporalPlan:
+    """Jendela kernel per frame. `radius` = R grup; `depth_radius` = R kedalaman (0 bila depth.temporal mati).
+    Tanpa temporal: R = 0 → jendela = frame itu sendiri (jalur spasial T-106, byte-identik)."""
+    n: int
+    radius: int
+    rho: float
+    depth_radius: int
+    boil: float
+    shot_start: tuple[int, ...]
+    shot_end: tuple[int, ...]
+    q: tuple[float, ...]
+    cut_frames: tuple[int, ...] = ()
+    qc_fail_frames: tuple[int, ...] = ()
+    qc_missing: tuple[int, ...] = ()     # frame tanpa baris di qc_report.json (input belum ada)
+
+    def window(self, t: int, radius: int) -> tuple[int, int]:
+        """[lo, hi] inklusif: ±radius, dipotong di tepi klip dan di cut."""
+        return max(t - radius, self.shot_start[t], 0), min(t + radius, self.shot_end[t], self.n - 1)
+
+    def weights(self, t: int, radius: int) -> list[tuple[int, float]]:
+        """[(k, w)] naik; w = ρ^|k−t| · q_k. Jumlah < WEIGHT_SUM_MIN → hanya frame tengah (w = 1)."""
+        lo, hi = self.window(t, radius)
+        w = [(k, self.rho ** abs(k - t) * self.q[k]) for k in range(lo, hi + 1)]
+        if sum(x for _, x in w) < WEIGHT_SUM_MIN:
+            return [(t, 1.0)]
+        return w
+
+    def needed(self, t: int) -> tuple[int, int]:
+        """Rentang input mentah [lo, hi] yang menentukan frame t (jendela kedalaman × jendela grup)."""
+        dlo, dhi = self.window(t, self.depth_radius)
+        return (min(self.window(k, self.radius)[0] for k in range(dlo, dhi + 1)),
+                max(self.window(k, self.radius)[1] for k in range(dlo, dhi + 1)))
+
+
+def spatial_plan(n: int) -> TemporalPlan:
+    """Tanpa temporal: jendela = frame itu sendiri."""
+    return TemporalPlan(n, 0, 0.0, 0, 0.0, tuple(range(n)), tuple(range(n)), (1.0,) * n)
+
+
+def build_plan(cfg: PipelineConfig, clip: "Clip", log: Callable[[str], None] = print, *,
+               thumbs: Callable[[Path], np.ndarray] = frame_thumb) -> TemporalPlan:
+    """Rencana jendela dari config + frames/ (cut) + qc_report.json (bobot). Temporal mati atau R = 0 → spatial_plan."""
+    t = cfg.stabilize.temporal
+    n = len(clip.names)
+    radius = kernel_radius(t.mask_ema_alpha) if t.enabled else 0
+    if t.enabled and t.optical_flow_blend != 0:
+        log(f"PERINGATAN: stabilize.temporal.optical_flow_blend = {t.optical_flow_blend} diabaikan — optical flow "
+            f"belum ada (T-303); manifest mencatat '{OPTICAL_FLOW_INACTIVE}'")
+    if radius == 0:
+        return spatial_plan(n)
+    cut_before = [False] * n
+    if t.cut_diff > 0:
+        scores = cut_scores([thumbs(clip.work_dir / FRAMES_DIRNAME / name) for name in clip.names])
+        cut_before = detect_cuts(scores, t.cut_diff)
+    start, end = shot_bounds(cut_before)
+    fails = qc_fail_flags(clip)
+    q = tuple(t.qc_fail_weight if fails[name] else 1.0 for name in clip.names)
+    return TemporalPlan(n, radius, kernel_rho(t.mask_ema_alpha), radius if cfg.stabilize.depth.temporal else 0,
+                        t.boil_preserve, start, end, q,
+                        tuple(k for k in range(n) if cut_before[k]),
+                        tuple(k for k in range(n) if fails[clip.names[k]] is True),
+                        tuple(k for k in range(n) if fails[clip.names[k]] is None))
+
+
+def qc_fail_flags(clip: "Clip") -> dict[str, bool | None]:
+    """qc_report.json → {frame: gagal QC?}; frame tanpa baris → None (input belum ada, jendela tidak lengkap)."""
+    path = clip.seg_clip.qc_report_path
+    if not path.is_file():
+        raise StageError(f"{path} tidak ada — temporal butuh bobot QC; jalankan stage [2] segment: "
+                         f"{cli_cmd('segment', clip.work_dir)}")
+    try:
+        rows = json.loads(path.read_text(encoding="utf-8"))["frames"]
+        flags = {r["frame"]: bool(r["fail_reasons"]) for r in rows}
+    except (OSError, ValueError, KeyError, TypeError):
+        raise StageError(f"{path} rusak / formatnya tidak dikenal — jalankan ulang stage [2] segment") from None
+    return {name: flags.get(name) for name in clip.names}
 
 
 # ── Tulis + baca ───────────────────────────────────
@@ -350,8 +519,19 @@ def _read_inputs(clip: Clip, name: str, n_classes: int) -> tuple[np.ndarray, np.
 
 
 # ── Manifest ───────────────────────────────────────
-def build_manifest(cfg: PipelineConfig, clip: Clip, seg_m: dict, dep_m: dict) -> dict:
-    return {"stage": "stabilize",
+def temporal_manifest(cfg: PipelineConfig, clip: Clip, plan: TemporalPlan) -> dict:
+    """Bagian manifest yang bukan parameter tapi menentukan hasil: radius, cut, frame gagal QC, status optical flow."""
+    t = cfg.stabilize.temporal
+    if not t.enabled:
+        return {"enabled": False}
+    return {"enabled": True, "radius": plan.radius, "depth_radius": plan.depth_radius,
+            "cut_frames": [clip.names[k] for k in plan.cut_frames],
+            "qc_fail_frames": [clip.names[k] for k in plan.qc_fail_frames],
+            "optical_flow": OPTICAL_FLOW_INACTIVE if t.optical_flow_blend != 0 else OPTICAL_FLOW_OFF}
+
+
+def build_manifest(cfg: PipelineConfig, clip: Clip, seg_m: dict, dep_m: dict, plan: TemporalPlan) -> dict:
+    return {"stage": "stabilize", "temporal": temporal_manifest(cfg, clip, plan),
             "stabilize": to_dict(cfg.stabilize), "stabilize_hash": section_hash(cfg, "stabilize"),
             "groups": to_dict(cfg.groups), "groups_hash": section_hash(cfg, "groups"),
             "seg": {k: seg_m.get(k) for k in SEG_REF_KEYS},
@@ -393,15 +573,102 @@ def restart_outputs(clip: Clip) -> None:
         shutil.rmtree(clip.stable_dir)
 
 
+class FrameCache:
+    """Cache satu run: input mentah, peta grup akhir, dan kedalaman ternormalisasi per posisi frame — dihitung sekali,
+    dibuang lewat `evict_before`. Peta grup frame k = langkah 2–5 atas jendela [k−R, k+R]; kedalaman akhir frame t
+    memakai peta grup akhir tiap frame di jendelanya (statistik foreground), jadi jangkauan input = `plan.needed`."""
+
+    def __init__(self, cfg: PipelineConfig, clip: Clip, plan: TemporalPlan, lut: np.ndarray, n_classes: int) -> None:
+        self.cfg, self.clip, self.plan, self.lut, self.n_classes = cfg, clip, plan, lut, n_classes
+        self.n_groups = len(cfg.groups)
+        self._raw: dict[int, tuple[np.ndarray, np.ndarray, np.ndarray]] = {}
+        self._groups: dict[int, tuple[np.ndarray, dict]] = {}
+        self._depth: dict[int, tuple[np.ndarray, dict]] = {}
+        self.timers = {"read": 0.0, "groups": 0.0, "depth": 0.0}
+
+    def raw(self, k: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """(jumlah grup uint16, grup classmap (seri), disparity) frame k."""
+        if k not in self._raw:
+            t0 = time.perf_counter()
+            probs, cm, d = _read_inputs(self.clip, self.clip.names[k], self.n_classes)
+            t1 = time.perf_counter()
+            self._raw[k] = (group_sums(probs, self.lut, self.n_groups), self.lut[cm], d)
+            self.timers["read"] += t1 - t0
+            self.timers["groups"] += time.perf_counter() - t1
+        return self._raw[k]
+
+    def groups(self, k: int) -> tuple[np.ndarray, dict]:
+        """(peta grup bersih, statistik) frame k."""
+        if k not in self._groups:
+            w = self.plan.weights(k, self.plan.radius)
+            sums, tie, _ = self.raw(k)
+            t0 = time.perf_counter()
+            if len(w) == 1:
+                p = sums                                  # jalur spasial: jumlah integer (eksak)
+            else:
+                acc = np.zeros(sums.shape, np.float32)
+                total = 0.0
+                for j, wt in w:                           # urutan tetap naik → deterministik
+                    acc += np.float32(wt) * self.raw(j)[0]
+                    total += wt
+                p = acc / np.float32(total)
+                if self.plan.boil > 0:
+                    p = np.float32(1.0 - self.plan.boil) * p + np.float32(self.plan.boil) * sums
+            st = self.cfg.stabilize
+            self._groups[k] = clean_groups(p, tie, st.island_min_px, st.mode_k)
+            self.timers["groups"] += time.perf_counter() - t0
+        return self._groups[k]
+
+    def depth_f32(self, k: int) -> tuple[np.ndarray, dict]:
+        if k not in self._depth:
+            gmap = self.groups(k)[0]
+            d = self.raw(k)[2]
+            t0 = time.perf_counter()
+            dc = self.cfg.stabilize.depth
+            self._depth[k] = normalize_depth_f32(d, gmap != BACKGROUND_ID, dc.log_eps, dc.iqr_min, dc.normalize)
+            self.timers["depth"] += time.perf_counter() - t0
+        return self._depth[k]
+
+    def final_depth(self, t: int) -> tuple[np.ndarray, dict]:
+        """(depth_smooth float16, statistik) frame t."""
+        w = self.plan.weights(t, self.plan.depth_radius)
+        nd, info = self.depth_f32(t)
+        t0 = time.perf_counter()
+        if len(w) > 1:
+            acc = np.zeros(nd.shape, np.float32)
+            total = 0.0
+            for j, wt in w:
+                acc += np.float32(wt) * self.depth_f32(j)[0]
+                total += wt
+            nd = acc / np.float32(total)
+        out = finish_depth(nd, info)
+        self.timers["depth"] += time.perf_counter() - t0
+        return out
+
+    def evict_before(self, k: int) -> None:
+        for cache in (self._raw, self._groups, self._depth):
+            for key in [x for x in cache if x < k]:
+                del cache[key]
+
+    def take_timers(self) -> dict[str, float]:
+        out, self.timers = self.timers, {"read": 0.0, "groups": 0.0, "depth": 0.0}
+        return out
+
+
+def inputs_available(clip: Clip, k: int, plan: TemporalPlan) -> bool:
+    """Input mentah frame k ada (file); dengan temporal juga baris di qc_report.json."""
+    name = clip.names[k]
+    return (clip.seg_clip.probs_path(name).is_file() and clip.seg_clip.classmap_path(name).is_file()
+            and clip.depth_clip.depth_path(name).is_file() and k not in plan.qc_missing)
+
+
 # ── Run ────────────────────────────────────────────
 def run_stabilize(cfg: PipelineConfig, *, restart: bool = False, limit: int | None = None,
                   log: Callable[[str], None] = print) -> dict:
-    """Jalankan stage [3] (spasial). Return ringkasan run."""
+    """Jalankan stage [3] (spasial + temporal T-302). Return ringkasan run."""
     if limit is not None and limit < 1:
         raise StageError(f"--limit harus ≥ 1, dapat {limit}")
     st = cfg.stabilize
-    if st.temporal.enabled:
-        raise StageError("stabilize.temporal.enabled = true belum diimplementasi (T-302/T-303) — set false")
     clip = load_clip(cfg.paths.work_dir)
     selected = clip.names[:limit] if limit else clip.names
     seg_m, dep_m = load_inputs(clip)
@@ -410,8 +677,13 @@ def run_stabilize(cfg: PipelineConfig, *, restart: bool = False, limit: int | No
     classes = load_class_names()
     lut = class_group_lut(cfg.groups, classes)
     n_groups = len(cfg.groups)
+    plan = build_plan(cfg, clip, log)
+    missing_qc = [clip.names[k] for k in plan.qc_missing if k < len(selected)]
+    if missing_qc:
+        raise StageError(f"qc_report.json tidak memuat {len(missing_qc)} dari {len(selected)} frame terpilih, mis. "
+                         f"{Path(missing_qc[0]).stem} — jalankan stage [2] segment: {cli_cmd('segment', clip.work_dir)}")
 
-    manifest = build_manifest(cfg, clip, seg_m, dep_m)
+    manifest = build_manifest(cfg, clip, seg_m, dep_m, plan)
     stale = []
     if restart:
         restart_outputs(clip)
@@ -427,16 +699,39 @@ def run_stabilize(cfg: PipelineConfig, *, restart: bool = False, limit: int | No
                          f"diketahui. Jalankan {cli_cmd('stabilize', clip.work_dir)} --restart.")
     clean_tmp(clip.stable_dir)
 
-    todo = [(i, n) for i, n in zip(clip.indices[:len(selected)], selected) if not clip.frame_valid(n, n_groups)]
-    n_skip = len(selected) - len(todo)
-    log(f"[3] stabilize (spasial, N={st.island_min_px}, K={st.mode_k}, {st.depth.normalize}): "
+    # Frame t ditulis hanya bila SELURUH jendela inputnya ada (dipotong hanya di tepi klip / cut): frame berjendela
+    # terpotong oleh --limit akan dianggap valid oleh resume padahal beda dari run penuh.
+    todo, deferred, n_skip = [], [], 0
+    for pos, (index, name) in enumerate(zip(clip.indices[:len(selected)], selected)):
+        if clip.frame_valid(name, n_groups):
+            n_skip += 1
+            continue
+        lo, hi = plan.needed(pos)
+        gap = [k for k in range(lo, hi + 1) if not inputs_available(clip, k, plan)]
+        if gap:
+            deferred.append((pos, gap[0]))
+        else:
+            todo.append((pos, index, name))
+    mode = (f"temporal α={st.temporal.mask_ema_alpha} R={plan.radius} b={st.temporal.boil_preserve}"
+            f"{' depth' if plan.depth_radius else ''}" if plan.radius else "spasial")
+    log(f"[3] stabilize ({mode}, N={st.island_min_px}, K={st.mode_k}, {st.depth.normalize}): "
         f"{len(selected)} frame dipilih, {n_skip} valid dilewati, {len(todo)} diproses")
+    if plan.cut_frames:
+        log(f"  cut terdeteksi di frame: {', '.join(Path(clip.names[k]).stem for k in plan.cut_frames)}")
+    if deferred:
+        first_gap = max(g for _, g in deferred)
+        log(f"PERINGATAN: {len(deferred)} frame ditunda (mulai {Path(selected[deferred[0][0]]).stem}): jendela temporal "
+            f"butuh input seg / depth / qc sampai frame {first_gap}. Lengkapi dulu: "
+            f"{cli_cmd('segment', clip.work_dir)} --limit {first_gap + 1} dan "
+            f"{cli_cmd('depth', clip.work_dir)} --limit {first_gap + 1}, lalu jalankan stabilize lagi")
 
-    run = {"selected": len(selected), "skipped": n_skip, "processed": 0, "stale": stale, "frames": []}
+    run = {"selected": len(selected), "skipped": n_skip, "processed": 0, "stale": stale, "frames": [],
+           "deferred": [clip.names[p] for p, _ in deferred]}
     if not todo:
         return run
     if len(todo) > 1:
-        log(f"  estimasi ≈ {len(todo) * SECONDS_PER_FRAME_ESTIMATE:.0f} s (CPU, ≈ {SECONDS_PER_FRAME_ESTIMATE} s/frame)")
+        spf = SECONDS_PER_FRAME_TEMPORAL if plan.radius else SECONDS_PER_FRAME_ESTIMATE
+        log(f"  estimasi ≈ {len(todo) * spf:.0f} s (CPU, ≈ {spf} s/frame)")
     ensure_dir(clip.groups_dir)
     ensure_dir(clip.depth_smooth_dir)
     if not clip.manifest_path.is_file():
@@ -445,21 +740,22 @@ def run_stabilize(cfg: PipelineConfig, *, restart: bool = False, limit: int | No
     t_run = time.perf_counter()
     append_jsonl(clip.frames_log, {"event": "run_start", "time_utc": utc_now(), "n_todo": len(todo),
                                    "stabilize_hash": manifest["stabilize_hash"], "groups_hash": manifest["groups_hash"]})
+    cache = FrameCache(cfg, clip, plan, lut, len(classes))
     try:
-        for k, (index, name) in enumerate(todo, 1):
+        for k, (pos, index, name) in enumerate(todo, 1):
             t0 = time.perf_counter()
-            probs, cm, d = _read_inputs(clip, name, len(classes))
-            t1 = time.perf_counter()
-            gmap, gstats = clean_groups(group_sums(probs, lut, n_groups), lut[cm], st.island_min_px, st.mode_k)
-            t2 = time.perf_counter()
-            ds, dstats = normalize_depth(d, gmap != BACKGROUND_ID, st.depth.log_eps, st.depth.iqr_min)
+            gmap, gstats = cache.groups(pos)
+            ds, dstats = cache.final_depth(pos)
             t3 = time.perf_counter()
             write_groups(clip.groups_path(name), gmap)
             write_depth_smooth(clip.depth_smooth_path(name), ds)
             t4 = time.perf_counter()
+            tm = cache.take_timers()
+            cache.evict_before(plan.needed(pos)[0])
             rec = {"event": "frame", "frame": name, "index": index, "time_utc": utc_now(),
-                   "read_s": round(t1 - t0, 4), "groups_s": round(t2 - t1, 4), "depth_s": round(t3 - t2, 4),
+                   "read_s": round(tm["read"], 4), "groups_s": round(tm["groups"], 4), "depth_s": round(tm["depth"], 4),
                    "write_s": round(t4 - t3, 4), "total_s": round(t4 - t0, 4), **gstats,
+                   "window": list(plan.window(pos, plan.radius)),
                    "depth_finite": depth_log.get(name, {}).get("finite"), "depth_smooth": dstats}
             append_jsonl(clip.frames_log, rec)
             run["frames"].append(rec)

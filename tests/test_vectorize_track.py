@@ -279,18 +279,21 @@ def test_successor_agrees_helper(tmp_path):
 
 
 # ── Data nyata (ditandai; dilewati bila contours T-202 klip tidak ada) ──
-# Hash kanonik contours T-201b (sebelum T-202): orientasi / anchor / arah tidak boleh mengubah himpunan titik.
+# Hash kanonik contours klip nyata: orientasi / anchor / arah tidak boleh mengubah himpunan titik (regresi kode vectorize).
+# DIPERBARUI di T-302 Tahap 4: `stable/` klip nyata sekarang temporal + `log_median` (default baru), jadi himpunan titik berubah
+# SAH. Hash lama (T-201b, `stable/` spasial + `log_median_iqr`) ada di git history (commit T-202); nilai di bawah = keluaran kode
+# vectorize yang sama (tidak diubah di T-302) atas `stable/` baru, jadi tetap mendeteksi perubahan tak sengaja di vectorize.
 BASELINE = {
     "test_short": {
-        "silhouette": "827ff9e6e29b3e8f7b6a7f9adaa8a1968689e2ff1af3f0b2416d6647c4cbc2bc",
-        "silhouette_hole": "0af00bfb56d17ad8649ec86234dc4058503680426a6ee89b9a38dc00eafe47bd",
-        "group_boundary": "6a4cbc1c48901e7584a38faa2a6cc522601453a89f725f0c5bbad1cd13e0467c",
-        "occlusion": "c8bd950cda3810d69dd4bad5f1c90c4174f9df121bc85cebc976586923fb2daf"},
+        "silhouette": "7354bf507a26f0d526e02e836b30f62f854e0aac221ace6dbba358a530528be5",
+        "silhouette_hole": "4450e05c4d64b45fff154add932dc705542c2ba361ed341457192a9368fb2ac8",
+        "group_boundary": "4a64c5226ecb869618232c9e06ac291d1880bcc42a2d0a38984e06368060f184",
+        "occlusion": "e512c7280e682151fbe5f7368d35d4fc33a2a3fa56a862633db912ccab4e615c"},
     "test": {
-        "silhouette": "c0f78ef3daaeb754aa7b1a425d3612858e05f1d2515b31f651cf19a6c1302a76",
-        "silhouette_hole": "9d7a2e324ca653b42f47c04223f4ba78011f55c18313b8bb48b09f6948f87aa5",
-        "group_boundary": "ba6660759110b6e396dd245a08a535b7df7d0813d45c457eb5d66ef09a18090d",
-        "occlusion": "799db05801051e513b8e08ab16246e67032d937d2f02f6ca328de27a268b3ce5"},
+        "silhouette": "a41a0411e352c3c090a9d98e6482b5b119da867d33696c49954c2427df99742a",
+        "silhouette_hole": "cdb6ed48ff1bd1249c7aaaed6c3d0b5860fab68c952b5c214d2a477ecaa26464",
+        "group_boundary": "1a91ddf3fdcf973057c404f4896e9570d2b11388230b6590ff40c9e7c490e105",
+        "occlusion": "c32a9ab8e5b4d717e7e7a3e5dabe25e018d0e3f5b8e680deab90aec8c66a6c9c"},
 }
 ANCHOR_MEDIAN_MAX, ANCHOR_P95_MAX, ANCHOR_MAX_MAX = 3.0, 12.0, 24.0       # kriteria lulus (docs/05 T-202, poin 11c)
 CLIPS = ["test_short", "test"]

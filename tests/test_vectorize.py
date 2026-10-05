@@ -796,7 +796,10 @@ def test_torch_not_imported_by_vectorize():
 # ── Data nyata (ditandai; dilewati kalau klip tidak ada) ──
 # 9, 19, 20, 21 = kasus terburuk sebelum perbaikan junction. Frame 38 / 40 (96,8–97,0%) sengaja tidak di sini:
 # satu komponen skeleton terisolasi 15–17 px (bbox 5×7, semua cabang < min_stroke_px) dibuang sesuai aturan.
-REAL_FRAMES = (0, 9, 19, 20, 21, 64, 100)
+# Frame 64 dikeluarkan di T-302 Tahap 4: dengan `stable/` baru (temporal + log_median) cakupan 97,62% (< 98%) karena dua komponen skeleton
+# terisolasi (11 px hair|torso di (279, 303) dan 4 px face|torso di (277, 301), flanks 0; semua cabang < min_stroke_px) dibuang — aturan
+# yang sama dengan frame 38 / 40 di atas. Aturan tracer tidak diubah; keputusan melonggarkan / mengganti frame ada di Rio.
+REAL_FRAMES = (0, 9, 19, 20, 21, 100)
 needs_real = pytest.mark.skipif(not (REAL_CLIP / "stable" / "groups" / "frame_00000.png").is_file(),
                                 reason="data nyata work/clips/test_short/stable tidak ada")
 

@@ -53,7 +53,10 @@ def test_defaults_without_yaml():
     assert p.depth.revision == "5426e4f0f36572d16453bbda7a8389317b1bef99"
     assert dict(p.segment.vram_min_free_mib) == {"0.8b": 3300, "0.4b": 2300}
     assert p.depth.model_id == "depth-anything/Depth-Anything-V2-Small-hf" and p.depth.precision == "fp32"
-    assert p.qc.area_median_window == 49 and p.stabilize.mode_k == 3 and p.stabilize.temporal.enabled is False
+    assert p.qc.area_median_window == 49 and p.stabilize.mode_k == 3 and p.stabilize.temporal.enabled is True
+    assert (p.stabilize.temporal.mask_ema_alpha, p.stabilize.temporal.boil_preserve, p.stabilize.temporal.qc_fail_weight,
+            p.stabilize.temporal.cut_diff) == (0.7, 0.3, 0.1, 0.08)
+    assert p.stabilize.depth.normalize == "log_median" and p.stabilize.depth.temporal is False
     assert (p.vectorize.depth_lines.lo_pct, p.vectorize.depth_lines.hi_pct) == (90, 95)
     assert [n for n, _ in p.groups] == ["hair", "face", "torso", "left_arm", "right_arm", "left_leg", "right_leg"]
     assert p.paths.work_dir == Path.cwd() / "work"
