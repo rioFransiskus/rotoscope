@@ -249,6 +249,20 @@ def load_frame_list(work_dir: Path) -> tuple[tuple[str, ...], tuple[int, ...], i
     return names, indices, int(meta["working_width"]), int(meta["working_height"])
 
 
+def window_bounds(n_frames: int, start: int | None, limit: int | None) -> tuple[int, int]:
+    """Posisi [lo, hi) frame terpilih. Tanpa `start`: `limit` frame pertama (semua bila None). `--from K` (T-204)
+    WAJIB bersama `--limit N` dan jendela K..K+N-1 harus muat di klip."""
+    if start is None:
+        return 0, (min(limit, n_frames) if limit else n_frames)
+    if limit is None:
+        raise StageError("--from K wajib bersama --limit N (jendela K..K+N-1)")
+    if start < 0:
+        raise StageError(f"--from harus ≥ 0, dapat {start}")
+    if start + limit > n_frames:
+        raise StageError(f"jendela --from {start} --limit {limit} melewati klip ({n_frames} frame): K + N harus ≤ {n_frames}")
+    return start, start + limit
+
+
 def require_frames(work_dir: Path, names: tuple[str, ...] | list[str]) -> None:
     missing = [n for n in names if not (work_dir / FRAMES_DIRNAME / n).is_file()]
     if missing:

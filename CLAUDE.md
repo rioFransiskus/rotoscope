@@ -26,6 +26,9 @@ Segmentation → Contour → Stylized stroke. MediaPipe Pose hanya fallback untu
 | 6 | export.py | strokes → out/<nama>.mp4 + out/svg/<nama>/*.svg. T-203b DONE: default `export.source: strokes` (MP4 dari strokes/*.png ukuran output, tag warna bt709 lengkap, crf 18; `silhouette` = Phase 1 tetap ada); SVG disalin dengan penanda `.rotoscope-clip.json` + sha256 per berkas — SVG yang disunting pengguna / penanda rusak / folder milik video lain tidak ditimpa tanpa `--restart` (milik video lain tidak pernah); versi ffmpeg di manifest (tidak ikut hash) |
 
 Path `work/…` di tabel = relatif terhadap folder kerja klip `work/clips/<nama video>/` (T-104b).
+Preview cepat (T-204, tanpa GPU): `python -m rotoscope run <video> --preview N [--from K]` → `out/<nama>.preview_K-<K+N-1>.mp4`
+(jendela frame K..K+N-1; seg/ dan depth/ harus sudah valid untuk jendela, kalau tidak exit 1 + perintah; tidak bersama `--limit` /
+`--restart-from`; MP4 utama dan out/svg tidak disentuh; hangat ±4–6 s, rantai vectorize dingin ±30 s, `stable/` basi ±50 s).
 Cara pakai: `python -m rotoscope run <video> [--config P] [--style P] [--limit N] [--restart-from STAGE [--yes]]` (urutan: ingest →
 segment → depth → stabilize → vectorize → stylize → export); per stage: `python -m rotoscope <stage> <video>` (stage = ingest, segment,
 depth, stabilize, vectorize, stylize, export); unduh model: `python -m rotoscope download` (bagian "CLI" di docs/01). Hasil GPU

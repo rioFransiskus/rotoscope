@@ -39,8 +39,8 @@ from rotoscope import vectorize as vz
 from rotoscope.config import ConfigError, StyleConfig, ensure_dir, load_pipeline, load_style
 from rotoscope.stage_common import (
     CLIP_KEY, EXIT_OK, EXIT_PRECONDITION, StageError, add_work_dir_arg, append_jsonl, clean_tmp, cli_cmd,
-    clip_identity, describe_identity, reconfigure_stdio, utc_now, work_dir_overrides, write_bytes_atomic,
-    write_json_atomic,
+    clip_identity, describe_identity, reconfigure_stdio, utc_now, window_bounds, work_dir_overrides,
+    write_bytes_atomic, write_json_atomic,
 )
 
 # ── Layout output (docs/01 [5]) ────────────────────
@@ -745,13 +745,15 @@ def frame_valid(clip: Clip, name: str, size: tuple[int, int]) -> bool:
 
 # ── Run ────────────────────────────────────────────
 def run_stylize(cfg, style: StyleConfig, style_name: str = "default", *, restart: bool = False,
-                limit: int | None = None, log: Callable[[str], None] = print) -> dict:
-    """Jalankan stage [5] (T-203a). Return ringkasan run."""
+                limit: int | None = None, start: int | None = None,
+                log: Callable[[str], None] = print) -> dict:
+    """Jalankan stage [5] (T-203a). `start` (--from, T-204) = jendela [start, start+limit): wajib bersama `limit`."""
     if limit is not None and limit < 1:
         raise StageError(f"--limit harus ≥ 1, dapat {limit}")
     clip = load_clip(cfg.paths.work_dir)
-    selected = clip.names[:limit] if limit else clip.names
-    indices = clip.indices[:len(selected)]
+    lo, hi = window_bounds(len(clip.names), start, limit)
+    selected = clip.names[lo:hi]
+    indices = clip.indices[lo:hi]
     cm = load_contours_manifest(clip)
     require_contours(clip, selected, indices, cm["vectorize_hash"])
     g = make_geometry(style, clip.width, clip.height)
@@ -773,8 +775,15 @@ def run_stylize(cfg, style: StyleConfig, style_name: str = "default", *, restart
             old = {}
         stale = manifest_diff(old if isinstance(old, dict) else {}, manifest)
         if stale:
-            log("PERINGATAN: output [5] basi (setelan / input berubah) — strokes/ dihapus dan dihitung ulang:\n  "
-                + "\n  ".join(stale))
+            if start is None:
+                log("PERINGATAN: output [5] basi (setelan / input berubah) — strokes/ dihapus dan dihitung ulang:\n  "
+                    + "\n  ".join(stale))
+            else:
+                n_old = sum(1 for _ in clip.strokes_dir.glob("frame_*" + PNG_SUFFIX))
+                log(f"PERINGATAN: output [5] basi (setelan / input berubah):\n  " + "\n  ".join(stale) +
+                    f"\n  strokes/ DIHAPUS seluruhnya ({n_old} frame), hanya jendela {lo}-{hi - 1} yang dihitung; "
+                    f"MP4 utama dan out/svg/ tetap versi lama sampai `run <video>` penuh berikutnya "
+                    f"(export penuh sebelum itu gagal: jalankan {cli_cmd('stylize', clip.work_dir)})")
             restart_outputs(clip)
     elif _has_outputs(clip):
         raise StageError(f"{clip.strokes_dir} berisi output tanpa {MANIFEST_FILENAME} — asal output tidak diketahui. "
@@ -828,7 +837,9 @@ def main(argv: list[str] | None = None) -> int:
                    help=f"YAML style (default: {DEFAULT_STYLE.as_posix()} kalau ada, selain itu default kode)")
     add_work_dir_arg(p)
     p.add_argument("--restart", action="store_true", help="hapus output [5] lama (strokes/) lalu hitung ulang")
-    p.add_argument("--limit", type=int, default=None, help="hanya N frame pertama")
+    p.add_argument("--limit", type=int, default=None, help="hanya N frame pertama (dengan --from: N frame sejak K)")
+    p.add_argument("--from", dest="start", type=int, default=None,
+                   help="jendela mulai frame K: frame K..K+N-1; WAJIB bersama --limit N")
     args = p.parse_args(argv)
     reconfigure_stdio()
 
@@ -842,7 +853,7 @@ def main(argv: list[str] | None = None) -> int:
         style = load_style(spath)
         t0 = time.perf_counter()
         run = run_stylize(cfg, style, spath.stem if spath else "default", restart=args.restart, limit=args.limit,
-                          log=log)
+                          start=args.start, log=log)
         log(f"selesai: {run['processed']} diproses, {run['skipped']} dilewati ({time.perf_counter() - t0:.1f} s)")
     except (StageError, ConfigError) as e:
         print(f"ERROR: {e}", file=sys.stderr)

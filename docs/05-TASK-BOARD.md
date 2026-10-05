@@ -1195,14 +1195,66 @@ Tiga langkah, jadikan refleks:
   - [2026-10-05] **Backlog (belum dikerjakan):** `segment` / `depth` memakai ±21–28 s per `run` walau semua frame dilewati (impor
     torch + pengecekan di subprocess) — pertimbangkan pengecekan resume tanpa impor torch di induk subprocess.
 
-### T-204 · Flag `--preview N` · `TODO`
+### T-204 · Flag `--preview N` · `DONE`
 - **Kerjakan:** render hanya N frame untuk iterasi cepat. Threshold per klip dibaca dari
   `contours/clip_stats.json`, bukan dihitung dari N frame preview
-- **Done when:** preview 10 frame selesai < 30 detik
+- **Done when:** preview 10 frame selesai < 30 detik — terpenuhi untuk skenario HANGAT (`stable/` valid dan contours valid);
+  kasus dingin dan `stable/` basi dicatat apa adanya di log di bawah (bukan "lulus semua")
 - **Kenapa sekarang:** tanpa ini Phase 3–4 akan menyiksa
-- **🎯 Milestone Phase 2:** outline keluar
+- **🎯 Milestone Phase 2 tercapai (2026-10-05):** outline keluar — `run <video>` menghasilkan MP4 + SVG garis polos dan `run --preview N`
+  mengiterasinya dalam detik
 - **Update log:**
   - [2026-09-29] Threshold dari `clip_stats.json` — D-010
+  - [2026-10-05] **DONE.** Konfirmasi Rio: `out/test.preview_73-82.mp4` sama dengan bagian yang sama di `out/test.mp4` (0:03,04-0:03,42),
+    warna kertas dan garis sama; (d) 28,6 s dan (d2) 31,3 s diterima dengan peringatan estimasi. Dokumen: docs/01 (CLI, kontrak
+    stage, [6]), docs/04 "Hasil T-204", CLAUDE.md. Papan: Phase 2 = 6/6, total 22/38. Suite penuh 864 lolos / 2 skip. `T204-prompt.md`
+    dihapus terakhir.
+  - [2026-10-05] **Tahap 1–3 selesai (laporan sebelum konfirmasi Rio).** Keputusan di docs/04
+    "Keputusan T-204". Kode: `cli.py` (`--preview N [--from K]`, `check_gpu_inputs`, `cmd_preview`, `vectorize_chain_todo`),
+    `stylize.py` / `export.py` (`--from K --limit N`, `<nama>.preview_K-<K+N-1>.mp4`), `stage_common.window_bounds`, `stabilize.py`
+    (pesan + estimasi; penyimpangan dicatat di docs/04). Test: `tests/test_preview.py` (27), `tests/preview_metrics.py`; suite penuh 864 lolos,
+    2 skip.
+  - **Waktu end-to-end** (`run <video> --preview N --from K`, klip test 283 frame, salinan scratchpad, 3 run; rata-rata, min–maks):
+
+    | Skenario | Rata-rata | Min–maks | Bagian (s) |
+    |---|---|---|---|
+    | (a) K=73, N=10, semua valid | 4,17 | 4,08–4,25 | ingest 0,9 · stabilize 0,8 · vectorize 0,4 · stylize 0,0 · export 0,4 |
+    | (b) K=73, N=10, strokes jendela hilang | 5,82 | 5,70–6,01 | stylize 1,8 |
+    | (b) K=73, N=20 | 8,69 | 8,50–8,89 | stylize 3,5 |
+    | (c) K=73, N=10, style basi | 6,35 | 5,98–6,66 | stylize 2,2 |
+    | (d) K=225, N=10, contours + strokes dingin | 28,62 | 28,52–28,75 | vectorize 22,9 (18,4 pada Tahap 1; variasi mesin besar) |
+    | (d2) seperti (d) + `clip_stats.json` + manifest dihapus (skenario tambahan) | 31,25 | 30,94–31,57 | vectorize 25,4 |
+    | (e) K=0, N=10 | 3,72 | 3,71–3,74 | |
+    | (f) `stable/` basi (PENGECUALIAN, stabilize penuh) | 51,77 | 51,69–51,90 | stabilize 35,7 · vectorize 11,1 · stylize 2,0 |
+
+    Hangat < 30 s terpenuhi: (a), (b), (c), (e). Dingin K=225: 28,6 s (batas 30 s lolos tipis); 31,3 s bila `clip_stats.json` + manifest
+    hilang; (f) 51,8 s di luar anggaran. Peringatan "rantai vectorize M frame belum valid, estimasi ±S s" dicetak sebelum [4] bila M > 0.
+  - **Kesetaraan** (jendela 73-82, 225-234, 0-9; 30 berkas/jendela = contours JSON + strokes SVG + PNG): sha256 identik dengan run penuh
+    di kedua arah; pohon contours/ dan strokes/ penuh sama dengan keadaan awal; MP4 preview: PSNR vs PNG sumber min 41,34 dB, tinta MAE
+    maks 3,76 (ambang 40,4 / 4,2), PSNR vs MP4 utama min 44,11 dB; ffprobe h264 yuv420p 1080x1922 bt709/tv; `out/test.mp4`,
+    `.export.json`, `out/svg/` (404) dan klip asli tidak berubah (hash). Tanpa subprocess GPU, `torch` tidak di `sys.modules`.
+    Mutation check 5/5 membuat test gagal (seg/depth off 5, offset K 3, MP4 utama 3, subprocess GPU 3, K+N 1). Bukti: `work/t204/`.
+  - **Tabel perilaku preview per stage** (poin 5):
+
+    | Stage | Perilaku di `run --preview N --from K` |
+    |---|---|
+    | [1] ingest | selalu ulang (±0,8 s); `meta.json` byte-identik |
+    | [2]/[2c] | TIDAK dijalankan; dicek CPU-only: manifest ada, identitas klip cocok, kunci model seg = config / `--seg-model`, frame jendela valid → bila tidak, exit 1 + perintah (`run <video>` penuh, atau `segment|depth <video> --limit K+N`) |
+    | [3] stabilize | TANPA `--limit` (resume penuh; vectorize memvalidasi `stable/` semua frame). Valid ≈ 0,2–0,8 s; belum/basi → dihitung penuh (±0,11 s/frame, ±31 s untuk test) dengan baris estimasi. Tanpa seg/depth lengkap di luar jendela → stabilize berhenti (exit 1, stage + perintah) |
+    | [4] vectorize | `--limit K+N`: rantai 0..K+N-1 (hasil = prefiks run penuh). `clip_stats.json` valid → pass 1 dilewati; basi/hilang → dihitung. Peringatan estimasi bila ada frame belum valid |
+    | [5] stylize | `--from K --limit N` (+ `--style`). Frame valid dilewati. Basi → `strokes/` DIHAPUS seluruhnya, hanya jendela dihitung, satu peringatan (MP4 utama / out/svg tetap versi lama sampai `run` penuh) |
+    | [6] export | `--from K --limit N` → `out/<nama>.preview_K-K+N-1.mp4`; tanpa manifest, tanpa salinan SVG, tanpa pengaman milik-sumber-lain, tanpa audio; tidak menyentuh MP4 utama / out/svg. Export penuh pada `strokes/` separuh → gagal keras (exit 1, perintah `stylize`) |
+
+  - **Poin 6–10 (lengkap):** (6) Export preview: nama dari `export.filename` + `.preview_K-<K+N-1>`; verifikasi ffprobe (jumlah frame = N, ukuran
+    output, fps, codec, pix_fmt, tag warna jalur strokes); tanpa audio. (7) Pre-flight preview: video ada, bentrok folder kerja (klip lain →
+    exit 1), style valid, ffmpeg/ffprobe, K+N ≤ `frame_count`, seg/depth (poin 4) — semuanya sebelum stage mana pun; pre-flight (c) target
+    export utama dan (e) SVG dilewati seperti `--limit`. (8) Urutan: ingest → cek seg/depth → stabilize → vectorize → stylize → export(window);
+    cek seg/depth dijalankan sebelum ingest bila `meta.json` ada dan diulang sesudahnya; proses induk tidak meng-import torch. (9) Exit code
+    0 / 1 / 2 / 130 (tanpa 3). `--preview` bersama `--limit` / `--restart-from` / `--adopt` / `--qc-only`, `--from` tanpa `--preview`,
+    K+N > `frame_count` → exit 1; salah tipe argumen → exit 2. (10) Pesan akhir: jendela, jalur MP4, waktu per stage.
+  - **Catatan T-302 (untuk Tahap 4):** preview mempercepat iterasi hilir (vectorize / stylize / export), BUKAN iterasi stabilize; dengan
+    temporal dua arah (T-302 / T-303) stabilize penuh jauh lebih lama, jadi evaluasi stabilize memakai subperintah `stabilize` dan
+    metriknya sendiri. Backlog (bukan T-204): pengecekan resume segment / depth tanpa torch untuk `run` biasa.
 
 ---
 
@@ -1224,6 +1276,10 @@ Tiga langkah, jadikan refleks:
 - **Done when:** flicker acak berkurang terukur (`iou_prev` + `label_agreement_prev` peta grup rata-rata)
 - **Update log:**
   - [2026-09-29] Objek diganti: probabilitas grup + kedalaman ternormalisasi (bukan mask biner) — D-010
+  - [2026-10-05] Dari T-204: `run --preview` mempercepat iterasi hilir (vectorize / stylize / export), BUKAN iterasi stabilize itu
+    sendiri — preview menjalankan `stabilize` penuh karena vectorize memvalidasi `stable/` semua frame. Dengan temporal dua arah
+    (T-302 / T-303) stabilize penuh jauh lebih lama (kini ±110 ms/frame, ±31 s untuk test) dan preview butuh `stable/` penuh, jadi
+    evaluasi stabilize memakai subperintah `stabilize` dan metriknya sendiri (`iou_prev`, `label_agreement_prev`), bukan preview.
   - [2026-10-03] Dari T-201b: `normalize: log_median_iqr` melemahkan tepi kaki menyilang di frame 73–83 (pembagi IQR per frame
     `log_iqr` ±0,33 vs median klip 0,19; gradien ±0,5–0,6 × frame lain terhadap ambang per klip). Pipeline oklusi pada depth mentah
     linear memberi Done-when 5/5 dan frame tanpa oklusi 144 (vs 160) di `test`; efek log dan efek IQR belum dipisah. Uji metode
@@ -1355,13 +1411,14 @@ Tiga langkah, jadikan refleks:
 |---|---|---|
 | 0 Setup | T-001 … T-005 | 5/5 |
 | 1 Skeleton | T-101 … T-108 (T-102 → a/b/c, T-104 → a/b) — ✅ **Phase 1 selesai** (🎯 milestone T-104b, T-107 DONE) | 11/11 |
-| 2 Vectorize | T-201 … T-204 (T-201 → a/b, T-203 → a/b) — T-201a ✅, T-201b ✅ DONE (dengan batas kaki), T-202 ✅ DONE, T-203a ✅ DONE, T-203b ✅ DONE (T-204 `--preview N` TODO; milestone Phase 2 ada di T-204) | 5/6 |
+| 2 Vectorize | T-201 … T-204 (T-201 → a/b, T-203 → a/b) — T-201a ✅, T-201b ✅ DONE (dengan batas kaki), T-202 ✅ DONE, T-203a ✅ DONE, T-203b ✅ DONE, T-204 ✅ DONE — 🎯 **Milestone Phase 2 tercapai** | 6/6 |
 | 3 Stabilize | T-301 … T-305 (T-301 SKIP) | 0/5 |
 | 4 Style | T-401 … T-406 | 0/6 |
 | 5 Fallback | T-501 … T-502 (BLOCKED) | 0/2 |
 | 6 Opsional | T-601 … T-603 | 0/3 |
 
-**Total: 38 task** (5 + 11 + 6 + 5 + 6 + 2 + 3) · Selesai: 21/38 (5 + 11 + 5; SKIP — T-301, T-601 — tidak dihitung selesai).
+**Total: 38 task** (5 + 11 + 6 + 5 + 6 + 2 + 3) · Selesai: 22/38 (5 + 11 + 6; SKIP — T-301, T-601 — tidak dihitung selesai).
+Rekonsiliasi 2026-10-05: T-204 DONE → Phase 2 = 6/6, total 22/38.
 Rekonsiliasi 2026-10-05: T-203b DONE → Phase 2 = 5/6, total 21/38.
 Rekonsiliasi 2026-10-03: T-203 dipecah jadi T-203a + T-203b (Phase 2 = 6 task); jumlah per Phase = total.
 Rekonsiliasi 2026-10-01: sebelum T-104b selesai papan menulis 9/11 + 13/37, padahal 5 + 9 = 14 — total salah hitung 1.

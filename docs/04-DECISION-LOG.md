@@ -758,6 +758,64 @@ orientasi + `track_id`".
 - **Catatan proses:** insiden skenario (g) (run GPU tak sengaja di salinan scratch lewat `run --restart-from ingest --yes`; tidak ada
   efek ke repo / out/) dan pelajarannya dicatat di docs/05 log T-203b → penanda SVG diperkuat (BOM, penanda rusak ≠ tanpa penanda).
 
+#### Keputusan T-204, 2026-10-05: `run --preview N [--from K]`
+
+1. `--preview N` = JENDELA: `run <video> --preview N [--from K]` (K default 0), frame K..K+N-1. Alasan: evaluasi Rio memakai jendela
+   73-92 / 183-202 / 225-240. Vectorize berantai (track): frame 0..K-1 dihitung dulu bila belum valid (CPU, ±75 ms/frame, sekali lalu tersimpan).
+2. `--limit` tetap (stage-level, N frame pertama). `--preview` hanya di `run`; hasil terpisah `out/<nama>.preview_<K>-<K+N-1>.mp4`,
+   tanpa manifest, tanpa salinan SVG, tanpa menyentuh MP4 utama / out/svg. Frame contours/ dan strokes/ jendela TETAP ditulis (resume).
+3. Preview TIDAK PERNAH menjalankan segment / depth (tanpa subprocess GPU). Syarat: seg/ dan depth/ valid untuk jendela, dicek CPU-only
+   tanpa torch (identitas klip, kunci model seg vs config / `--seg-model`, frame jendela); kalau belum → exit 1 dengan perintah yang benar.
+   Alasan terukur: `run` melewati stage GPU memakan 21-28 s. Pengecekan resume tanpa torch untuk SEMUA `run` = backlog, BUKAN T-204.
+4. Anggaran: "preview 10 frame < 30 s" diukur pada klip test di skenario (a)-(e) (target < 10 s, batas keras 30 s) bila `stable/` valid;
+   skenario (f) `stable/` basi = PENGECUALIAN (stabilize penuh ±110 ms/frame).
+5. **Penyimpangan dari draf awal ("stabilize hanya jendela"):** `vectorize` memvalidasi `stable/` SEMUA frame (pass 1 clip_stats,
+   `require_groups`, `require_depth`), jadi `stabilize --limit K+N` akan ditolak. Preview menjalankan `stabilize` TANPA `--limit` (resume
+   penuh; valid ≈ 0,2-0,6 s) dengan peringatan estimasi waktu bila ada yang perlu dihitung.
+6. Kontrak stage (hibrida A): stabilize tanpa limit; vectorize `--limit K+N`; stylize dan export `--from K --limit N` (`--from` WAJIB
+   bersama `--limit`, exit 1 bila tidak). `--from` tanpa `--preview` di `run` → exit 1.
+7. Style basi saat preview: `strokes/` dihapus seluruhnya, hanya jendela dihitung; satu peringatan dicetak (MP4 utama dan out/svg tetap
+   versi lama sampai `run` penuh berikutnya). `export` penuh pada strokes separuh → gagal keras (exit 1, perintah `stylize`).
+- **Alternatif ditolak:** `--from` di semua stage (vectorize berantai); stabilize hanya jendela (butuh ubah kontrak vectorize);
+  memindahkan fungsi validasi ke stage_common (segment / depth tidak meng-import torch di level modul).
+- **Penyimpangan dari rencana Tahap 1 yang disetujui (diungkapkan Tahap 3):** rencana menyebut `stabilize.py` dan `stage_common.py`
+  tidak berubah; keduanya berubah. (1) `stage_common.py`: fungsi baru `window_bounds` (validasi `--from K --limit N`, dipakai stylize dan
+  export). (2) `stabilize.py`: teks pesan `require_inputs` kini menyebut perintah stage ("…sampai selesai: python -m rotoscope segment|depth
+  <video>") dan satu baris log estimasi ("estimasi ≈ S s", `SECONDS_PER_FRAME_ESTIMATE` = 0,11, hanya pesan) bila > 1 frame dihitung — berlaku
+  untuk SEMUA pemakaian stabilize, bukan hanya preview. Perilaku tidak berubah: tidak ada test yang menyatakan teks lama (pencarian
+  "sampai selesai" di tests/ kosong); suite penuh lolos (864); `stabilize --restart` pada salinan test_short menghasilkan `stable/`
+  (238 berkas groups + depth_smooth) dengan sha256 IDENTIK dengan sebelum perubahan.
+- **Peringatan rantai vectorize (keputusan Rio setelah Tahap 3):** sebelum [4] di preview, bila ada frame prefiks 0..K+N-1 yang belum valid,
+  `cli.py` mencetak satu baris "rantai vectorize M frame belum valid, estimasi ±S s" (S = M × `VECTORIZE_S_PER_FRAME` 0,1 s; dasar: [4]
+  18,4 s / 235 frame = 0,078 s di Tahap 1 dan 22,9 s / 235 = 0,097 s di Tahap 3 — variasi mesin besar). M dihitung dengan fungsi validasi
+  [4] yang sama (`load_stable`, `load_clip_stats`, `manifest_diff`, `scan_chain`); `clip_stats.json` tidak valid atau manifest basi → seluruh
+  prefiks. Batas: biaya tetap ±1 s (baca + validasi) tidak ikut estimasi, jadi untuk M kecil estimasi terlalu rendah (contoh terukur:
+  M = 15 → estimasi 1,5 s, nyata [4] 3,2 s). Tanpa parameter YAML baru.
+- **Catatan proses:** saat men-debug `tests/test_preview.py` saya memakai `sed -i` di shell (menyisipkan `print`) — melanggar aturan
+  CLAUDE.md "edit berkas teks hanya lewat Edit/Write". Langsung dibatalkan lewat Edit; tidak ada efek lain.
+
+#### Hasil T-204 (2026-10-05): `run --preview N [--from K]` — DONE, 🎯 Milestone Phase 2
+
+- **Keputusan:** lihat blok "Keputusan T-204" di atas (jendela K..K+N-1; tanpa GPU; hibrida A; stabilize penuh bila `stable/` belum
+  valid; `--from` wajib bersama `--limit`; peringatan style basi dan rantai vectorize). Konfirmasi Rio: preview 73-82 sama dengan potongan
+  yang sama di MP4 utama (kertas dan garis); (d) 28,6 s dan (d2) 31,3 s diterima dengan peringatan estimasi.
+- **Alternatif ditolak:** `--from` di semua stage; stabilize hanya jendela (vectorize memvalidasi `stable/` semua frame); memindahkan
+  fungsi validasi segment / depth ke stage_common (tidak perlu — tidak meng-import torch di level modul); `--preview` sebagai flag
+  stage-level (hasil terpisah dari `--limit` agar tidak tertukar).
+- **Terukur** (klip test, 283 frame, `run … --preview N --from K` end-to-end, 3 run): hangat (a) K=73 N=10 4,17 s; (b) strokes jendela
+  hilang 5,82 s (N=20 8,69 s); (c) style basi 6,35 s; (e) K=0 3,72 s. Dingin K=225: 28,62 s (vectorize 18,4–22,9 s); 31,25 s bila
+  `clip_stats.json` + manifest hilang (skenario tambahan); (f) `stable/` basi 51,77 s (stabilize 35,7 s) = pengecualian. Kesetaraan:
+  sha256 contours / strokes jendela (73-82, 225-234, 0-9) identik dengan run penuh di kedua arah; MP4 preview PSNR vs PNG ≥ 41,34 dB,
+  tinta MAE ≤ 3,76; PSNR vs MP4 utama ≥ 44,11 dB; MP4 utama, `.export.json`, `out/svg/` dan klip asli tidak berubah; tanpa subprocess
+  GPU / torch. Mutation check 5/5. Suite 864 lolos / 2 skip.
+- **Batas yang diketahui:** kasus dingin dekat batas 30 s (variasi mesin besar: vectorize 0,078–0,097 s/frame); estimasi rantai tidak
+  memuat biaya tetap ±1 s; `stable/` basi → stabilize penuh (preview tidak mempercepat iterasi stabilize; dengan temporal T-302 /
+  T-303 lebih lama lagi); style basi + preview meninggalkan `strokes/` separuh (export penuh gagal keras sampai `stylize` / `run`
+  penuh); jendela vectorize tetap butuh prefiks 0..K+N-1 (tidak bisa loncat).
+- **Backlog (bukan T-204):** pengecekan resume segment / depth tanpa torch untuk `run` biasa (±21–28 s per `run` walau semua frame
+  dilewati).
+- **Penyimpangan dan catatan proses:** lihat butir "Penyimpangan dari rencana Tahap 1" dan "Catatan proses" (`sed -i`) di atas.
+
 ---
 
 ## Pitfall yang sudah diketahui

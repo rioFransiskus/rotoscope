@@ -63,6 +63,7 @@ GROUPS_SUFFIX = ".png"
 DEPTH_SUFFIX = ".npy"
 DEPTH_DTYPE = np.float16
 BACKGROUND_ID = 0
+SECONDS_PER_FRAME_ESTIMATE = 0.11       # hanya untuk pesan estimasi (terukur T-204, CPU, 480x854); bukan parameter
 PROBS_SCALE = seg.PROBS_SCALE          # probabilitas grup = jumlah uint8 per grup / 255
 RING_KERNEL = np.ones((3, 3), np.uint8)  # cincin 1 px (8-arah) di filter pulau
 OUTPUT_INFO = {
@@ -322,14 +323,15 @@ def load_inputs(clip: Clip) -> tuple[dict, dict]:
 
 def require_inputs(clip: Clip, names: Sequence[str]) -> None:
     """File input tiap frame terpilih ada (validasi isi dilakukan saat dibaca)."""
-    checks = (("seg/probs", clip.seg_clip.probs_path, "[2] segment"),
-              ("seg/classmap", clip.seg_clip.classmap_path, "[2] segment"),
-              ("depth", clip.depth_clip.depth_path, "[2c] depth"))
-    for label, path_of, stage in checks:
+    checks = (("seg/probs", clip.seg_clip.probs_path, "[2] segment", "segment"),
+              ("seg/classmap", clip.seg_clip.classmap_path, "[2] segment", "segment"),
+              ("depth", clip.depth_clip.depth_path, "[2c] depth", "depth"))
+    for label, path_of, stage, key in checks:
         missing = [n for n in names if not path_of(n).is_file()]
         if missing:
             raise StageError(f"input {label} belum lengkap: {len(missing)} dari {len(names)} frame hilang, mis. "
-                             f"{Path(missing[0]).stem} — jalankan stage {stage} sampai selesai")
+                             f"{Path(missing[0]).stem} — jalankan stage {stage} sampai selesai: "
+                             f"{cli_cmd(key, clip.work_dir)}")
 
 
 def _read_inputs(clip: Clip, name: str, n_classes: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -433,6 +435,8 @@ def run_stabilize(cfg: PipelineConfig, *, restart: bool = False, limit: int | No
     run = {"selected": len(selected), "skipped": n_skip, "processed": 0, "stale": stale, "frames": []}
     if not todo:
         return run
+    if len(todo) > 1:
+        log(f"  estimasi ≈ {len(todo) * SECONDS_PER_FRAME_ESTIMATE:.0f} s (CPU, ≈ {SECONDS_PER_FRAME_ESTIMATE} s/frame)")
     ensure_dir(clip.groups_dir)
     ensure_dir(clip.depth_smooth_dir)
     if not clip.manifest_path.is_file():

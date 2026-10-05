@@ -61,8 +61,8 @@ from rotoscope.config import (
 from rotoscope.ingest import META_FILENAME
 from rotoscope.stage_common import (
     CLIP_KEY, EXIT_OK, EXIT_PRECONDITION, StageError, _replace_with_retry, add_work_dir_arg, cli_cmd,
-    clip_identity_from_bytes, describe_identity, read_rgb, reconfigure_stdio, utc_now, work_dir_overrides,
-    write_bytes_atomic, write_json_atomic,
+    clip_identity_from_bytes, describe_identity, read_rgb, reconfigure_stdio, utc_now, window_bounds,
+    work_dir_overrides, write_bytes_atomic, write_json_atomic,
 )
 
 # ── Layout output (docs/01 [6]) ────────────────────
@@ -116,9 +116,12 @@ def sanitize_source_name(source_path: str) -> str:
     return stem or SOURCE_FALLBACK_NAME
 
 
-def resolve_filename(template: str, source_path: str, limit: int | None = None) -> str:
+def resolve_filename(template: str, source_path: str, limit: int | None = None, start: int | None = None) -> str:
+    """`limit` → <nama>.limitN.mp4; `start` + `limit` (jendela, T-204) → <nama>.preview_<K>-<K+N-1>.mp4."""
     name = template.replace(SOURCE_PLACEHOLDER, sanitize_source_name(source_path))
-    if limit is not None:
+    if limit is not None and start is not None:
+        name = name[: -len(MP4_SUFFIX)] + f".preview_{start}-{start + limit - 1}" + MP4_SUFFIX
+    elif limit is not None:
         name = name[: -len(MP4_SUFFIX)] + f".limit{limit}" + MP4_SUFFIX
     return name
 
@@ -590,9 +593,10 @@ def apply_svg_sync(strokes_dir: Path, svg_dir: Path, identity: dict, plan: dict)
 
 
 # ── Run ────────────────────────────────────────────
-def run_export(cfg: PipelineConfig, *, restart: bool = False, limit: int | None = None,
+def run_export(cfg: PipelineConfig, *, restart: bool = False, limit: int | None = None, start: int | None = None,
                log: Callable[[str], None] = print) -> dict:
-    """Jalankan stage [6] (naif). Return ringkasan run."""
+    """Jalankan stage [6] (naif). Return ringkasan run. `start` (--from, T-204) = jendela [start, start+limit),
+    wajib bersama `limit`; seperti --limit: tanpa manifest, pengaman, atau salinan SVG."""
     if limit is not None and limit < 1:
         raise StageError(f"--limit harus ≥ 1, dapat {limit}")
     ex = cfg.export
@@ -604,7 +608,8 @@ def run_export(cfg: PipelineConfig, *, restart: bool = False, limit: int | None 
     fps = float(meta["target_fps"])
     identity = clip_identity_from_bytes(meta_bytes)
     source_path = identity["source_path"]
-    names = list(clip.names[:limit] if limit else clip.names)
+    lo, hi = window_bounds(len(clip.names), start, limit)
+    names = list(clip.names[lo:hi])
 
     stable_m: dict = {}
     strokes_ref: dict | None = None
@@ -638,7 +643,7 @@ def run_export(cfg: PipelineConfig, *, restart: bool = False, limit: int | None 
                              f"(dibutuhkan untuk mengambil audio)")
 
     out_dir = cfg.paths.out_dir
-    target = out_dir / resolve_filename(ex.filename, source_path, limit)
+    target = out_dir / resolve_filename(ex.filename, source_path, limit, start)
     manifest_path = manifest_path_for(target)
     tmp = target.with_name(target.name + TMP_SUFFIX)
 
@@ -743,6 +748,8 @@ def main(argv: list[str] | None = None) -> int:
     add_work_dir_arg(p)
     p.add_argument("--restart", action="store_true", help="encode ulang walau up-to-date (menimpa file tanpa manifest)")
     p.add_argument("--limit", type=int, default=None, help="preview N frame pertama → <nama>.limitN.mp4")
+    p.add_argument("--from", dest="start", type=int, default=None,
+                   help="jendela K..K+N-1 → <nama>.preview_K-<K+N-1>.mp4; WAJIB bersama --limit N")
     args = p.parse_args(argv)
     reconfigure_stdio()
 
@@ -752,7 +759,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         path = args.config if args.config is not None else (DEFAULT_CONFIG if DEFAULT_CONFIG.is_file() else None)
         cfg = load_pipeline(path, overrides=work_dir_overrides(args.work_dir))
-        run = run_export(cfg, restart=args.restart, limit=args.limit, log=log)
+        run = run_export(cfg, restart=args.restart, limit=args.limit, start=args.start, log=log)
         log(f"selesai: {run['output']}")
     except (StageError, ConfigError) as e:
         print(f"ERROR: {e}", file=sys.stderr)
