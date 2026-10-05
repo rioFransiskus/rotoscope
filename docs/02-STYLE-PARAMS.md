@@ -102,7 +102,7 @@ vectorize:
 
 # ── EXPORT [6] ─────────────────────────────────────
 export:
-  source: "silhouette"       # "silhouette" (stable/groups, Phase 1) | "strokes" (stage [5], Phase 2 — belum ada)
+  source: "strokes"          # "strokes" (stage [5], default sejak T-203b; + out/svg/<nama>/) | "silhouette" (stable/groups, Phase 1)
   crf: 18                    # libx264, 0 (lossless) – 51; makin kecil makin tajam + besar
   preset: "medium"           # preset x264: ultrafast … veryslow
   foreground_color: "#000000"   # siluet (hanya source "silhouette")
@@ -147,7 +147,7 @@ export:
 | `vectorize.depth_lines.erode_px` | int ganjil ≥ 1 |
 | `vectorize.depth_lines.min_dist_px`, `min_len_px` | ≥ 0 |
 | `vectorize.track.max_match_dist_px` | > 0 (default 16 px pada frame 480 px; mengubahnya membuat `contours/` basi) |
-| `export.source` | `"silhouette"` atau `"strokes"` (`strokes` diterima loader, tetapi stage [6] menolak sampai Phase 2) |
+| `export.source` | `"silhouette"` atau `"strokes"` (default `"strokes"` sejak T-203b: MP4 dari `strokes/*.png` apa adanya + salinan SVG ke `out/svg/<nama>/`, tag warna bt709; `"silhouette"` = Phase 1, tanpa SVG) |
 | `export.crf` | int 0–51 |
 | `export.preset` | preset x264: `ultrafast`, `superfast`, `veryfast`, `faster`, `fast`, `medium`, `slow`, `slower`, `veryslow` |
 | `export.foreground_color`, `export.background_color` | `#rrggbb`; keduanya harus berbeda (tanpa membedakan huruf besar/kecil) |

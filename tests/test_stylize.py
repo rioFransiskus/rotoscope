@@ -607,7 +607,7 @@ def test_restart_removes_only_strokes_dir(tmp_path, style_file):
 
 def test_cli_subcommand_registered():
     from rotoscope import cli
-    assert cli.CPU_MAINS["stylize"] is sty.main and "stylize" not in cli.STAGES      # belum di `run` (T-203b)
+    assert cli.CPU_MAINS["stylize"] is sty.main and "stylize" in cli.STAGES      # masuk `run` sejak T-203b
     args = cli.build_parser().parse_args(["stylize", "x.mp4", "--limit", "3"])
     assert args.stage == "stylize" and args.rest == ["--limit", "3"]
 

@@ -733,6 +733,31 @@ orientasi + `track_id`".
 - **Catatan proses:** satu pemeriksaan sekali pakai lewat heredoc Bash (tanpa berkas repo; melanggar aturan CLAUDE.md untuk berkas teks,
   diungkapkan); blok keputusan T-203 ditulis setelah `config.py` / YAML diubah tetapi sebelum `stylize.py`; semua berkas repo lewat Edit / Write.
 
+#### Hasil T-203b (2026-10-05): integrasi [4] + [5] ke `run`, export `strokes` — DONE
+
+- **Keputusan (Rio):** (1) `run` = ingest → segment → depth → stabilize → vectorize → stylize → export, [4] dan [5] SELALU dijalankan
+  (opsi a; biaya ≈ 25–60 s per klip hanya saat basi, up-to-date ≈ 0,2–1 s); (2) `export.source: "strokes"` — MP4 dari `strokes/*.png` apa
+  adanya (ukuran output 1080×1922); default diubah ke `strokes` SETELAH Rio menilai MP4 (config.py, configs/default.yaml, docs/02 satu
+  langkah); (3) `strokes/*.svg` disalin ke `out/svg/<nama>/`; (4) tag warna hanya jalur strokes, crf tetap 18; (5) hasil edit tangan SVG
+  dilindungi (penanda + sha256 per berkas saat disalin); (6) versi ffmpeg dicatat di manifest, tidak ikut hash.
+- **Alternatif ditolak:** [4] + [5] hanya bila `export.source = strokes` (cabang kondisional, `--restart-from vectorize|stylize` tidak
+  bermakna di semua konfigurasi); salin SVG sebagai tahap sendiri (dua pengaman + dua manifest); tag warna untuk silhouette juga (MP4
+  Phase 1 lama gagal verifikasi tanpa sebab); crf 14 (+37% ukuran untuk +0,6 dB) / crf 23 (PSNR 39,6, gagal ambang); `-colorspace` /
+  `-color_range` saja (primaries + trc tidak tertulis); filter `scale=out_color_matrix` (tidak perlu: tag + `setparams` cukup);
+  `--restart` menimpa SVG tanpa melihat isinya.
+- **Terukur:** lihat docs/01 [6] ("Terukur source strokes"). Ringkas (crf 18): PSNR min 41,40 dB, MAE tinta maks 3,50, selisih maks 75,
+  kertas ±2,00; waktu CPU `--restart-from vectorize` test_short / test: [4] 9,2 / 21,4 s, [5] 16,1 / 39,2 s, [6] 2,4 / 5,4 s; MP4, SVG,
+  strokes, contours byte-identik antar run dari nol. Merah jenuh tanpa tag bergeser (+12, +15, −2) saat didekode bt709; palet netral
+  kertas / tinta tidak membedakan (≤ 1 level) — karena itu uji warna memakai balok merah / hijau / biru jenuh.
+- **Batas yang diketahui:** lihat docs/01 [6] "Batas yang diketahui" (determinisme MP4 hanya per build ffmpeg; garis oklusi berkedip +
+  getar sampai temporal [3]; metrik tinta datar 4,5 vs crf 23 4,54 bukan penjaga regresi crf; identitas klip tidak melihat isi video);
+  backlog: `segment` / `depth` ±21–28 s per `run` walau dilewati.
+- **Penilaian visual Rio:** warna kertas di MP4 (test_short dan test) benar (hangat); garis setelah kompresi (pemutar dan
+  `*_compare_zoom3x`) tajam; tepi frame (tubuh terpotong) rapi; getar antar frame dan garis oklusi berkedip wajar untuk saat ini (temporal
+  belum aktif); SVG di peramban terbuka dan tampak sama dengan video. Keputusan: default `export.source` = `strokes`; T-203b selesai.
+- **Catatan proses:** insiden skenario (g) (run GPU tak sengaja di salinan scratch lewat `run --restart-from ingest --yes`; tidak ada
+  efek ke repo / out/) dan pelajarannya dicatat di docs/05 log T-203b → penanda SVG diperkuat (BOM, penanda rusak ≠ tanpa penanda).
+
 ---
 
 ## Pitfall yang sudah diketahui

@@ -22,7 +22,7 @@ from rotoscope import segment as seg
 from rotoscope import stabilize as stb
 from rotoscope.stage_common import HF_OFFLINE_ENV, StageError
 
-CPU_STAGES = ("ingest", "stabilize", "vectorize", "export")
+CPU_STAGES = ("ingest", "stabilize", "vectorize", "stylize", "export")
 
 
 @pytest.fixture(autouse=True)
@@ -117,7 +117,7 @@ def run_cli(*argv: str) -> int:
 def test_run_order_and_clip_workdir(rec, tmp_path):
     video = make_video(tmp_path)
     assert run_cli("run", str(video)) == 0
-    assert rec.stages == ["ingest", "segment", "depth", "stabilize", "export"]
+    assert rec.stages == ["ingest", "segment", "depth", "stabilize", "vectorize", "stylize", "export"]
     want = str(clip_dir(tmp_path).resolve())
     for stage in rec.stages:
         a = rec.args(stage)
@@ -129,7 +129,7 @@ def test_run_order_and_clip_workdir(rec, tmp_path):
 def test_gpu_stages_are_subprocess_with_inherited_streams(rec, tmp_path):
     run_cli("run", str(make_video(tmp_path)))
     gpu = [c[0] for c in rec.calls]
-    assert gpu == ["cpu", "gpu", "gpu", "cpu", "cpu"]       # popen palsu tidak menerima stdout/stderr = diwariskan
+    assert gpu == ["cpu", "gpu", "gpu", "cpu", "cpu", "cpu", "cpu"]     # popen palsu tidak menerima stdout/stderr = diwariskan
     assert all(c[3] is None for c in rec.calls)             # environment tidak diubah
 
 
@@ -149,9 +149,9 @@ def test_config_workdir_and_unsafe_stem(rec, tmp_path):
 def test_flags_forwarded(rec, tmp_path):
     run_cli("run", str(make_video(tmp_path)), "--seg-model", "0.4b", "--limit", "3")
     assert rec.args("segment")[rec.args("segment").index("--seg-model") + 1] == "0.4b"
-    for stage in ("depth", "stabilize", "export"):
+    for stage in ("depth", "stabilize", "vectorize", "stylize", "export"):
         assert "--seg-model" not in rec.args(stage)
-    for stage in ("segment", "depth", "stabilize", "export"):
+    for stage in ("segment", "depth", "stabilize", "vectorize", "stylize", "export"):
         a = rec.args(stage)
         assert a[a.index("--limit") + 1] == "3"
     assert "--limit" not in rec.args("ingest")
@@ -178,7 +178,9 @@ def test_torch_not_imported_by_cli():
     ("segment", 1, ["ingest", "segment"]), ("segment", 3, ["ingest", "segment"]),
     ("depth", 3, ["ingest", "segment", "depth"]), ("depth", 1, ["ingest", "segment", "depth"]),
     ("stabilize", 1, ["ingest", "segment", "depth", "stabilize"]),
-    ("export", 1, ["ingest", "segment", "depth", "stabilize", "export"]),
+    ("vectorize", 1, ["ingest", "segment", "depth", "stabilize", "vectorize"]),
+    ("stylize", 1, ["ingest", "segment", "depth", "stabilize", "vectorize", "stylize"]),
+    ("export", 1, ["ingest", "segment", "depth", "stabilize", "vectorize", "stylize", "export"]),
     ("ingest", 1, ["ingest"]),
 ])
 def test_stage_failure_propagates_exit_code(rec, tmp_path, capsys, stage, rc, ran):
@@ -274,10 +276,109 @@ def test_preflight_export_target_same_video_ok(rec, tmp_path):
     assert run_cli("run", str(video)) == 0
 
 
+def write_conf(tmp_path: Path, body: str) -> Path:
+    conf = tmp_path / "c.yaml"
+    conf.write_text(body, encoding="utf-8")
+    return conf
+
+
+def test_style_forwarded_only_to_stylize(rec, tmp_path):
+    style = tmp_path / "s.yaml"
+    style.write_text("stroke:\n  width_base: 7.0\n", encoding="utf-8")
+    assert run_cli("run", str(make_video(tmp_path)), "--style", str(style)) == 0
+    for stage in rec.stages:
+        a = rec.args(stage)
+        assert ("--style" in a) == (stage == "stylize")
+    a = rec.args("stylize")
+    assert a[a.index("--style") + 1] == str(style)
+
+
+@pytest.mark.parametrize("body", ["render:\n  output_width: 1001\n", "stroke:\n  width_base: -3\n", "bukan: [yaml"])
+def test_preflight_invalid_style_runs_nothing(rec, tmp_path, capsys, body):
+    style = tmp_path / "s.yaml"
+    style.write_text(body, encoding="utf-8")
+    wd = clip_dir(tmp_path)
+    write_meta(wd, make_video(tmp_path))
+    (wd / "seg").mkdir()
+    (wd / "seg" / "sentinel").write_text("x")
+    assert run_cli("run", str(tmp_path / "clip.mp4"), "--style", str(style), "--restart-from", "ingest", "--yes") == 1
+    assert rec.calls == [] and (wd / "seg" / "sentinel").exists()
+    assert "ERROR" in capsys.readouterr().err
+
+
+def test_preflight_missing_style_file_runs_nothing(rec, tmp_path):
+    assert run_cli("run", str(make_video(tmp_path)), "--style", str(tmp_path / "tidak-ada.yaml")) == 1
+    assert rec.calls == []
+
+
+def test_preflight_invalid_export_source_runs_nothing(rec, tmp_path, capsys):
+    conf = write_conf(tmp_path, "export:\n  source: hologram\n")
+    assert run_cli("run", str(make_video(tmp_path)), "--config", str(conf)) == 1
+    assert rec.calls == [] and "export.source" in capsys.readouterr().err
+
+
+def test_preflight_ffmpeg_missing_runs_nothing(rec, tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(cli.shutil, "which", lambda name: None)
+    assert run_cli("run", str(make_video(tmp_path))) == 1
+    assert rec.calls == [] and "ffmpeg" in capsys.readouterr().err
+
+
+def test_preflight_svg_folder_of_other_video(rec, tmp_path, capsys):
+    conf = write_conf(tmp_path, "export:\n  source: strokes\n")
+    video = make_video(tmp_path / "b")
+    svg = tmp_path / "out" / "svg" / "clip"
+    svg.mkdir(parents=True)
+    (svg / ex.SVG_MARKER).write_text(json.dumps({"clip": {"source_path": str(tmp_path / "a" / "clip.mp4")}}),
+                                     encoding="utf-8")
+    assert run_cli("run", str(video), "--config", str(conf), "--restart-from", "ingest", "--yes") == 1
+    assert rec.calls == []
+    err = capsys.readouterr().err
+    assert str(tmp_path / "a" / "clip.mp4") in err and "--restart" not in err
+    assert run_cli("run", str(video), "--config", str(conf), "--limit", "2") == 0      # --limit tidak menyalin SVG
+    # source silhouette tidak menyalin SVG → folder itu tidak relevan
+    sil = write_conf(tmp_path, "export:\n  source: silhouette\n")
+    assert run_cli("run", str(video), "--config", str(sil)) == 0
+
+
+def test_preflight_corrupt_svg_marker(rec, tmp_path, capsys):
+    """Penanda rusak ≠ tanpa penanda; --restart-from export/ingest hanya lolos bila semua SVG identik dengan strokes/."""
+    conf = write_conf(tmp_path, "export:\n  source: strokes\n")
+    video = make_video(tmp_path)
+    wd = clip_dir(tmp_path)
+    (wd / "strokes").mkdir(parents=True)
+    (wd / "strokes" / "frame_00000.svg").write_text("<svg>A</svg>", encoding="utf-8")
+    svg = tmp_path / "out" / "svg" / "clip"
+    svg.mkdir(parents=True)
+    (svg / "frame_00000.svg").write_text("<svg>A</svg>", encoding="utf-8")
+    (svg / ex.SVG_MARKER).write_bytes(b"rusak {")
+    assert run_cli("run", str(video), "--config", str(conf)) == 1                       # tanpa restart
+    assert rec.calls == [] and "ada tetapi bukan JSON valid" in capsys.readouterr().err
+    assert run_cli("run", str(video), "--config", str(conf), "--restart-from", "export") == 0   # identik → boleh
+    rec.calls.clear()
+    (svg / "frame_00000.svg").write_text("<svg>suntingan</svg>", encoding="utf-8")
+    assert run_cli("run", str(video), "--config", str(conf), "--restart-from", "ingest", "--yes") == 1
+    assert rec.calls == []
+    err = capsys.readouterr().err
+    assert "frame_00000.svg" in err and "walau --restart" in err
+    assert (svg / "frame_00000.svg").read_text(encoding="utf-8") == "<svg>suntingan</svg>"
+    # restart yang TIDAK mencakup export tidak melonggarkan pengaman
+    assert run_cli("run", str(video), "--config", str(conf), "--restart-from", "stylize") == 1 and rec.calls == []
+    # --limit tidak menyalin SVG → pre-flight dilewati
+    assert run_cli("run", str(video), "--config", str(conf), "--limit", "2") == 0
+
+
+def test_limit_forwarded_to_vectorize_stylize_export(rec, tmp_path):
+    run_cli("run", str(make_video(tmp_path)), "--limit", "4")
+    for stage in ("vectorize", "stylize", "export"):
+        a = rec.args(stage)
+        assert a[a.index("--limit") + 1] == "4"
+
+
 # ── Restart: graf dependensi + --yes ───────────────
 RESTARTS = {
-    "ingest": {"segment", "depth", "stabilize", "export"},
-    "segment": {"segment"}, "depth": {"depth"}, "stabilize": {"stabilize"}, "export": {"export"},
+    "ingest": {"segment", "depth", "stabilize", "vectorize", "stylize", "export"},
+    "segment": {"segment"}, "depth": {"depth"}, "stabilize": {"stabilize"}, "vectorize": {"vectorize"},
+    "stylize": {"stylize"}, "export": {"export"},
 }
 
 
@@ -301,7 +402,7 @@ def test_restart_from_gpu_requires_yes(rec, tmp_path, capsys, frm):
     assert "--yes" in err and "Tidak ada yang dihapus" in err and "mnt GPU" in err
 
 
-@pytest.mark.parametrize("frm", ["stabilize", "export"])
+@pytest.mark.parametrize("frm", ["stabilize", "vectorize", "stylize", "export"])
 def test_restart_from_cpu_does_not_need_yes(rec, tmp_path, frm):
     assert run_cli("run", str(make_video(tmp_path)), "--restart-from", frm) == 0
 
@@ -342,15 +443,15 @@ def test_subcommand_passthrough_flags(rec, tmp_path):
     assert all("--work-dir" in c[2] for c in rec.calls)
 
 
-def test_vectorize_subcommand_only_not_in_run(rec, tmp_path):
-    """T-201a: [4] = subperintah sendiri (CPU, tanpa --yes); belum masuk urutan `run` (menunggu T-203)."""
+def test_vectorize_subcommand_and_in_run(rec, tmp_path):
+    """T-201a: [4] = subperintah sendiri (CPU, tanpa --yes); sejak T-203b juga bagian urutan `run`."""
     video = make_video(tmp_path)
     assert run_cli("vectorize", str(video), "--limit", "2", "--restart") == 0
     a = rec.args("vectorize")
     assert a[0] == "--work-dir" and Path(a[1]).name == "clip" and "--restart" in a and a[-2:] == ["--limit", "2"]
     assert "--yes" not in a and rec.stages == ["vectorize"]
     assert run_cli("vectorize", str(video), "--work-dir", "x") == 2
-    assert "vectorize" not in cli.STAGES and "vectorize" not in cli.RESTART_SCOPE["ingest"]
+    assert "vectorize" in cli.STAGES and "vectorize" in cli.RESTART_SCOPE["ingest"]
 
 
 def test_work_dir_flag_vectorize(tmp_path):
@@ -461,10 +562,11 @@ def test_stabilize_input_errors_use_full_cli_command(tmp_path):
 
 
 # ── --work-dir di tiap stage menang atas config; out_dir tidak berubah ──
-def _conf(tmp_path: Path, wrong: Path, out: Path | None = None) -> Path:
+def _conf(tmp_path: Path, wrong: Path, out: Path | None = None, source: str | None = None) -> Path:
     conf = tmp_path / "c.yaml"
     out_line = f'  out_dir: "{out.as_posix()}"\n' if out else ""
-    conf.write_text(f'paths:\n  work_dir: "{wrong.as_posix()}"\n{out_line}', encoding="utf-8")
+    src_line = f"export:\n  source: {source}\n" if source else ""
+    conf.write_text(f'paths:\n  work_dir: "{wrong.as_posix()}"\n{out_line}{src_line}', encoding="utf-8")
     return conf
 
 
@@ -489,7 +591,7 @@ def test_work_dir_flag_stabilize(tmp_path):
 def test_work_dir_flag_export_keeps_out_dir(tmp_path):
     _, work, _ = te.make_clip(tmp_path)
     out2, wrong = tmp_path / "out2", tmp_path / "salah"
-    assert ex.main(["--config", str(_conf(tmp_path, wrong, out2)), "--work-dir", str(work)]) == 0
+    assert ex.main(["--config", str(_conf(tmp_path, wrong, out2, "silhouette")), "--work-dir", str(work)]) == 0
     assert (out2 / "meme_clip.mp4").is_file() and not wrong.exists()
 
 

@@ -83,7 +83,7 @@ EDGE_MODES = ("hide", "draw")                   # shape.edge_mode (T-203a): gari
 RENDER_SS_MAX = 8
 OUTPUT_WIDTH_MIN, OUTPUT_WIDTH_MAX = 256, 2160  # render.output_width (px, genap)
 HEX_COLOR_RE = re.compile(r"#[0-9a-fA-F]{6}")
-EXPORT_SOURCES = ("silhouette", "strokes")      # "strokes" = Phase 2 (stage [5]); export menolak sampai ada
+EXPORT_SOURCES = ("silhouette", "strokes")      # "strokes" = stage [5] (default sejak T-203b); "silhouette" = Phase 1
 X264_PRESETS = ("ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow")
 CRF_MAX = 51
 EXPORT_FILENAME_PLACEHOLDER = "{source}"
@@ -223,7 +223,7 @@ class VectorizeConfig:
 
 @dataclass(frozen=True)
 class ExportConfig:
-    source: str = "silhouette"
+    source: str = "strokes"
     crf: int = 18
     preset: str = "medium"
     foreground_color: str = "#000000"

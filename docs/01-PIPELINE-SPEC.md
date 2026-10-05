@@ -19,11 +19,11 @@ video.mp4
    │
    ├─[3]  stabilize ──► stable/groups/*.png + stable/depth_smooth/*.npy
    │
-   ├─[4]  vectorize ──► contours/*.json + contours/manifest.json (+ clip_stats.json, T-201b) (polyline bertipe; di luar `run` sampai T-203b)
+   ├─[4]  vectorize ──► contours/*.json + contours/manifest.json (+ clip_stats.json, T-201b) (polyline bertipe)
    │
-   ├─[5]  stylize ────► strokes/*.svg + strokes/*.png + strokes/manifest.json (T-203a; di luar `run` sampai T-203b)
+   ├─[5]  stylize ────► strokes/*.svg + strokes/*.png + strokes/manifest.json (T-203a)
    │
-   └─[6]  export ─────► out/animation.mp4 + out/svg/*.svg
+   └─[6]  export ─────► out/<nama>.mp4 + out/svg/<nama>/*.svg (T-203b; source "strokes")
 ```
 
 Path stage di bawah (`frames/`, `seg/`, `depth/`, `stable/`, …) relatif terhadap **folder kerja klip**
@@ -108,8 +108,8 @@ internal yang dipanggil cli, bukan cara pakai utama.
 
 | Subperintah | Fungsi |
 |---|---|
-| `run <video>` | ingest → segment → depth → stabilize → export |
-| `ingest\|segment\|depth\|stabilize\|vectorize\|stylize\|export <video> [flag stage]` | satu stage; sisa argumen diteruskan apa adanya ke `main(argv)` stage (flag stage tidak diparse ulang di cli). `vectorize` (T-201a, T-201b): flag `--restart --limit` (`--limit N` tetap membaca SEMUA frame untuk ambang per klip, `clip_stats.json`), CPU in-process, `--restart` tanpa `--yes`; **belum ada di `run`** (masuk bersama [5] di T-203b). `stylize` (T-203a): flag `--style PATH --restart --limit`, CPU in-process, `--restart` tanpa `--yes` (hanya menghapus `strokes/`); **belum ada di `run`** (T-203b) |
+| `run <video>` | ingest → segment → depth → stabilize → vectorize → stylize → export (T-203b); flag `--config --style --seg-model --limit --restart-from --yes` |
+| `ingest\|segment\|depth\|stabilize\|vectorize\|stylize\|export <video> [flag stage]` | satu stage; sisa argumen diteruskan apa adanya ke `main(argv)` stage (flag stage tidak diparse ulang di cli). `vectorize` (T-201a, T-201b): flag `--restart --limit` (`--limit N` tetap membaca SEMUA frame untuk ambang per klip, `clip_stats.json`), CPU in-process, `--restart` tanpa `--yes`. `stylize` (T-203a): flag `--style PATH --restart --limit`, CPU in-process, `--restart` tanpa `--yes` (hanya menghapus `strokes/`). Keduanya (dan `export`) juga bagian urutan `run` sejak T-203b |
 | `download [--config P] [--seg-model 0.8b\|0.4b]` | unduh checkpoint (online, sekali jalan): Sapiens2-seg (default **0.8b**; `--seg-model 0.4b` = fallback) **dan** Depth Anything V2 Small + model card. Subprocess mewarisi environment; **tidak** memaksa `HF_HUB_OFFLINE=1` (run biasa offline) |
 
 - **Folder kerja per klip:** `<paths.work_dir>/clips/<stem>/`; `stem` = nama video disanitasi dengan fungsi yang sama
@@ -130,31 +130,37 @@ internal yang dipanggil cli, bukan cara pakai utama.
   lain (`<nama>.export.json` `clip.source_path`; fungsi nama export yang sama; dilewati bila `--limit`). Alasan (c):
   pengaman export tidak bisa dilewati `--restart`, jadi tanpa ini klip bernama sama baru gagal di stage terakhir
   setelah ±78 mnt GPU. Pesan bentrok TIDAK menyarankan `--restart`: ganti nama salah satu video (atau ubah
-  `export.filename`).
+  `export.filename`). Sejak T-203b: (d) `--style PATH` (atau style default) ada dan lolos `config.load_style` (kegagalan di [5]
+  baru terlihat setelah ±78 mnt GPU; `render.output_width` divalidasi genap sehingga ukuran output yuv420p aman);
+  (e) `export.source` valid (divalidasi saat config dimuat); (f) `ffmpeg` + `ffprobe` ada di PATH; (g) bila
+  `export.source = "strokes"` (dan tanpa `--limit`): `out/svg/<nama>/` bukan milik video lain, dan penanda SVG tidak rusak —
+  penanda rusak + `--restart-from` yang mencakup export hanya lolos bila setiap `*.svg` di folder identik byte dengan `strokes/`
+  (lihat [6]). Semua CPU-only dan gagal = exit 1 tanpa stage / subprocess / penghapusan apa pun.
 - **Ingest di `run` = selalu ulang** (opsi A). `meta.json` byte-deterministik → klip yang sama lolos identitas T-108;
   video lain yang menimpa path yang sama menulis ulang `meta.json` → identitas berubah → [2]/[2c] menolak (exit 1).
   (Melewati ingest kalau `meta.json` cocok akan melebarkan batas (c) "Identitas klip": video apa pun di path yang sama
   tidak terdeteksi.) Ingest hanya detik.
-- **Flag `run`:** `--config`, `--seg-model 0.8b|0.4b` (hanya segment; **tidak pernah fallback otomatis**, D-009),
-  `--limit N` (segment, depth, stabilize, export; export → `<nama>.limitN.mp4`), `--restart-from`, `--yes`.
+- **Flag `run`:** `--config`, `--style PATH` (hanya diteruskan ke stylize), `--seg-model 0.8b|0.4b` (hanya segment;
+  **tidak pernah fallback otomatis**, D-009), `--limit N` (segment, depth, stabilize, vectorize, stylize, export; export →
+  `<nama>.limitN.mp4`, tanpa salinan SVG), `--restart-from`, `--yes`. [4] dan [5] **selalu** dijalankan di `run` (up-to-date →
+  dilewati dalam ≈ 0,2–1 s; hanya basi yang dihitung ulang), apa pun `export.source`.
   `--adopt` / `--qc-only` hanya di subperintah `segment` / `depth` (`--adopt` hanya keduanya); di `run` → exit 1.
   Kombinasi terlarang stage ([2]/[2c] `--adopt` + `--restart`/`--limit`/`--qc-only`/`--download`) tetap exit 1.
-- **Restart mengikuti graf dependensi** ingest → {segment, depth} → stabilize → export (depth **tidak** bergantung pada
-  segment). `run --restart-from X` menjalankan stage di bawah ini dengan `--restart`; stage sebelum X berjalan normal
+- **Restart mengikuti graf dependensi** ingest → {segment, depth} → stabilize → vectorize → stylize → export (depth **tidak**
+  bergantung pada segment). `run --restart-from X` menjalankan stage di bawah ini dengan `--restart`; stage sebelum X berjalan normal
   (resume), hilir CPU yang basi dihitung ulang otomatis oleh stage-nya (cli tidak menghapusnya):
 
   | `--restart-from` | stage ber-`--restart` | butuh `--yes` |
   |---|---|---|
-  | `ingest` | segment, depth, stabilize, export (semua) | ya |
+  | `ingest` | segment, depth, stabilize, vectorize, stylize, export (semua) | ya |
   | `segment` | hanya [2] (`seg/` + `qc_report.json`); `depth/` utuh | ya |
   | `depth` | hanya [2c] (`depth/`) | ya |
-  | `stabilize` / `export` | hanya stage itu | tidak |
+  | `stabilize` / `vectorize` / `stylize` / `export` | hanya stage itu | tidak |
 
-  Graf lengkap sejak T-201a: ingest → {segment, depth} → stabilize → {vectorize, export}. `--restart-from` **tidak**
-  mencakup `vectorize` (stage itu belum ada di `run`); `python -m rotoscope vectorize <video> --restart` menghapus
-  `contours/` saja, dan `stabilize --restart` (atau [3] dihitung ulang) membuat [4] basi → dihitung ulang otomatis oleh
-  stage-nya. T-203b memasukkan [4] + [5] ke urutan `run` dan baris ini ke tabel di atas; `stylize --restart` menghapus `strokes/`
-  saja, dan [5] basi (hilir [4]) dihitung ulang otomatis oleh stage-nya.
+  Graf lengkap sejak T-203b: ingest → {segment, depth} → stabilize → vectorize → stylize → export. `vectorize --restart` menghapus
+  `contours/` saja, `stylize --restart` menghapus `strokes/` saja; hilir CPU yang basi (mis. [5] setelah [4] dihitung ulang, [6]
+  setelah [5]) dihitung ulang otomatis oleh stage-nya. Terukur `--restart-from vectorize` (test_short / test): [4] 9,2 / 21,4 s,
+  [5] 16,1 / 39,2 s, [6] 2,4 / 5,4 s; contours, strokes, MP4 dan SVG byte-identik dengan sebelumnya.
 
 - **`--yes`:** wajib untuk SETIAP penghapusan hasil GPU lewat cli — `run --restart-from ingest|segment|depth` dan
   subperintah `segment|depth --restart`. cli membuang `--yes` sebelum meneruskan ke stage. Tanpa `--yes`: cetak apa
@@ -168,6 +174,8 @@ internal yang dipanggil cli, bukan cara pakai utama.
 - **Exit code `run`:** 0 sukses (atau semua dilewati) | 1 prasyarat gagal (config, pre-flight, VRAM, identitas, flag
   terlarang, `--limit` < 1) | 2 salah pakai argumen (argparse; juga argparse stage in-process) | 3 OOM di segment/depth |
   130 dihentikan (Ctrl+C). Kode stage yang gagal dikembalikan apa adanya; pesan menyebut stage + cara resume.
+- **Batas yang diketahui (backlog):** `segment` / `depth` memakai ±21–28 s per `run` walau semua frame dilewati (impor torch +
+  pengecekan resume di subprocess).
 
 ---
 
@@ -410,8 +418,7 @@ dan temporal fill tidak cukup. D-002 (pose hanya fallback, bukan primary) tetap 
 **Status:** **T-201a `DONE`** (siluet + lubang + batas grup, 2026-10-02), **T-201b `DONE`** (garis oklusi +
 `clip_stats.json`, 2026-10-03, **dengan batas kaki** — lihat langkah 3) dan **T-202 `DONE`** (orientasi, anchor, arah garis
 terbuka, `track_id`, rantai kesinambungan, 2026-10-03) — strok `silhouette`, `silhouette_hole`, `group_boundary`,
-`occlusion`. Subperintah sendiri `python -m rotoscope vectorize <video>`; **belum masuk urutan `run`** sampai T-203b (lihat
-"CLI" dan [5]). Bagian bertanda *(T-201a)* / *(T-201b)* / *(T-202)* sudah diimplementasi dan diukur. Kode pelacakan:
+`occlusion`. Subperintah `python -m rotoscope vectorize <video>`; bagian urutan `run` sejak T-203b (lihat "CLI"). Bagian bertanda *(T-201a)* / *(T-201b)* / *(T-202)* sudah diimplementasi dan diukur. Kode pelacakan:
 `src/rotoscope/track.py` (stage ini memanggilnya per frame, **berurutan**).
 
 - **In (T-201a + T-201b):** `stable/groups/`, `stable/depth_smooth/`, `stable/manifest.json`, `meta.json`; config `groups`,
@@ -667,8 +674,8 @@ dengan aturan tetap)*:
 
 ### [5] `stylize.py` (CPU)
 
-**Status:** **T-203a `DONE`** (garis polos, 2026-10-03): subperintah sendiri `python -m rotoscope stylize <video>`; **belum masuk
-urutan `run`**, tabel restart DAG, dan `export.source: "strokes"` (= **T-203b**). Jitter, taper, width modulation, multipass, tekstur,
+**Status:** **T-203a `DONE`** (garis polos, 2026-10-03): subperintah `python -m rotoscope stylize <video>`; bagian urutan `run`,
+tabel restart DAG, dan sumber `export.source: "strokes"` sejak **T-203b**. Jitter, taper, width modulation, multipass, tekstur,
 opasitas dan `shape.resample_points` **belum aktif** (Phase 4; `ignored_params` di manifest). Preview `--preview N` = T-204.
 Tanpa GPU: `torch` tidak pernah di-import (diuji di subprocess).
 
@@ -747,28 +754,55 @@ Tanpa GPU: `torch` tidak pernah di-import (diuji di subprocess).
   error dan jangan menginterpolasi antar frame; (3) garis oklusi tidak pernah dalam ≥ D px dari siluet / batas grup /
   tepi frame (ujungnya terpotong di D, jadi tidak menyambung ke garis siluet atau batas grup); (4) `track_id` (T-202) tersedia
   untuk seed jitter, tetapi id oklusi berkedip lahir-mati (umur median 1–2 frame; 37–51% strok-frame di track ≥ 5 frame).
-- ⚠️ **Urutan `run` (T-203b, belum dikerjakan):** memasukkan [4] dan [5] ke urutan `run` (`ingest → segment → depth → stabilize →
-  vectorize → stylize → export`), ke tabel restart DAG (bagian "CLI"; `--restart-from vectorize|stylize`), dan menyalakan
-  `export.source: "strokes"` (sekarang ditolak) + MP4 dari `strokes/*.png` + salin `strokes/*.svg` ke `out/svg/`.
+- **Urutan `run` (T-203b, DONE):** [4] dan [5] ada di urutan `run` (`ingest → segment → depth → stabilize → vectorize → stylize →
+  export`) dan tabel restart DAG (bagian "CLI"); [6] memakai `strokes/*.png` dan menyalin `strokes/*.svg` (lihat [6]).
 
 ### [6] `export.py` (CPU)
-- **SVG** (Phase 2): copy `strokes/*.svg` ke `out/svg/` — belum diimplementasi
-- **MP4** (T-103, naif): `out/<nama>.mp4`, `<nama>` = `export.filename` (default `"{source}.mp4"`; `{source}` =
+- **Status:** Phase 1 (T-103, silhouette) + **T-203b `DONE`** (source `strokes`, default sejak T-203b; tag warna; salinan SVG).
+- **MP4** (T-103): `out/<nama>.mp4`, `<nama>` = `export.filename` (default `"{source}.mp4"`; `{source}` =
   nama video sumber dari `meta.json`, disanitasi). Satu jalur encode untuk semua sumber gambar
-  (`export.source`): `"silhouette"` (Phase 1) = `stable/groups/*.png`, grup ≠ 0 → `foreground_color` di atas
-  `background_color`; `"strokes"` (Phase 2) = `strokes/*.png` apa adanya — ditolak sampai ada.
+  (`export.source`): `"strokes"` (default) = `strokes/*.png` apa adanya (ukuran output [5], mis. 1080×1922 — bukan resolusi kerja;
+  `foreground_color` / `background_color` tidak dipakai dan tidak ikut hash); `"silhouette"` (Phase 1) = `stable/groups/*.png`,
+  grup ≠ 0 → `foreground_color` di atas `background_color`, resolusi kerja.
+- **Masukan source `strokes`** (divalidasi sebelum encode; semua kegagalan = exit 1 dengan perintah yang benar):
+  `strokes/manifest.json` ada, `contract` ∈ `SUPPORTED_STROKES_CONTRACTS` (`{"T-203a"}`), `clip` = `meta.json`, `frame_size`,
+  `output_size` bilangan genap; referensi `contours` di dalamnya (contract, vectorize_hash, created_utc) = `contours/manifest.json`
+  sekarang (rantai diperiksa satu tingkat; [5] sendiri memeriksa contours → stable) → jalankan `stylize`; setiap `frame_*.png`
+  ada, utuh (IHDR + IEND) dan berukuran `output_size`.
+- **SVG** (source `strokes`, tanpa `--limit`): `strokes/*.svg` disalin ke `out/svg/<nama>/frame_%05d.svg` (`<nama>` =
+  `sanitize_source_name`, sama dengan nama MP4), di dalam stage [6] (satu pengaman, satu manifest), juga ketika MP4 dilewati.
+  Salin atomik (`.tmp` + `os.replace`), diverifikasi jumlah + sha256 = `strokes/*.svg`. Folder memuat penanda
+  `.rotoscope-clip.json` (identitas klip + sha256 per berkas SAAT DISALIN; ditulis tanpa BOM, dibaca toleran BOM). Klasifikasi
+  per berkas (semua dievaluasi SEBELUM encode dan sebelum ada yang diubah): sama dengan sumber = ok; beda dari sumber tetapi sama
+  dengan yang dicatat = basi (strokes berubah) → disalin ulang otomatis; hilang → disalin; **beda dari yang dicatat = disunting
+  pengguna → exit 1** (menyebut berkas; hanya `--restart` yang menimpa). Pembersihan hanya untuk berkas yang dicatat penanda dan
+  sudah tidak ada di sumber (klip lebih pendek) dan belum disunting; berkas asing / `.tmp` milik pengguna tidak disentuh.
+  Penanda milik video LAIN → ditolak walau `--restart`. Penanda ADA tetapi rusak (tidak terbaca / bukan JSON / skema salah) ≠
+  "tanpa penanda": ditolak dengan penyebab; `--restart` hanya bila SETIAP `*.svg` di folder identik byte dengan `strokes/`.
+  Folder berisi berkas tanpa penanda → ditolak; `--restart` menimpa.
 - **Encode:** frame RGB mentah di-pipe ke stdin ffmpeg (tanpa PNG sementara) → libx264, `-crf` / `-preset`
   dari YAML, `-pix_fmt yuv420p`, `-r` = `target_fps` `meta.json`, `+faststart`. Dimensi ganjil dipad 1 px warna
   latar (yuv420p butuh genap). Tulis `<nama>.mp4.tmp` → verifikasi → `os.replace` (retry Windows) — MP4 lama
   tidak rusak oleh run gagal.
+- **Tag warna** (hanya source `strokes`; konstanta `COLOR_TAGS` di `export.py`, bukan YAML): colorspace / color_primaries /
+  color_trc `bt709` + color_range `tv`. Tanpa tag ffmpeg menulis matriks bt601 tanpa penanda sedangkan pemutar HD mengasumsikan
+  bt709: merah jenuh bergeser (+12, +15, −2) (terukur); kertas / tinta netral ≤ 1 level (tidak diskriminatif). Flag keluaran
+  `-colorspace/-color_primaries/-color_trc/-color_range` saja hanya menulis colorspace + range ke stream (ffmpeg 9.0.1), jadi
+  ditambah `-vf setparams=…` (tanpa filter `scale`; matriks mengikuti tag frame). crf default tetap 18.
 - **Verifikasi ffprobe** (sebelum `os.replace`): jumlah frame = `frame_count`, fps, codec h264, pix_fmt
-  yuv420p, ukuran = resolusi kerja (setelah pad genap), durasi ±1 frame, jumlah stream audio = `export.audio`.
+  yuv420p, ukuran = `output_size` (strokes) atau resolusi kerja setelah pad genap (silhouette), durasi ±1 frame, jumlah
+  stream audio = `export.audio`; strokes: keempat tag warna (`color_space`, `color_primaries`, `color_transfer`, `color_range`)
+  sesuai `COLOR_TAGS`.
 - **Audio** (`export.audio`, default `false`): audio meme hampir selalu milik pihak ketiga (musik) → default
   tanpa audio; tambahkan audio dari library berlisensi di editor platform (TikTok/CapCut). `true` = audio video
   sumber (aac, `-shortest`); sumber tanpa audio (`has_audio` false) atau file sumber hilang = **error**.
-- **Manifest** `out/<nama>.export.json`: hash parameter `export` (kecuali `filename`), identitas klip
-  (sha256 `meta.json` + `source_path`), referensi `stable/manifest.json` (`stabilize_hash`, `groups_hash`,
-  `created_utc`), jumlah frame, ukuran, fps, audio (ukuran + mtime file sumber), hasil ffprobe.
+- **Manifest** `out/<nama>.export.json`: hash parameter `export` (kecuali `filename`; untuk strokes juga tanpa
+  `foreground_color` / `background_color`), identitas klip (sha256 `meta.json` + `source_path`), referensi masukan — source
+  silhouette: `stable` (`stabilize_hash`, `groups_hash`, `created_utc`); source strokes: `strokes` (`contract`, `style_hash`,
+  `created_utc`, `output_size`) + `color_tags` — jumlah frame, ukuran, fps, audio (ukuran + mtime file sumber), hasil ffprobe
+  (termasuk tag warna), dan `ffmpeg` (baris pertama `ffmpeg -version`; **tidak** ikut kecocokan manifest — hanya menjelaskan
+  perubahan hash MP4 setelah pembaruan ffmpeg). Mengganti `export.source` = basi → di-encode ulang; manifest silhouette lama
+  tidak basi selama source tetap silhouette.
 - **Basi / pengaman** (stage CPU murah + deterministik, prinsip #4):
   - manifest cocok + MP4 lolos ffprobe → **dilewati**; parameter / input berubah (termasuk `meta.json` klip
     yang sama) → **di-encode ulang otomatis** dengan peringatan (field lama → baru);
@@ -777,13 +811,22 @@ Tanpa GPU: `torch` tidak pernah di-import (diuji di subprocess).
   - file tujuan ada **tanpa manifest** → **ditolak** (asal tidak diketahui); `--restart` menimpa.
 - **CLI** (T-104b): `python -m rotoscope export <video> [--config PATH] [--restart] [--limit N]`; di dalam `run`
   dipanggil in-process `export.main([--work-dir <folder klip>, …])` (`--work-dir DIR` menang atas `paths.work_dir`;
-  `paths.out_dir` tidak berubah). `--limit N` → `<nama>.limitN.mp4` (preview; tanpa manifest, tanpa pengaman, tidak
-  menyentuh hasil utama). Exit code: 0 sukses, 1 prasyarat gagal (3 tidak dipakai — tanpa GPU). Bentrok target export
+  `paths.out_dir` tidak berubah). `--limit N` → `<nama>.limitN.mp4` (preview; tanpa manifest, tanpa pengaman, tanpa salinan
+  SVG, tidak menyentuh hasil utama). Exit code: 0 sukses, 1 prasyarat gagal (3 tidak dipakai — tanpa GPU). Bentrok target export
   dengan video lain dicek lebih awal oleh pre-flight (c) `run` (bagian "CLI").
 - **Identitas klip (T-108):** `stable/manifest.json` tanpa `clip` / milik klip lain → berhenti (jalankan ulang
   [3]; output basi dihitung ulang otomatis). Field `clip` manifest export memakai helper bersama
   `stage_common.clip_identity_from_bytes` (bentuk sama dengan sebelumnya).
-- Terukur klip uji (283 frame, 480×854, crf 18): 2.4 s, 497.6 KiB (509 571 B).
+- Terukur klip uji, silhouette (T-103; 283 frame, 480×854, crf 18): 2.4 s, 497.6 KiB (509 571 B).
+- **Terukur source strokes (T-203b; 1080×1922, crf 18, medium):** test_short (119 frame) 2,4 s, 977,7 KiB, SVG 4,07 MiB (salin
+  ≈ 0,12 s); test (283 frame) 5,4 s, 2620,9 KiB, SVG 10,16 MiB (≈ 0,25 s); encode ≈ 50 fps, decode PNG 14–16 ms/frame. Kualitas MP4
+  vs PNG sumber (85 frame sampel): PSNR min 41,40 dB, MAE tinta (dilatasi 5 px) maks 3,50, selisih maks 75, kertas ±2,00, tinta datar
+  ≤ 3,71. Ambang uji (`tests/export_metrics.py`): PSNR ≥ 40,4, MAE tinta ≤ 4,2, selisih maks ≤ 90, kertas ≤ 3, tinta datar ≤ 4,5.
+  Determinisme: MP4 + SVG byte-identik antar run dari nol (mesin + build ffmpeg yang sama; versi ffmpeg ada di manifest).
+- **Batas yang diketahui:** (1) determinisme MP4 hanya untuk build ffmpeg yang sama; (2) garis oklusi berkedip dan getar antar
+  frame (temporal [3] belum aktif, T-302/T-303; jitter / taper / tekstur Phase 4); (3) tinta datar 4,5 vs crf 23 terukur 4,54 =
+  lolos tipis — metrik itu BUKAN penjaga regresi crf (PSNR + MAE tinta + selisih maks yang menangkap crf 23); (4) identitas klip
+  tidak melihat isi file video (batas T-108); (5) `--preview N` = T-204.
 
 ### Anggaran disk per klip (360 frame, *est.*)
 

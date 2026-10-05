@@ -88,7 +88,7 @@ vectorize:
 
 # ── EXPORT [6] ─────────────────────────────────────
 export:
-  source: "silhouette"       # "silhouette" (stable/groups, Phase 1) | "strokes" (stage [5], Phase 2 — belum ada)
+  source: "strokes"          # "strokes" (stage [5], default sejak T-203b; + out/svg/<nama>/) | "silhouette" (stable/groups, Phase 1)
   crf: 18                    # libx264, 0 (lossless) – 51; makin kecil makin tajam + besar
   preset: "medium"           # preset x264: ultrafast … veryslow
   foreground_color: "#000000"   # siluet (hanya source "silhouette")

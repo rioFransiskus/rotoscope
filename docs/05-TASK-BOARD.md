@@ -1144,7 +1144,7 @@ Tiga langkah, jadikan refleks:
     (excess chamfer silhouette) 0,79 → 0,77 px (tidak peka); waktu geometri 34,6 → 35,7 ms per frame. Determinisme, resume, stale,
     input tidak berubah: lolos (hash final `test_short` fba93116…, `test` 8a8ea41d…). Suite 774 lolos / 2 skip.
 
-### T-203b · Integrasi stage [4] + [5] ke `run`, export `strokes` · `TODO`
+### T-203b · Integrasi stage [4] + [5] ke `run`, export `strokes` · `DONE`
 - **Kerjakan:** (1) [4] vectorize dan [5] stylize masuk urutan `run` (`ingest → segment → depth → stabilize → vectorize → stylize →
   export`); `cli.STAGES`, `RESTART_SCOPE`, `_targets`, graf dependensi + tabel restart di docs/01 "CLI" (`--restart-from
   vectorize|stylize`, tanpa `--yes`); flag `--style` di `run`; (2) `export.source: "strokes"` diterima (sekarang ditolak oleh
@@ -1155,8 +1155,45 @@ Tiga langkah, jadikan refleks:
   untuk target export tidak berubah; (c) taper loop dan jitter terkunci posisi tetap Phase 4 (bukan T-203b); (d) estimasi waktu
   `run` ([4] ±80 ms + [5] ±130 ms per frame); (e) `--preview N` = T-204
 - **Done when:** `python -m rotoscope run <video>` menghasilkan `out/<nama>.mp4` berisi garis polos dari [5] dan `out/svg/*.svg`
+  ✅ (2026-10-05; `out/svg/<nama>/`)
+- **Sisa / diteruskan:** `--preview N` + milestone Phase 2 = T-204; jitter / taper / tekstur = Phase 4; temporal garis oklusi = T-302/T-303;
+  backlog: `segment` / `depth` ±21–28 s per `run` walau dilewati (impor torch + cek di subprocess)
 - **Update log:**
   - [2026-10-03] Dipecah dari T-203 (keputusan Rio butir 6–7, docs/04 "Keputusan T-203")
+  - [2026-10-05] **Tahap 2–3 selesai (menunggu penilaian visual Rio; Tahap 4 belum).** `run` = ingest → segment → depth →
+    stabilize → vectorize → stylize → export (`--style` hanya ke stylize; `--restart-from vectorize|stylize|export` tanpa `--yes`);
+    `export.source: strokes` (MP4 ukuran output 1080×1922, tag warna lengkap lewat `COLOR_TAGS` + `setparams`, manifest merujuk
+    strokes/manifest.json, versi ffmpeg dicatat di luar hash); salinan `strokes/*.svg` → `out/svg/<nama>/`. Temuan: flag keluaran
+    `-color_primaries/-color_trc` saja TIDAK menulis primaries/trc ke stream (ffmpeg 9.0.1) → `-vf setparams=...`; merah jenuh tanpa
+    tag bergeser (+12, +15, −2) saat didekode bt709, palet kertas/tinta netral tidak membedakannya (≤ 1 level). Terukur (crf 18, 85
+    frame sampel): PSNR min 41,40; MAE tinta maks 3,50; selisih maks 75; kertas 2,00; tinta datar 3,71. Ambang: PSNR ≥ 40,4, MAE
+    tinta ≤ 4,2, selisih maks ≤ 90, kertas ≤ 3, tinta datar ≤ 4,5. **Akurat:** crf 23 terukur PSNR 39,60 / MAE 5,09 / selisih maks
+    105 (gagal), kertas 2,00 (lolos), tinta datar 4,54 vs ambang 4,5 → hanya LOLOS TIPIS (selisih 0,04); metrik tinta datar BUKAN
+    penjaga regresi crf — PSNR + MAE tinta + selisih maks yang menangkap crf 23. Waktu CPU (test_short / test): [4] 9,2 / 21,4 s,
+    [5] 16,1 / 39,2 s, [6] 2,4 / 5,4 s; MP4/SVG/strokes/contours byte-identik antar run dari nol. Suite 828 lolos / 2 skip (837 / 2 setelah penanda SVG diperkuat, lihat di bawah).
+  - [2026-10-05] **Insiden skenario (g) — dicatat sebagai pelajaran.** Skenario "folder SVG milik video lain" dijalankan lewat
+    `run … --restart-from ingest --yes` pada salinan scratch (`paths.work_dir` = `…/scratchpad/t3work/work`, `paths.out_dir` =
+    `…/scratchpad/t3work/out`). Penanda yang saya tulis ulang memakai BOM → tidak terbaca → dianggap "tanpa penanda" → pre-flight
+    tidak memblokir → ingest + `segment` GPU 0.8b berjalan di salinan scratch; keempat proses dihentikan (VRAM kembali 197 MiB).
+    Terverifikasi tidak ada efek ke repo: `out/test.mp4` sha 5fcb5e40…, `out/test_short.mp4` sha 8e7c1c39… dan hash pohon
+    `out/svg/test` 4706de19… / `out/svg/test_short` 18ae8a26… identik sebelum dan sesudah; `work/clips/*` asli tidak tersentuh
+    (hanya `qc_report.json` `created_utc`, perilaku stage [2] yang sudah ada). **Pelajaran:** (1) skenario destruktif / pre-flight
+    HANYA lewat stage palsu (`cli.run_stage` diganti penjaga yang gagal bila terpanggil) atau `--restart-from vectorize`, tidak pernah
+    `run --restart-from ingest|segment|depth --yes` — itu MENJALANKAN GPU; (2) jangan menulis ulang berkas penanda dari PowerShell
+    (`Set-Content -Encoding utf8` menambah BOM); (3) kegagalan membaca penanda tidak boleh jatuh ke cabang "tanpa penanda".
+  - [2026-10-05] **Penanda SVG diperkuat:** `read_svg_marker` toleran BOM (utf-8-sig; penanda ditulis tanpa BOM); penanda ADA tetapi
+    tidak terbaca / bukan JSON / bukan objek / skema salah → berhenti dengan penyebab (bukan "tanpa penanda"); `--restart` hanya
+    boleh bila SETIAP `*.svg` di folder identik byte dengan `strokes/` (tidak ada suntingan hilang), selain itu ditolak walau
+    `--restart` dengan menyebut berkasnya; pre-flight `run` memeriksa kondisi yang sama (restart = export ikut ber-restart). Perilaku MP4
+    tanpa manifest tidak diubah. Test baru + mutation check (BOM mati, rusak = tanpa penanda, cek identik dilewati) → test gagal.
+  - [2026-10-05] **Penilaian visual Rio + penutup (Tahap 4):** kertas hangat benar, garis tajam setelah kompresi, tepi frame rapi,
+    getar / garis oklusi berkedip wajar (temporal belum aktif), SVG di peramban sama dengan video → **default `export.source` = `strokes`**
+    (`config.py`, `configs/default.yaml`, docs/02 satu langkah; test yang memerlukan silhouette memakai `export.source: silhouette`
+    eksplisit). `run samples/test_short.mp4` dan `run samples/test.mp4` dengan config default: exit 0, export DILEWATI (up-to-date;
+    sha256 MP4 / hash pohon SVG / strokes / contours identik). Dokumen: docs/01 (CLI, [4], [5], [6]), docs/02, docs/04 "Hasil T-203b",
+    CLAUDE.md; papan Phase 2 = 5/6, total 21/38. Suite 837 lolos / 2 skip. `T203b-prompt.md` dihapus terakhir.
+  - [2026-10-05] **Backlog (belum dikerjakan):** `segment` / `depth` memakai ±21–28 s per `run` walau semua frame dilewati (impor
+    torch + pengecekan di subprocess) — pertimbangkan pengecekan resume tanpa impor torch di induk subprocess.
 
 ### T-204 · Flag `--preview N` · `TODO`
 - **Kerjakan:** render hanya N frame untuk iterasi cepat. Threshold per klip dibaca dari
@@ -1318,12 +1355,13 @@ Tiga langkah, jadikan refleks:
 |---|---|---|
 | 0 Setup | T-001 … T-005 | 5/5 |
 | 1 Skeleton | T-101 … T-108 (T-102 → a/b/c, T-104 → a/b) — ✅ **Phase 1 selesai** (🎯 milestone T-104b, T-107 DONE) | 11/11 |
-| 2 Vectorize | T-201 … T-204 (T-201 → a/b, T-203 → a/b) — T-201a ✅, T-201b ✅ DONE (dengan batas kaki), T-202 ✅ DONE, T-203a ✅ DONE (T-203b, T-204 TODO) | 4/6 |
+| 2 Vectorize | T-201 … T-204 (T-201 → a/b, T-203 → a/b) — T-201a ✅, T-201b ✅ DONE (dengan batas kaki), T-202 ✅ DONE, T-203a ✅ DONE, T-203b ✅ DONE (T-204 `--preview N` TODO; milestone Phase 2 ada di T-204) | 5/6 |
 | 3 Stabilize | T-301 … T-305 (T-301 SKIP) | 0/5 |
 | 4 Style | T-401 … T-406 | 0/6 |
 | 5 Fallback | T-501 … T-502 (BLOCKED) | 0/2 |
 | 6 Opsional | T-601 … T-603 | 0/3 |
 
-**Total: 38 task** (5 + 11 + 6 + 5 + 6 + 2 + 3) · Selesai: 20/38 (5 + 11 + 4; SKIP — T-301, T-601 — tidak dihitung selesai).
+**Total: 38 task** (5 + 11 + 6 + 5 + 6 + 2 + 3) · Selesai: 21/38 (5 + 11 + 5; SKIP — T-301, T-601 — tidak dihitung selesai).
+Rekonsiliasi 2026-10-05: T-203b DONE → Phase 2 = 5/6, total 21/38.
 Rekonsiliasi 2026-10-03: T-203 dipecah jadi T-203a + T-203b (Phase 2 = 6 task); jumlah per Phase = total.
 Rekonsiliasi 2026-10-01: sebelum T-104b selesai papan menulis 9/11 + 13/37, padahal 5 + 9 = 14 — total salah hitung 1.

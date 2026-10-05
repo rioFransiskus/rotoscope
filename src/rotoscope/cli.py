@@ -1,7 +1,7 @@
 """CLI final (T-104b): `python -m rotoscope <subperintah>`.
 
-    python -m rotoscope run <video> [--config PATH] [--seg-model 0.8b|0.4b] [--limit N]
-                                    [--restart-from ingest|segment|depth|stabilize|export [--yes]]
+    python -m rotoscope run <video> [--config PATH] [--style PATH] [--seg-model 0.8b|0.4b] [--limit N]
+                                    [--restart-from ingest|segment|depth|stabilize|vectorize|stylize|export [--yes]]
     python -m rotoscope ingest|segment|depth|stabilize|vectorize|stylize|export <video> [flag stage ...]
     python -m rotoscope download [--config PATH] [--seg-model 0.8b|0.4b]
 
@@ -12,7 +12,7 @@ lewat `--work-dir` (menang atas config) — tanpa menulis YAML.
 Prinsip #3 docs/01: stage GPU ([2] segment, [2c] depth) selalu proses sendiri (subprocess; stdout/stderr
 diteruskan apa adanya) dan proses induk TIDAK meng-import torch / menyentuh CUDA. Stage CPU (ingest, stabilize,
 vectorize, export) dipanggil in-process lewat main(argv) stage-nya, jadi flag stage tidak diparse ulang di sini.
-[4] vectorize (T-201a) dan [5] stylize (T-203a) hanya subperintah sendiri; masuk urutan `run` di T-203b.
+[4] vectorize dan [5] stylize masuk urutan `run` (T-203b; --style hanya diteruskan ke stylize).
 
 Exit code: 0 sukses | 1 prasyarat gagal (config, pre-flight, VRAM, identitas, ...) | 2 salah pakai argumen |
 3 OOM di stage GPU | 130 dihentikan (Ctrl+C). Kode stage yang gagal dikembalikan apa adanya.
@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -36,29 +37,34 @@ from rotoscope import ingest as ingest_stage
 from rotoscope import stabilize as stabilize_stage
 from rotoscope import stylize as stylize_stage
 from rotoscope import vectorize as vectorize_stage
-from rotoscope.config import ConfigError, PipelineConfig, load_pipeline
-from rotoscope.export import DEFAULT_CONFIG, manifest_path_for, read_manifest, resolve_filename, sanitize_source_name
+from rotoscope.config import ConfigError, PipelineConfig, load_pipeline, load_style
+from rotoscope.export import (
+    DEFAULT_CONFIG, check_svg_owner, manifest_path_for, read_manifest, resolve_filename,
+    sanitize_source_name, svg_dir_for,
+)
 from rotoscope.ingest import META_FILENAME
 from rotoscope.segment import QC_REPORT_FILENAME
-from rotoscope.stage_common import EXIT_OK, EXIT_OOM, EXIT_PRECONDITION, reconfigure_stdio
+from rotoscope.stage_common import EXIT_OK, EXIT_OOM, EXIT_PRECONDITION, StageError, reconfigure_stdio
 
 EXIT_USAGE = 2
 EXIT_INTERRUPTED = 130
 
 CLIPS_DIRNAME = "clips"
 PROG = "python -m rotoscope"
-STAGES = ("ingest", "segment", "depth", "stabilize", "export")      # urutan run
+STAGES = ("ingest", "segment", "depth", "stabilize", "vectorize", "stylize", "export")      # urutan run
 GPU_STAGES = ("segment", "depth")
 LABELS = {"ingest": "[1] ingest", "segment": "[2] segment", "depth": "[2c] depth",
           "stabilize": "[3] stabilize", "vectorize": "[4] vectorize", "stylize": "[5] stylize",
           "export": "[6] export"}
 MODULES = {"segment": "rotoscope.segment", "depth": "rotoscope.depth"}
 
-# Graf dependensi: ingest → {segment, depth} → stabilize → export; depth TIDAK bergantung pada segment.
-# --restart-from X = stage X (+ semua stage hilir kalau X = ingest) dijalankan dengan --restart. Hilir CPU yang basi
-# dihitung ulang otomatis oleh stage-nya (prinsip #4); cli tidak menghapusnya. ingest selalu menulis ulang.
-RESTART_SCOPE = {"ingest": ("segment", "depth", "stabilize", "export"), "segment": ("segment",),
-                 "depth": ("depth",), "stabilize": ("stabilize",), "export": ("export",)}
+# Graf dependensi: ingest → {segment, depth} → stabilize → vectorize → stylize → export; depth TIDAK bergantung
+# pada segment. --restart-from X = stage X (+ semua stage hilir kalau X = ingest) dijalankan dengan --restart.
+# Hilir CPU yang basi dihitung ulang otomatis oleh stage-nya (prinsip #4); cli tidak menghapusnya. ingest selalu
+# menulis ulang.
+RESTART_SCOPE = {"ingest": ("segment", "depth", "stabilize", "vectorize", "stylize", "export"),
+                 "segment": ("segment",), "depth": ("depth",), "stabilize": ("stabilize",),
+                 "vectorize": ("vectorize",), "stylize": ("stylize",), "export": ("export",)}
 
 # Hanya untuk pesan konfirmasi (estimasi waktu GPU per frame; terukur T-102b / T-105, GTX 1650 Ti).
 GPU_SECONDS_PER_FRAME = {"segment": {"0.8b": 16.5, "0.4b": 8.0}, "depth": 0.19}
@@ -86,6 +92,7 @@ class Ctx:
     cfg: PipelineConfig
     work_dir: Path
     config: Path | None = None            # hanya kalau diberikan pengguna (stage memuat default sendiri)
+    style: Path | None = None             # hanya diteruskan ke stylize
     seg_model: str | None = None
     limit: int | None = None
     restart: tuple[str, ...] = ()         # stage yang dijalankan dengan --restart
@@ -147,6 +154,37 @@ def preflight_export_target(cfg: PipelineConfig, video: Path, limit: int | None)
         raise CliError(
             f"{target} sudah ada dan berasal dari video LAIN ({old_src}) — pengaman export tidak ditimpa dan "
             f"tidak bisa dilewati dengan restart. Ganti nama salah satu video, atau ubah export.filename di config.")
+
+
+def preflight_style(style: Path | None) -> None:
+    """(d) --style (atau default) ada dan LOLOS validasi — kegagalan di [5] baru terlihat setelah ±78 mnt GPU.
+    `render.output_width` divalidasi genap oleh load_style, jadi ukuran output (yuv420p) tidak perlu cek lain."""
+    path = style if style is not None else (stylize_stage.DEFAULT_STYLE if stylize_stage.DEFAULT_STYLE.is_file() else None)
+    try:
+        load_style(path)
+    except ConfigError as e:
+        raise CliError(str(e)) from None
+
+
+def preflight_svg_target(cfg: PipelineConfig, video: Path, limit: int | None, work_dir: Path,
+                         restart: bool) -> None:
+    """(e) out/svg/<nama>/ milik video LAIN, atau penanda rusak (+ --restart tanpa semua SVG identik dengan strokes/)
+    → berhenti sekarang (hanya source strokes menyalin SVG; --limit tidak). `restart` = export ikut ber-restart."""
+    if limit is not None or cfg.export.source != "strokes":
+        return
+    try:
+        check_svg_owner(svg_dir_for(cfg.paths.out_dir, str(video.resolve())), str(video.resolve()),
+                        work_dir / stylize_stage.STROKES_DIRNAME, restart)
+    except StageError as e:
+        raise CliError(str(e)) from None
+
+
+def preflight_tools() -> None:
+    """(f) ffmpeg + ffprobe ada (export di akhir run tidak boleh gagal karena ini setelah GPU)."""
+    missing = [t for t in ("ffmpeg", "ffprobe") if shutil.which(t) is None]
+    if missing:
+        raise CliError(f"{', '.join(missing)} tidak ditemukan di PATH. Install ffmpeg (gyan.dev essentials build) "
+                       f"dan pastikan folder bin-nya ada di PATH.")
 
 
 # ── Penghapusan GPU: konfirmasi --yes ──────────────
@@ -237,6 +275,8 @@ def stage_args(stage: str, ctx: Ctx) -> list[str]:
         a += ["--config", str(ctx.config)]
     if stage == "segment" and ctx.seg_model:
         a += ["--seg-model", ctx.seg_model]
+    if stage == "stylize" and ctx.style is not None:
+        a += ["--style", str(ctx.style)]
     if stage in ctx.restart:
         a.append("--restart")
     if ctx.limit is not None:
@@ -274,11 +314,14 @@ def cmd_run(a: argparse.Namespace) -> int:
         raise CliError(f"--limit harus ≥ 1, dapat {a.limit}")
     cfg = load_cfg(a.config, a.seg_model)
     video = a.video
-    ctx = Ctx(video=video, cfg=cfg, work_dir=clip_work_dir(cfg, video), config=a.config, seg_model=a.seg_model,
-              limit=a.limit, restart=RESTART_SCOPE.get(a.restart_from, ()))
+    ctx = Ctx(video=video, cfg=cfg, work_dir=clip_work_dir(cfg, video), config=a.config, style=a.style,
+              seg_model=a.seg_model, limit=a.limit, restart=RESTART_SCOPE.get(a.restart_from, ()))
     # Pre-flight CPU-only — sebelum penghapusan, ingest, atau subprocess apa pun
     preflight_video(video, ctx.work_dir)
+    preflight_style(a.style)
+    preflight_tools()
     preflight_export_target(cfg, video, a.limit)
+    preflight_svg_target(cfg, video, a.limit, ctx.work_dir, "export" in ctx.restart)
     if a.restart_from:
         require_yes(ctx.restart, ctx, a.yes, f"run --restart-from {a.restart_from}")
 
@@ -369,15 +412,17 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog=PROG, description="Rotoscope Animation Builder — video → animasi sketsa")
     sub = p.add_subparsers(dest="cmd", required=True, metavar="<subperintah>")
 
-    r = sub.add_parser("run", help="ingest → segment → depth → stabilize → export untuk satu video")
+    r = sub.add_parser("run", help="ingest → segment → depth → stabilize → vectorize → stylize → export untuk satu video")
     r.add_argument("video", type=Path)
     r.add_argument("--config", type=Path, default=None)
+    r.add_argument("--style", type=Path, default=None, help="YAML style, hanya untuk stage [5] stylize")
     r.add_argument("--seg-model", choices=("0.8b", "0.4b"), default=None,
                    help="model segmentasi untuk SELURUH klip (tidak pernah fallback otomatis)")
     r.add_argument("--limit", type=int, default=None, help="hanya N frame pertama (export → <nama>.limitN.mp4)")
     r.add_argument("--restart-from", choices=STAGES, default=None,
                    help="hapus hasil stage ini lalu jalankan ulang (ingest = semua stage; segment / depth = hanya "
-                        "stage itu — depth tidak bergantung pada segment). Stage GPU wajib --yes")
+                        "stage itu — depth tidak bergantung pada segment). Stage GPU wajib --yes; vectorize / "
+                        "stylize / export tanpa --yes")
     r.add_argument("--yes", action="store_true", help="setujui penghapusan hasil stage GPU")
     r.add_argument("--adopt", action="store_true", help=argparse.SUPPRESS)
     r.add_argument("--qc-only", action="store_true", help=argparse.SUPPRESS)
@@ -389,11 +434,12 @@ def build_parser() -> argparse.ArgumentParser:
                         ("depth", "[2c] Depth Anything V2 Small (GPU, proses sendiri); flag: --restart --yes "
                                   "--limit --adopt"),
                         ("stabilize", "[3] peta grup + kedalaman ternormalisasi; flag: --restart --limit"),
-                        ("vectorize", "[4] stable/groups → contours/ (siluet, lubang, batas grup; belum ada di "
-                                      "`run`); flag: --restart --limit"),
-                        ("stylize", "[5] contours/ → strokes/ (SVG + PNG garis polos; belum ada di `run`); flag: "
-                                    "--style --restart --limit"),
-                        ("export", "[6] stable/groups → out/<nama>.mp4; flag: --restart --limit")):
+                        ("vectorize", "[4] stable/groups → contours/ (siluet, lubang, batas grup, garis oklusi); "
+                                      "flag: --restart --limit"),
+                        ("stylize", "[5] contours/ → strokes/ (SVG + PNG garis polos); flag: --style --restart "
+                                    "--limit"),
+                        ("export", "[6] strokes/ (atau stable/groups) → out/<nama>.mp4 + out/svg/<nama>/; flag: "
+                                   "--restart --limit")):
         s = sub.add_parser(stage, help=text, description=text)
         s.add_argument("video", type=Path, help="video sumber (menentukan folder kerja klip)")
         s.add_argument("rest", nargs=argparse.REMAINDER, help="flag stage, diteruskan apa adanya")

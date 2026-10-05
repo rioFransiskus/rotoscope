@@ -48,7 +48,8 @@ def make_clip(tmp_path: Path, *, w: int = W, h: int = H, n: int = N, source_name
               has_audio: bool = False, source: Path | None = None, **overrides):
     """work_dir sintetis lengkap (meta + stable) → (cfg, work_dir, out_dir)."""
     work, out = tmp_path / "work", tmp_path / "out"
-    cfg = load_pipeline(overrides={"paths.work_dir": str(work), "paths.out_dir": str(out), **overrides})
+    cfg = load_pipeline(overrides={"paths.work_dir": str(work), "paths.out_dir": str(out),
+                                   "export.source": "silhouette", **overrides})   # default config = strokes (T-203b)
     (work / "stable" / "groups").mkdir(parents=True, exist_ok=True)
     src = source or (tmp_path / source_name)
     (work / "meta.json").write_text(json.dumps({
@@ -176,7 +177,8 @@ def test_second_run_skipped_then_stale_on_param_change(tmp_path):
 def test_filename_change_alone_does_not_make_stale(tmp_path):
     cfg, _, out = make_clip(tmp_path)
     ex.run_export(cfg, log=lambda m: None)
-    assert ex.export_hash(cfg) == ex.export_hash(load_pipeline(overrides={"export.filename": "lain.mp4"}))
+    assert ex.export_hash(cfg) == ex.export_hash(load_pipeline(overrides={"export.source": "silhouette",
+                                                                           "export.filename": "lain.mp4"}))
 
 
 def test_stale_when_meta_changes_same_source(tmp_path):
@@ -327,16 +329,17 @@ def test_group_id_above_n_groups_rejected(tmp_path):
         ex.run_export(cfg, log=lambda m: None)
 
 
-def test_strokes_source_not_implemented(tmp_path):
+def test_strokes_source_without_stylize_output_points_to_stylize(tmp_path):
+    """Sejak T-203b "strokes" diterima; tanpa strokes/manifest.json → perintah stage [5] (tes lengkap: test_export_strokes)."""
     cfg, _, _ = make_clip(tmp_path, **{"export.source": "strokes"})
-    with pytest.raises(StageError, match="belum diimplementasi"):
+    with pytest.raises(StageError, match="stylize"):
         ex.run_export(cfg, log=lambda m: None)
 
 
 def test_main_exit_codes(tmp_path, monkeypatch, capsys):
     cfg, work, out = make_clip(tmp_path)
     conf = tmp_path / "c.yaml"
-    conf.write_text(f"paths:\n  work_dir: '{work}'\n  out_dir: '{out}'\n", encoding="utf-8")
+    conf.write_text(f"paths:\n  work_dir: '{work}'\n  out_dir: '{out}'\nexport:\n  source: silhouette\n", encoding="utf-8")
     assert ex.main(["--config", str(conf)]) == EXIT_OK
     assert (out / "meme_clip.mp4").is_file()
     assert ex.main(["--config", str(conf), "--limit", "2"]) == EXIT_OK
