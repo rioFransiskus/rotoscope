@@ -1037,6 +1037,58 @@ rata-rata 136,8 / 194,0 per 10k piksel foreground; jendela statis ±30; `iou_pre
 - **Penyimpangan dan catatan proses:** Tahap 1 ditutup dengan rekomendasi NO-GO dan Rio memilih D; blok "Keputusan T-303, 2026-10-05" yang direncanakan di prompt digantikan oleh blok ini. Satu perintah shell
   salah ketik (`cat > "$SCRATCH_DUMMY"`) gagal tanpa efek; folder `work/t303/` dibuat lewat shell (bukan berkas teks repo).
 
+#### Keputusan T-401, 2026-10-06 (Rio, final; dicatat sebelum implementasi; Tahap 1 disetujui dengan koreksi)
+
+Dasar: pengukuran Tahap 1 (prototipe baca-saja atas `contours/` kedua klip, scratchpad).
+
+1. **Parameterisasi noise tebal = B** (noise 2D terkunci posisi, medan global, seed = hash(`jitter.param_seed`), tanpa `frame_index`, tanpa waktu; tebal STATIS terhadap waktu) untuk SEMUA tipe.
+   **Hipotesis C (hibrida: tertutup = busur dari anchor, terbuka = terkunci posisi) DIBANTAH data:** yang rusak di A adalah akumulasi panjang busur dari anchor (perubahan panjang kontur di hulu
+   menggeser noise di hilir), bukan lompatan titik awal. Pop bergerak p95 (× `width_base`): A 0,36–0,52, B 0,055–0,066; varian A2 (lattice px-tetap + crossfade) sama buruknya; seam B selisih maks 0,045
+   = langkah 1 px biasa. Varian A dan C TIDAK diimplementasikan di produksi (hanya skrip studi / papan); mutasi "seam tidak periodik" ditiadakan (B tidak butuh periodik).
+2. **Konstanta:** `JOIN_DIST_PX` = 8 px ref (ujung bertemu strok lain; celah data di 6–8 px), `WIDTH_FLOOR_PX` = 1,0 (absolut px output; di bawah 1 px raster ss = 3 terkuantisasi per 1/3 px dan tak monoton),
+   `RESAMPLE_MAX_GAP_REF` = 2. Renderer = trapesium + cakram per titik (BUKAN even-odd: gagal di tikungan rapat, L1 15–52% pada jari-jari ≤ 3). SVG = SATU poligon kontur terisi per strok,
+   `fill-rule="nonzero"` eksplisit, 2 desimal tanpa huruf `L` bila aman. Opsi "densify" ditolak (melanggar N batas bawah + arc-length seragam).
+3. **Ambang kesetaraan (dari data):** IoU ≥ 0,990 untuk SVG–PNG (terukur 0,9927–0,9947) dan regresi tebal konstan (0,992–0,994; lantai noise kuantisasi cv2 1/16 piksel ss, bukan galat geometri;
+   renderer saja pada titik sama = IoU 1,0); L1/tinta ≤ 0,010; piksel |selisih| > 0,5 ≤ 0,2% tinta; rasio massa tinta ±0,5%. Mutasi "SVG memakai titik berbeda dari raster" HARUS menggagalkan test.
+4. **Taper oklusi tidak diterima apa adanya:** pop p95 0,46–0,66 × `width_base` (4–6 px, lebih besar dari lebar garis oklusi 4,5 px) karena panjang strok oklusi berubah p50 ≈ 11 px, p95 90–132 px antar
+   frame; ujung `group_boundary` 95,6% sudah bertemu, jadi taper praktis hanya berlaku pada oklusi. Ditambah override per tipe `stroke.by_type.<tipe>.taper_ends` (bool opsional; tidak ada = warisi
+   `stroke.taper_ends`). Papan Tahap 3: taper oklusi MATI; hidup dengan `taper_min` {0,15; 0,3; 0,5}; profil linear vs smoothstep (pop dan kedalaman taper berdampingan). Rio memilih visual (dugaan: mati).
+5. **Koreksi "ujung oklusi SELALU bebas":** ujung oklusi ≤ `JOIN_DIST_OCC_PX` = 2 px dari strok OKLUSI LAIN = bertemu (pecahan satu garis; 8–9% ujung oklusi ≤ 1 px dari oklusi lain). Ujung oklusi dekat
+   siluet / batas grup mengikuti `JOIN_DIST_PX` (8). Selain itu oklusi bebas.
+6. **`shape.resample_points` default 200 → 4** (diterapkan di Tahap 4 bersama default lain; validasi min 4 tetap): batas bawah N; 200 menambah ±40% titik dan SVG +50 KiB hanya untuk strok kecil.
+7. **Pop dilaporkan juga relatif terhadap tebal strok itu sendiri** (tebal nominal tipe), supaya oklusi berskala 0,5 tidak tampak lebih ringan.
+8. **Batas yang diketahui (dicatat sebelum kode):** B = garis bergerak lewat medan statis → tebal "merayap" (p95 0,065 = ±0,6 px per frame pada skala default, 1,1 px pada ×2); 2,8–5,9% pasangan
+   bertrack sama berganti kelas bebas / bertemu (maks pop `group_boundary` 1,05–1,14 di ujung itu). Papan Tahap 3 wajib memuat video jendela gerak cepat (73–92, 183–202) skala noise {×1; ×2} dan peta "tebal berubah".
+9. **T-402 (bukan dikerjakan di T-401):** taper dapat distabilkan dengan memperhalus panjang strok lewat `track_id` pada ±2 frame (fungsi input, bukan rantai keluaran); noise yang sama + koordinat
+   waktu; boil "on twos".
+10. **Export:** `SUPPORTED_STROKES_CONTRACTS` = {"T-401"}; strokes lama basi; salinan SVG lama di `out/svg/<nama>/` disalin ulang sebagai basi (bukan suntingan pengguna) — dibuktikan test.
+
+#### Hasil T-401 (2026-10-06): tebal variabel + taper + resample di stage [5] — DONE
+
+- **Dibangun:** `noise.py` (value noise 2D, hash splitmix64, numpy saja, [-1, 1] dijamin konstruksi); `stylize.py` contract `"T-401"` (`ALGO_REV` tetap 1): resample arc-length, tebal per titik
+  (lantai 1 px output, noise terkunci posisi, taper smoothstep hanya ujung bebas), aturan ujung (tepi / bertemu 8 px / oklusi↔oklusi 2 px / tertutup + loop), renderer trapesium + cakram, SVG satu poligon
+  kontur per jalur (`nonzero`). Config: `stroke.by_type.<tipe>.taper_ends` (bool opsional). Spesifikasi: docs/01 [5]; parameter: docs/02.
+- **Default (keputusan Rio, penilaian visual 2026-10-06):** `width_variation` 0,5 (alasan: suka efek style); `width_noise_scale` 0,036 = ×1 (×2 saja yang tampak "merayap" di garis bergerak); hierarki tipe
+  RATA (semua `width_scale` 1,0; set 1,0/0,8/0,6/0,5, 1,0/0,7/0,7/0,7, 1,0/0,9/0,5/0,35 ditolak); `taper_px` 70, `taper_min` 0,5; taper oklusi HIDUP (`by_type.occlusion.taper_ends` `null` = warisi);
+  `resample_points` 4; `width_base` 9,0 tidak berubah. Visual: tidak ada takik / celah / lipatan di tikungan rapat dan sambungan tertutup; SVG terbuka di peramban / editor dan tampak sama dengan video.
+- **Ditolak / dihapus:** varian A (busur dari `points[0]`) dan C (hibrida) — data (hipotesis C dibantah); profil taper linear (`TAPER_PROFILE` dihapus; hanya smoothstep); hierarki tipe selain rata; isian even-odd;
+  opsi densify; skala ×2 (merayap). Varian A / C tetap hanya di `scripts/strokes_preview.py` (alat studi, bukti `work/t401/`).
+- **Terukur (data nyata, scratchpad Tahap 3, default lama; metrik permanen `tests/stylize_metrics.py`):** IoU SVG–PNG 0,9920–0,9957 (≥ 0,990), L1/tinta maks 0,0080 (≤ 0,010), piksel |selisih| > 0,5 maks 0,15% (≤ 0,2%),
+  rasio massa 0,9973–0,9999 (±0,5%); regresi tebal konstan vs T-203a IoU 0,9919–0,9955; deviasi centerline tidak memburuk (silhouette p50 / p95 / maks 5,95 / 8,95 / 15,94 → 5,92 / 8,94 / 15,94;
+  lubang, batas grup, oklusi sama ±0,01); mutasi SVG: garis 9 px digeser 1 px → IoU 0,9935 → 0,8152 (0,5 px → 0,9038); 9 mutasi semuanya menggagalkan test (`work/t401/mutations.json`);
+  determinisme / resume / `--limit` / `--from` / basi identik (`work/t401/s3_determinism_test_short.json`).
+- **Pop tebal (p95 titik bergerak, × `width_base` = × tebal sendiri karena hierarki rata) pada DEFAULT FINAL, seluruh klip (`work/t401/stage4_pop_final.json`):** `test` silhouette 0,071, lubang 0,071,
+  batas grup 0,070, oklusi **0,387** (diam 0,277); `test_short` 0,071 / 0,070 / 0,063 / **0,409** (diam 0,314). Taper oklusi mati: oklusi 0,059 / 0,061; semua taper mati: ≤ 0,071.
+  Kedalaman taper median 0,50–0,54. Perbandingan A / B / C (taper mati, skala ×1, `test`): A silhouette 0,556, lubang 0,543, batas grup 0,340, oklusi 0,391; C silhouette 0,556, lubang 0,543; B 0,064 / 0,064 / 0,058 / 0,054.
+- **Waktu / ukuran (default final, `run` nyata, tanpa GPU):** stage [5] 23,9 s (119 frame) dan 67,4 s (283 frame): rata-rata 198 / 235 ms per frame, p95 238 / 267, maks 252 / 407; **60 dari 283 frame `test`
+  (dan 1 dari 119) melewati target 250 ms**; ukuran awal Tahap 3 (default lama, scratchpad) 153–157 ms rata-rata, ukur ulang scratchpad 199 ms: penyebab selisih tidak dipecahkan (dugaan beban mesin).
+  SVG rata-rata 89,9 / 91,9 KiB, PNG 70,0 / 71,6 KiB per frame; memori puncak 133 MiB (Tahap 3). Export: MP4 1138 / 3061 KiB.
+- **Batas yang diketahui:** (1) pop oklusi 0,39–0,41 × `width_base` (≈ 3,5–3,7 px output) pada taper hidup karena panjang strok oklusi berubah antar frame — keputusan Rio dengan angka diketahui; (2) 2,8–5,9% pasangan
+  strok berganti kelas ujung bebas ↔ bertemu (maks pop `group_boundary` 1,05–1,14); (3) tebal tidak dapat diubah di editor SVG; (4) tebal statis terhadap waktu (boil = T-402); (5) `FILL_BIAS_SS` 0,5 → 0,55:
+  rasio massa SVG/PNG pada 0,5 = 0,994–0,996 (di tepi ±0,5%), pada 0,55 = 0,998–0,9995; (6) waktu per frame di atas.
+- **Penyimpangan proses (dilaporkan):** satu `sed -i` shell mengubah dua literal `"T-203a"` → `"T-401"` di `tests/test_export_strokes.py` (melanggar aturan Edit/Write; diff diperiksa: hanya dua baris itu).
+- **Bahan T-402:** noise yang sama + koordinat waktu (jitter / boil); boil "on twos"; stabilkan taper dengan memperhalus panjang strok lewat `track_id` pada ±2 frame (fungsi input, bukan rantai keluaran).
+
 ---
 
 ## Pitfall yang sudah diketahui

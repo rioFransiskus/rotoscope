@@ -1,19 +1,22 @@
-"""Stage [5] stylize (T-203a, CPU): contours/*.json → strokes/frame_%05d.svg + .png (garis polos) + manifest.json.
+"""Stage [5] stylize (T-401, CPU): contours/*.json → strokes/frame_%05d.svg + .png + manifest.json.
 
     python -m rotoscope stylize <video> [--config PATH] [--style PATH] [--restart] [--limit N]
 
 cli.py memanggil main(). TANPA GPU: torch tidak pernah di-import.
 
-Garis polos (T-203a): latar `paper.color`, tinta `stroke.color`, tebal seragam per tipe, solid. Jitter, taper, width
-modulation, multipass, tekstur, opasitas dan `shape.resample_points` BELUM aktif (Phase 4; `ignored_params` di manifest).
+Garis bertebal variabel (T-401): latar `paper.color`, tinta `stroke.color`, solid. Tebal per titik = lantai(dasar × skala tipe ×
+(1 + variasi × noise 2D terkunci posisi) × taper); taper hanya di ujung BEBAS. Jitter, multipass, tekstur, opasitas BELUM aktif
+(`ignored_params` di manifest).
 
 Satuan panjang style = px REFERENSI lebar 1080 × unit (unit = render.output_width / 1080). Geometri dihitung di px
 OUTPUT: titik kontur (pusat piksel kerja) × s, s = output_width / width.
 
 Pipeline geometri per strok (satu geometri untuk SVG dan raster):
   titik × s → [mode hide] run di tepi frame dibuang, strok dipecah jadi jalur terbuka → approxPolyDP → Catmull-Rom
-  (uniform; periodik untuk strok tertutup) → ujung di tepi diperpanjang keluar KANVAS → titik dibulatkan 1 desimal.
-SVG = string manual (byte-deterministik). Raster = satu mask supersampling (union semua strok) → INTER_AREA → kertas.
+  (uniform; periodik untuk strok tertutup) → ujung di tepi diperpanjang keluar KANVAS → titik dibulatkan 2 desimal
+  → resample arc-length (jarak maks RESAMPLE_MAX_GAP_REF, N ≥ shape.resample_points) → tebal per titik.
+Raster = satu mask supersampling (union trapesium + cakram per titik; union semua strok) → INTER_AREA → kertas.
+SVG = string manual (byte-deterministik): SATU poligon kontur terisi per jalur (fill-rule nonzero) dari garis tengah + tebal yang SAMA.
 """
 
 from __future__ import annotations
@@ -34,7 +37,9 @@ from pathlib import Path
 import cv2
 import numpy as np
 from scipy.ndimage import gaussian_filter1d
+from scipy.spatial import cKDTree
 
+from rotoscope import noise
 from rotoscope import vectorize as vz
 from rotoscope.config import ConfigError, StyleConfig, ensure_dir, load_pipeline, load_style
 from rotoscope.stage_common import (
@@ -49,7 +54,7 @@ MANIFEST_FILENAME = "manifest.json"
 FRAMES_LOG_FILENAME = "frames.jsonl"
 SVG_SUFFIX = ".svg"
 PNG_SUFFIX = ".png"
-CONTRACT = "T-203a"
+CONTRACT = "T-401"
 # Naik 1 HANYA untuk perbaikan PERILAKU pada kode yang sudah dikontrak, tanpa perubahan parameter (docs/01). Fitur baru
 # (jitter, taper, ...) menaikkan CONTRACT, bukan ALGO_REV.
 ALGO_REV = 1
@@ -66,14 +71,16 @@ SHIFT_SCALE = 1 << SHIFT_BITS
 LINE_TYPE = cv2.LINE_8            # tanpa anti-alias cv2: anti-alias = supersampling + INTER_AREA
 # cv2.polylines(thickness=t) hanya menghasilkan lebar ganjil (t genap → t+1, t ganjil → t+2; terukur) → tebal tidak bisa
 # eksak. Garis digambar sebagai poligon terisi (kuad per segmen + cakram di tiap titik) dengan koordinat sub-piksel.
-FILL_BIAS_SS = 0.5                # cv2.fillPoly mengisi tepi poligon (inklusif): memperlebar ≈ 0,5 piksel ss per sisi (terukur)
+# cv2.fillConvexPoly mengisi tepi poligon (inklusif): memperlebar ≈ 0,5 piksel ss per sisi pada garis horizontal, lebih pada garis
+# miring (+0,4…0,7% pada tebal 9 px). 0,55 = kalibrasi T-401 terhadap luas poligon SVG pada frame nyata (rasio massa SVG/PNG
+# 0,998–0,9995; 0,5 → 0,994–0,996); selisih terhadap T-203a: massa tinta −0,3%, IoU 0,993 (tebal konstan).
+FILL_BIAS_SS = 0.55
 CIRCLE_VERTICES = 24              # poligon pendekatan cakram sambungan / ujung
 CIRCLE = np.column_stack([np.cos(2 * np.pi * (np.arange(CIRCLE_VERTICES) + 0.5) / CIRCLE_VERTICES),
                           np.sin(2 * np.pi * (np.arange(CIRCLE_VERTICES) + 0.5) / CIRCLE_VERTICES)]
                          ) / np.cos(np.pi / CIRCLE_VERTICES)                         # sisi poligon menyinggung lingkaran jari-jari 1
 PNG_COMPRESSION = 3               # cv2.IMWRITE_PNG_COMPRESSION (0–9); deterministik
 SVG_DECIMALS = 2                  # titik SVG dan raster dibulatkan 0,01 px output (titik SAMA); galat ≤ 0,007 px
-SVG_WIDTH_DECIMALS = 3
 EDGE_MARGIN_PX = 1.0              # ekstensi di tepi: melewati kanvas sejauh tebal/2 + margin ini (px output)
 SHALLOW_CONTACT_DEG = 45.0        # kontak ke tepi < sudut ini (terhadap garis tepi) → ekstensi tegak lurus tepi
 SHALLOW_SIN = math.sin(math.radians(SHALLOW_CONTACT_DEG))
@@ -91,14 +98,25 @@ GAUSS_TRUNCATE = 3.0              # radius kernel Gaussian dalam sigma
 MIN_SMOOTH_POINTS = 4
 MASK_LEVELS = 256                 # mask / cakupan uint8
 MASK_PAD_PX = 4                   # tambahan pad mask di luar kanvas (px output) selain tebal maks
-ONLY_CAP = "round"                # T-203a hanya cap bulat
+ONLY_CAP = "round"                # hanya cap bulat
 TYPE_ORDER = vz.STROKE_TYPES      # urutan <g> di SVG = urutan strok [4]
 
-# Parameter style AKTIF di T-203a (masuk hash); sisanya = ignored_params.
+# ── T-401: resample, tebal, taper, noise (konstanta struktural; keputusan Rio, docs/04 "Keputusan T-401") ─
+RESAMPLE_MAX_GAP_REF = 2.0        # jarak maks titik hasil resample (px ref)
+WIDTH_FLOOR_PX = 1.0              # lantai tebal ABSOLUT (px output): < 1 px raster ss = 3 terkuantisasi per 1/3 px, tak monoton
+JOIN_DIST_PX = 8.0                # ujung ≤ ini (px ref) dari strok lain = "bertemu" (tanpa taper); celah data di 6–8 px
+JOIN_DIST_OCC_PX = 2.0            # ujung OKLUSI ≤ ini (px ref) dari strok OKLUSI lain = bertemu (pecahan satu garis)
+JOIN_SAMPLE_STEP = 0.5            # jarak sampel (px output) polyline strok lain untuk pengukuran jarak ujung
+OUTLINE_CAP_STEPS = 8             # segmen setengah lingkaran ujung bulat pada poligon kontur SVG
+SVG_FILL_RULE = "nonzero"
+
+# Parameter style AKTIF (masuk hash); sisanya = ignored_params.
 ACTIVE_SCALARS = ("shape.simplify_epsilon", "shape.smooth_px", "shape.smooth_tension", "shape.spline_steps", "shape.edge_mode",
-                  "stroke.width_base", "stroke.color", "stroke.cap", "paper.color", "render.ss", "render.output_width")
+                  "shape.resample_points", "stroke.width_base", "stroke.width_variation", "stroke.width_noise_scale",
+                  "stroke.taper_ends", "stroke.taper_px", "stroke.taper_min", "stroke.color", "stroke.cap", "jitter.param_seed",
+                  "paper.color", "render.ss", "render.output_width")
 ACTIVE_BY_TYPE_PREFIX = "stroke.by_type."
-ACTIVE_BY_TYPE_SUFFIX = ".width_scale"
+ACTIVE_BY_TYPE_SUFFIXES = (".width_scale", ".taper_ends")
 MANIFEST_MATCH_KEYS = ("contract", "algo_rev", "style_hash", "style_params", "contours", "clip", "frame_size",
                        "output_size", "scale", "unit")
 COORDS_INFO = {"space": "output pixels", "origin": "top-left corner of pixel (0, 0)",
@@ -125,7 +143,7 @@ def _flatten(obj, prefix: str = "") -> dict:
 
 
 def active_param_names() -> tuple[str, ...]:
-    return ACTIVE_SCALARS + tuple(f"{ACTIVE_BY_TYPE_PREFIX}{t}{ACTIVE_BY_TYPE_SUFFIX}" for t in TYPE_ORDER)
+    return ACTIVE_SCALARS + tuple(f"{ACTIVE_BY_TYPE_PREFIX}{t}{s}" for t in TYPE_ORDER for s in ACTIVE_BY_TYPE_SUFFIXES)
 
 
 def style_params(style: StyleConfig) -> tuple[dict, list[str], dict]:
@@ -169,32 +187,54 @@ class Geometry:
     spline_tol: float             # galat akor spline (px output)
     edge_mode: str
     ss: int
-    widths: Mapping[str, float]   # tebal per tipe (px output)
+    widths: Mapping[str, float]   # tebal dasar per tipe (px output) = width_base × width_scale × unit
     ink: tuple[int, int, int]
     paper: tuple[int, int, int]
+    variation: float = 0.0        # amplitudo variasi tebal (0 = seragam)
+    noise_cell: float = 0.0       # panjang gelombang noise (px output); 0 = noise mati
+    noise_seed: int = 0
+    taper_len: float = 0.0        # panjang zona taper (px output)
+    taper_min: float = 1.0
+    taper_on: Mapping[str, bool] = dataclasses.field(default_factory=dict)   # taper aktif per tipe
+    resample_n: int = 0           # batas bawah N titik per jalur
+    join_dist: float = 0.0        # px output
+    join_dist_occ: float = 0.0
+    floor: float = 0.0            # lantai tebal (px output)
 
 
 def make_geometry(style: StyleConfig, width: int, height: int) -> Geometry:
     if style.stroke.cap != ONLY_CAP:
-        raise StageError(f"stroke.cap = {style.stroke.cap!r} belum didukung di T-203a (hanya {ONLY_CAP!r})")
+        raise StageError(f"stroke.cap = {style.stroke.cap!r} belum didukung (hanya {ONLY_CAP!r})")
     ow = style.render.output_width
     out_w, out_h = output_size(width, height, ow)
     unit = ow / REF_WIDTH
-    widths = {t: style.stroke.width_base * style.stroke.by_type[t].width_scale * unit for t in TYPE_ORDER}
+    st = style.stroke
+    widths = {t: st.width_base * st.by_type[t].width_scale * unit for t in TYPE_ORDER}
+    taper_on = {t: bool(st.taper_ends if st.by_type[t].taper_ends is None else st.by_type[t].taper_ends)
+                and st.taper_px > 0 for t in TYPE_ORDER}
     return Geometry(width=width, height=height, out_w=out_w, out_h=out_h, scale=ow / width, unit=unit,
                     epsilon=style.shape.simplify_epsilon * unit, smooth=style.shape.smooth_px * unit, tension=style.shape.smooth_tension,
                     steps=style.shape.spline_steps, spline_tol=SPLINE_TOL_REF * unit,
                     edge_mode=style.shape.edge_mode, ss=style.render.ss, widths=widths,
-                    ink=hex_rgb(style.stroke.color), paper=hex_rgb(style.paper.color))
+                    ink=hex_rgb(st.color), paper=hex_rgb(style.paper.color),
+                    variation=st.width_variation if st.width_noise_scale > 0 else 0.0,
+                    noise_cell=unit / st.width_noise_scale if st.width_noise_scale > 0 else 0.0,
+                    noise_seed=int(noise.seed_of(style.jitter.param_seed)),
+                    taper_len=st.taper_px * unit, taper_min=st.taper_min, taper_on=taper_on,
+                    resample_n=style.shape.resample_points, join_dist=JOIN_DIST_PX * unit,
+                    join_dist_occ=JOIN_DIST_OCC_PX * unit, floor=WIDTH_FLOOR_PX)
 
 
 @dataclass(frozen=True)
 class Piece:
-    """Satu jalur yang digambar (px output, sudah dibulatkan 1 desimal)."""
+    """Satu jalur yang digambar (px output, sudah dibulatkan 2 desimal)."""
     type: str
     closed: bool
     points: np.ndarray            # (N, 2)
     track_id: int
+    stroke_idx: int = -1          # indeks strok asal di frame (jalur hasil potong tepi berbagi indeks)
+    edge: tuple[bool, bool] = (False, False)   # ujung awal / akhir menyentuh tepi frame (tanpa taper)
+    widths: np.ndarray | None = None           # tebal per titik (px output); None = seragam g.widths[type]
 
 
 def edge_sides(p: np.ndarray, width: int, height: int) -> list[list[str]]:
@@ -395,13 +435,14 @@ def extension_point(end: np.ndarray, tangent: np.ndarray, sides: list[str], g: G
     return end + t * direction, info
 
 
-def stroke_pieces(stroke: dict, g: Geometry, stats: dict) -> list[Piece]:
-    """Satu strok kontur → jalur yang digambar (satu geometri untuk SVG dan raster)."""
+def stroke_pieces(stroke: dict, g: Geometry, stats: dict, stroke_idx: int = -1) -> list[Piece]:
+    """Satu strok kontur → jalur yang digambar (satu geometri untuk SVG dan raster); belum di-resample, tanpa tebal per titik."""
     p = np.asarray(stroke["points"], dtype=np.float64)
     closed = bool(stroke["closed"])
     if not closed and len(p) > 3 and np.array_equal(p[0], p[-1]):     # loop: titik akhir = titik awal
         closed, p = True, p[:-1]
-    typ, tid, wpx = stroke["type"], int(stroke["track_id"]), g.widths[stroke["type"]]
+    typ, tid = stroke["type"], int(stroke["track_id"])
+    wpx = g.widths[typ] * (1.0 + g.variation)         # tebal maksimum yang mungkin: ekstensi tepi melewati kanvas dengan aman
     smooth_step = SMOOTH_STEP_REF * g.unit
     sides = edge_sides(p, g.width, g.height)
     on = np.array([bool(s) for s in sides])
@@ -443,7 +484,8 @@ def stroke_pieces(stroke: dict, g: Geometry, stats: dict) -> list[Piece]:
                 tail.append(q)
                 _count_contact(stats, info)
             curve = np.vstack(head + [curve] + tail)
-        out.append(Piece(typ, cl, np.round(curve, SVG_DECIMALS) + 0.0, tid))
+        edge = (False, False) if cl else (bool(sd[0]), bool(sd[-1]))     # titik silang tepi / run tepi (kedua mode)
+        out.append(Piece(typ, cl, np.round(curve, SVG_DECIMALS) + 0.0, tid, stroke_idx, edge))
     return out
 
 
@@ -480,36 +522,126 @@ def draw_width_warning(g: Geometry) -> str | None:
 
 def new_stats() -> dict:
     return {"dropped_all_edge": 0, "edge_cuts": 0, "edge_ends": 0, "shallow_ends": 0, "corner_ends": 0,
-            "min_contact_deg": 90.0}
+            "min_contact_deg": 90.0, "free_ends": 0}
+
+
+# ── Resample + tebal per titik (T-401) ─────────────
+def resample_n(points: np.ndarray, closed: bool, n: int) -> np.ndarray:
+    """n titik berjarak busur sama dari titik awal. Terbuka: ujung persis dipertahankan; tertutup: tanpa titik ganda."""
+    q = np.vstack([points, points[:1]]) if closed else points
+    s = np.r_[0.0, np.cumsum(np.hypot(*np.diff(q, axis=0).T))]
+    length = float(s[-1])
+    if length <= 0:
+        return points
+    t = np.arange(n) * (length / n) if closed else np.linspace(0.0, length, n)
+    return np.column_stack([np.interp(t, s, q[:, 0]), np.interp(t, s, q[:, 1])])
+
+
+def resample_piece(pc: Piece, g: Geometry) -> np.ndarray:
+    """N = max(shape.resample_points, ceil(panjang / (RESAMPLE_MAX_GAP_REF × unit)) [+ 1 bila terbuka]); dibulatkan 2 desimal."""
+    q = np.vstack([pc.points, pc.points[:1]]) if pc.closed else pc.points
+    length = float(np.hypot(*np.diff(q, axis=0).T).sum())
+    n = max(g.resample_n, int(math.ceil(length / (RESAMPLE_MAX_GAP_REF * g.unit))) + (0 if pc.closed else 1))
+    return np.round(resample_n(pc.points, pc.closed, n), SVG_DECIMALS) + 0.0
+
+
+def taper_factor(s: np.ndarray, length: float, free: tuple[bool, bool], g: Geometry) -> np.ndarray:
+    """Faktor taper per titik (busur s dari titik awal): taper_min di ujung bebas → 1 pada jarak min(taper_px, L/2)."""
+    lt = min(g.taper_len, length / 2)
+    if lt <= 0 or not (free[0] or free[1]):
+        return np.ones_like(s)
+    t = np.full_like(s, np.inf)
+    if free[0]:
+        t = np.minimum(t, s / lt)
+    if free[1]:
+        t = np.minimum(t, (length - s) / lt)
+    t = np.clip(t, 0.0, 1.0)
+    return g.taper_min + (1.0 - g.taper_min) * t * t * (3.0 - 2.0 * t)      # smoothstep (keputusan Rio: bukan linear)
+
+
+def width_profile(points: np.ndarray, closed: bool, typ: str, free: tuple[bool, bool], g: Geometry) -> np.ndarray:
+    """Tebal per titik (px output): lantai(dasar × (1 + variasi × noise 2D terkunci posisi) × taper). Statis terhadap waktu."""
+    w = np.full(len(points), g.widths[typ])
+    if g.variation > 0 and g.noise_cell > 0:
+        n = noise.value_noise_2d(np.uint64(g.noise_seed), points[:, 0] / g.noise_cell, points[:, 1] / g.noise_cell)
+        w = w * (1.0 + g.variation * n)
+    if not closed and (free[0] or free[1]):
+        s = np.r_[0.0, np.cumsum(np.hypot(*np.diff(points, axis=0).T))]
+        w = w * taper_factor(s, float(s[-1]), free, g)
+    return np.maximum(w, g.floor)
+
+
+def free_ends(pieces: list[Piece], g: Geometry) -> list[tuple[bool, bool]]:
+    """Ujung BEBAS (kena taper) per jalur: terbuka, tipenya taper-aktif, tidak menyentuh tepi frame, dan tidak "bertemu" strok
+    LAIN: jarak ≤ join_dist (JOIN_DIST_PX); ujung oklusi ke strok OKLUSI lain ≤ join_dist_occ (JOIN_DIST_OCC_PX)."""
+    flags = [[False, False] for _ in pieces]
+    cand = [(i, e) for i, pc in enumerate(pieces)
+            if g.taper_on[pc.type] and not pc.closed and len(pc.points) >= 2 for e in (0, 1) if not pc.edge[e]]
+    if not cand:
+        return [(False, False)] * len(pieces)
+    dense = [arc_resample(pc.points, pc.closed, JOIN_SAMPLE_STEP * g.unit) for pc in pieces]
+    owner = np.concatenate([np.full(len(d), pc.stroke_idx if pc.stroke_idx >= 0 else -(k + 2))
+                            for k, (pc, d) in enumerate(zip(pieces, dense))])
+    occ = np.concatenate([np.full(len(d), pc.type == "occlusion") for pc, d in zip(pieces, dense)])
+    samples = np.vstack(dense)
+    ends = np.array([pieces[i].points[0 if e == 0 else -1] for i, e in cand])
+    hits = cKDTree(samples).query_ball_point(ends, max(g.join_dist, g.join_dist_occ))
+    for (i, e), end, idx in zip(cand, ends, hits):
+        pc = pieces[i]
+        idx = np.asarray(idx, dtype=int)
+        meet = False
+        if len(idx):
+            own = pc.stroke_idx if pc.stroke_idx >= 0 else -(i + 2)
+            idx = idx[owner[idx] != own]
+            if len(idx):
+                dist = np.hypot(*(samples[idx] - end).T)
+                thr = np.where(occ[idx] & (pc.type == "occlusion"), g.join_dist_occ, g.join_dist)
+                meet = bool((dist <= thr).any())
+        flags[i][e] = not meet
+    return [(f[0], f[1]) for f in flags]
 
 
 def frame_pieces(doc: dict, g: Geometry) -> tuple[list[Piece], dict]:
     stats = new_stats()
-    pieces: list[Piece] = []
-    for s in doc["strokes"]:
-        pieces += stroke_pieces(s, g, stats)
+    raw: list[Piece] = []
+    for i, s in enumerate(doc["strokes"]):
+        raw += stroke_pieces(s, g, stats, i)
+    res = [dataclasses.replace(pc, points=resample_piece(pc, g)) for pc in raw]
+    flags = free_ends(res, g)
+    pieces = []
+    for pc, fl in zip(res, flags):
+        stats["free_ends"] += int(fl[0]) + int(fl[1])
+        pieces.append(dataclasses.replace(pc, widths=width_profile(pc.points, pc.closed, pc.type, fl, g)))
     return pieces, stats
 
 
 # ── Render ─────────────────────────────────────────
+def piece_widths(pc: Piece, g: Geometry) -> np.ndarray:
+    return pc.widths if pc.widths is not None else np.full(len(pc.points), g.widths[pc.type])
+
+
 def render_mask(pieces: list[Piece], g: Geometry) -> np.ndarray:
     """Satu mask supersampling (union semua strok, tipe dan tebal berbeda). Koordinat cv2 = x' · ss − RASTER_OFFSET (titik
-    cv2 integer = pusat piksel supersampling; titik kontinu x' · ss = k + 0,5 adalah pusatnya), sub-piksel 1/16."""
-    pad = int(math.ceil(max(g.widths.values()))) + MASK_PAD_PX          # kanvas diperlebar: poligon tidak terpotong di tepi mask
+    cv2 integer = pusat piksel supersampling; titik kontinu x' · ss = k + 0,5 adalah pusatnya), sub-piksel 1/16.
+    Tebal per titik: trapesium per segmen (jari-jari kedua titik) + cakram di tiap titik (union = nonzero dari poligon kontur)."""
+    wmax = max([float(piece_widths(pc, g).max()) for pc in pieces] or [0.0])
+    pad = int(math.ceil(wmax)) + MASK_PAD_PX          # kanvas diperlebar: poligon tidak terpotong di tepi mask
     mask = np.zeros(((g.out_h + 2 * pad) * g.ss, (g.out_w + 2 * pad) * g.ss), np.uint8)
     quads: list[np.ndarray] = []
     discs: list[np.ndarray] = []
     for pc in pieces:
         p = (pc.points + pad) * g.ss - RASTER_OFFSET
-        r = max(g.widths[pc.type] * g.ss / 2 - FILL_BIAS_SS, 0.0)
+        r = np.maximum(piece_widths(pc, g) * g.ss / 2 - FILL_BIAS_SS, 0.0)
         q = np.vstack([p, p[:1]]) if pc.closed else p
+        rq = np.r_[r, r[:1]] if pc.closed else r
         d = np.diff(q, axis=0)
         length = np.hypot(d[:, 0], d[:, 1])
         keep = length > 0
-        n = np.column_stack([-d[:, 1], d[:, 0]])[keep] / length[keep, None] * r
+        n = np.column_stack([-d[:, 1], d[:, 0]])[keep] / length[keep, None]
         a, b = q[:-1][keep], q[1:][keep]
-        quads.append(np.stack([a + n, b + n, b - n, a - n], axis=1))
-        discs.append(p[:, None, :] + r * CIRCLE[None, :, :])                      # sambungan + ujung bulat (cap round)
+        ra, rb = rq[:-1][keep, None], rq[1:][keep, None]
+        quads.append(np.stack([a + n * ra, b + n * rb, b - n * rb, a - n * ra], axis=1))
+        discs.append(p[:, None, :] + r[:, None, None] * CIRCLE[None, :, :])       # sambungan + ujung bulat (cap round)
     if quads:
         # fillConvexPoly per poligon: satu panggilan fillPoly memakai aturan genap-ganjil, jadi poligon yang tumpang
         # tindih (kuad bertetangga, cakram) menjadi LUBANG; union butuh panggilan terpisah.
@@ -535,24 +667,49 @@ def render_png(pieces: list[Piece], g: Geometry) -> bytes:
     return buf.tobytes()
 
 
-def _num(v: float) -> str:
-    return f"{v:.{SVG_DECIMALS}f}"
+def piece_outline(pc: Piece, g: Geometry) -> list[np.ndarray]:
+    """Poligon kontur jalur dari garis tengah + tebal per titik: terbuka = satu poligon (sisi kiri → ujung bulat → sisi kanan
+    terbalik → ujung bulat awal); tertutup = dua sub-path berlawanan arah (luar + dalam; nonzero menyisakan tengah kosong).
+    Titik dibulatkan SVG_DECIMALS (titik SVG). Tikungan rapat (jari-jari < tebal/2) menghasilkan lipatan; fill nonzero = union."""
+    p, w = pc.points, piece_widths(pc, g)
+    if pc.closed:
+        d = np.roll(p, -1, axis=0) - np.roll(p, 1, axis=0)
+    else:
+        d = np.empty_like(p)
+        d[1:-1] = p[2:] - p[:-2]
+        d[0], d[-1] = p[1] - p[0], p[-1] - p[-2]
+    norm = np.hypot(*d.T)
+    t = d / np.where(norm > 0, norm, 1.0)[:, None]
+    nrm = np.column_stack([-t[:, 1], t[:, 0]])
+    r = (w / 2)[:, None]
+    left, right = p + nrm * r, p - nrm * r
+    if pc.closed:
+        polys = [left, right[::-1]]
+    else:
+        th = np.linspace(0.0, math.pi, OUTLINE_CAP_STEPS + 1)[1:-1, None]
+        end_cap = p[-1] + r[-1] * (np.cos(th) * nrm[-1] + np.sin(th) * t[-1])
+        start_cap = p[0] - r[0] * (np.cos(th) * nrm[0] + np.sin(th) * t[0])
+        polys = [np.vstack([left, end_cap, right[::-1], start_cap])]
+    return [np.round(pl, SVG_DECIMALS) + 0.0 for pl in polys]
+
+
+def _path_data(polys: list[np.ndarray]) -> str:
+    """"M x y x y … Z" per sub-path (lineto implisit setelah M, SVG 1.1)."""
+    return " ".join("M" + " ".join(f"{x:.{SVG_DECIMALS}f} {y:.{SVG_DECIMALS}f}" for x, y in pl) + " Z" for pl in polys)
 
 
 def render_svg(pieces: list[Piece], g: Geometry, style: StyleConfig) -> bytes:
-    """SVG manual: <g id=tipe> per tipe (urutan tetap), satu <path> per jalur, titik yang SAMA dengan raster."""
+    """SVG manual: <g id=tipe> per tipe (urutan tetap), satu <path> terisi (poligon kontur) per jalur; garis tengah + tebal
+    SAMA dengan raster."""
     head = (f'<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="{g.out_w}" '
             f'height="{g.out_h}" viewBox="0 0 {g.out_w} {g.out_h}">\n'
             f'<rect width="{g.out_w}" height="{g.out_h}" fill="{style.paper.color}"/>\n')
     parts = [head]
     for t in TYPE_ORDER:
-        parts.append(f'<g id="{t}" fill="none" stroke="{style.stroke.color}" stroke-linecap="round" '
-                     f'stroke-linejoin="round" stroke-width="{g.widths[t]:.{SVG_WIDTH_DECIMALS}f}">\n')
+        parts.append(f'<g id="{t}" fill="{style.stroke.color}" fill-rule="{SVG_FILL_RULE}" stroke="none">\n')
         for pc in pieces:
-            if pc.type != t:
-                continue
-            d = "M" + " L".join(f"{_num(x)} {_num(y)}" for x, y in pc.points) + (" Z" if pc.closed else "")
-            parts.append(f'<path d="{d}"/>\n')
+            if pc.type == t:
+                parts.append(f'<path d="{_path_data(piece_outline(pc, g))}"/>\n')
         parts.append("</g>\n")
     parts.append("</svg>\n")
     return "".join(parts).encode("utf-8")
@@ -747,7 +904,7 @@ def frame_valid(clip: Clip, name: str, size: tuple[int, int]) -> bool:
 def run_stylize(cfg, style: StyleConfig, style_name: str = "default", *, restart: bool = False,
                 limit: int | None = None, start: int | None = None,
                 log: Callable[[str], None] = print) -> dict:
-    """Jalankan stage [5] (T-203a). `start` (--from, T-204) = jendela [start, start+limit): wajib bersama `limit`."""
+    """Jalankan stage [5] (T-401). `start` (--from, T-204) = jendela [start, start+limit): wajib bersama `limit`."""
     if limit is not None and limit < 1:
         raise StageError(f"--limit harus ≥ 1, dapat {limit}")
     clip = load_clip(cfg.paths.work_dir)
@@ -762,7 +919,7 @@ def run_stylize(cfg, style: StyleConfig, style_name: str = "default", *, restart
         print(warning, file=sys.stderr, flush=True)
     _, _, ignored_nondefault = style_params(style)
     if ignored_nondefault:
-        log("catatan: parameter style belum aktif di T-203a (diabaikan): "
+        log("catatan: parameter style belum aktif di T-401 (diabaikan): "
             + ", ".join(f"{k}={v!r}" for k, v in ignored_nondefault.items()))
 
     stale: list[str] = []
@@ -792,7 +949,7 @@ def run_stylize(cfg, style: StyleConfig, style_name: str = "default", *, restart
 
     size = (g.out_w, g.out_h)
     todo = [(n, i) for n, i in zip(selected, indices) if not frame_valid(clip, n, size)]
-    log(f"[5] stylize ({CONTRACT}: garis polos, edge_mode {g.edge_mode}): {len(selected)} frame dipilih, "
+    log(f"[5] stylize ({CONTRACT}: tebal variabel + taper, edge_mode {g.edge_mode}): {len(selected)} frame dipilih, "
         f"{len(selected) - len(todo)} valid dilewati, {len(todo)} diproses; output {g.out_w}x{g.out_h} "
         f"(s {g.scale:.4f}, unit {g.unit:.4f})")
     run = {"selected": len(selected), "skipped": len(selected) - len(todo), "processed": 0, "stale": stale,
@@ -830,7 +987,7 @@ def run_stylize(cfg, style: StyleConfig, style_name: str = "default", *, restart
 # ── Entry point stage (dipanggil cli.py) ───────────
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="python -m rotoscope.stylize",
-                                description="Stage [5]: contours/ → strokes/ (SVG + PNG garis polos)")
+                                description="Stage [5]: contours/ → strokes/ (SVG + PNG, tebal variabel + taper)")
     p.add_argument("--config", type=Path, default=None,
                    help=f"YAML pipeline (default: {DEFAULT_PIPELINE.as_posix()} kalau ada, selain itu default kode)")
     p.add_argument("--style", type=Path, default=None,

@@ -175,7 +175,7 @@ export:
 shape:
   simplify_epsilon: 2.8      # cv2.approxPolyDP (px ref). Naik = lebih sedikit titik, lebih kasar (keputusan Rio: 5.6 membuang bentuk)
   smooth_px: 5.0             # penghalusan Gaussian arc-length SEBELUM approxPolyDP (px ref); 0 = mati. Sudut tajam + ujung dijaga
-  resample_points: 200       # jumlah titik tetap per stroke (Phase 4; belum dipakai render T-203a)
+  resample_points: 4         # batas bawah N titik per strok; N = max(ini, ceil(panjang / 2 px ref)) (T-401)
   smooth_tension: 0.5        # Catmull-Rom tension. 0 = tajam, 0.5 = Catmull-Rom standar
   spline_steps: 8            # titik spline minimum per segmen (otomatis lebih rapat bila galat akor > 0.03 px ref)
   edge_mode: "hide"          # garis di tepi frame: "hide" = disembunyikan (tubuh terpotong frame) | "draw" = digambar
@@ -184,19 +184,19 @@ shape:
 # ── STROKE ─────────────────────────────────────────
 stroke:
   width_base: 9.0            # tebal dasar garis (px ref); keputusan Rio (visual), setara look test = 7.2
-  width_variation: 0.45      # 0 = seragam, 1 = variasi ekstrem
-  width_noise_scale: 0.036   # frekuensi perubahan tebal sepanjang path (per px ref)
+  width_variation: 0.5       # 0 = seragam, 1 = variasi ekstrem (keputusan Rio, visual, T-401)
+  width_noise_scale: 0.036   # frekuensi noise tebal (per px ref), terkunci posisi; x2 tampak "merayap" (T-401)
   color: "#1a1a1a"
   opacity: 0.92
   cap: "round"
-  taper_ends: true           # ujung garis menipis
-  taper_px: 45               # panjang zona taper di tiap ujung (px ref)
-  taper_min: 0.15            # tebal di ujung sebagai fraksi tebal normal
+  taper_ends: true           # ujung BEBAS menipis (smoothstep); termasuk oklusi (keputusan Rio, T-401)
+  taper_px: 70               # panjang zona taper di tiap ujung (px ref), maks panjang strok / 2
+  taper_min: 0.5             # tebal di ujung sebagai fraksi tebal normal
   by_type:                   # override per jenis garis (skema [4]); 1.0 = sama dengan dasar
-    silhouette:      {width_scale: 1.0, opacity_scale: 1.0}
-    silhouette_hole: {width_scale: 1.0, opacity_scale: 1.0}
-    group_boundary:  {width_scale: 1.0, opacity_scale: 1.0}
-    occlusion:       {width_scale: 1.0, opacity_scale: 1.0}
+    silhouette:      {width_scale: 1.0, opacity_scale: 1.0, taper_ends: null}   # taper_ends null = warisi stroke.taper_ends
+    silhouette_hole: {width_scale: 1.0, opacity_scale: 1.0, taper_ends: null}
+    group_boundary:  {width_scale: 1.0, opacity_scale: 1.0, taper_ends: null}
+    occlusion:       {width_scale: 1.0, opacity_scale: 1.0, taper_ends: null}
 
 # ── JITTER (hand-drawn feel) ───────────────────────
 jitter:
@@ -255,7 +255,7 @@ itu) DIHAPUS di T-303: optical flow ditolak berdasarkan data (docs/04 "Hasil T-3
 | `stroke.color`, `paper.color` | hex `#rrggbb` |
 | `stroke.cap` | `"round"` \| `"butt"` \| `"square"` |
 | `stroke.taper_px` | ≥ 0 |
-| `stroke.by_type` | kunci ⊆ {`silhouette`, `silhouette_hole`, `group_boundary`, `occlusion`}; `width_scale` > 0, `opacity_scale` 0–1 |
+| `stroke.by_type` | kunci ⊆ {`silhouette`, `silhouette_hole`, `group_boundary`, `occlusion`}; `width_scale` > 0, `opacity_scale` 0–1, `taper_ends` bool opsional (tidak ada / `null` = warisi `stroke.taper_ends`; T-401) |
 | `jitter.amplitude`, `jitter.frequency` | ≥ 0 |
 | `jitter.temporal_seed_mode` | `"frame"` \| `"fixed"` |
 | `jitter.temporal_drift` | 0–1 |
@@ -278,7 +278,7 @@ itu) DIHAPUS di T-303: optical flow ditolak berdasarkan data (docs/04 "Hasil T-3
   Tinggi output = `round(height × output_width / width)` dinaikkan ke genap (integer: `(2·H·ow + W) // (2·W)`, +1 bila
   ganjil; 854 → 1922 untuk lebar 1080). Skala titik `s = output_width / width` (sama untuk x dan y).
 - **Konversi dari look test** (`scripts/look_test.py` menggambar di resolusi KERJA 480 px): × 2.25 (= 1080 / 480) — `width_base`
-  3.2 → 7.2, `jitter.amplitude` 1.8 → 4.0, `multipass.offset` 1.2 → 2.7, `taper_px` 20 → 45, `width_noise_scale` 0.08 → 0.036 dan
+  3.2 → 7.2, `jitter.amplitude` 1.8 → 4.0, `multipass.offset` 1.2 → 2.7, `taper_px` 20 → 45 (T-401: dipilih Rio 70), `width_noise_scale` 0.08 → 0.036 dan
   `jitter.frequency` 0.12 → 0.053 (per px, dibagi 2.25). **Pengecualian:** `simplify_epsilon` setara look test = 5.6, tetapi
   penilaian visual Rio memutuskan **2.8** (5.6 membuang bentuk) dipadukan dengan `smooth_px` (3.0 masih bergelombang → **5.0**).
   `width_base` setara look test = 7.2, tetapi penilaian visual Rio memilih **9.0**.
@@ -286,13 +286,21 @@ itu) DIHAPUS di T-303: optical flow ditolak berdasarkan data (docs/04 "Hasil T-3
   ini (px ref × `unit`), 0 = mati. Kontur dire-sample tiap 1 px ref; sudut tajam (belok > 60° pada jendela ±6 sampel) dikunci
   dan memecah jalur; ujung strok terbuka (termasuk titik silang tepi) tidak bergeser; strok tertutup dan loop dihaluskan periodik
   tanpa takik. Tanpa penyusutan bentuk yang berarti (luas silhouette < 0,01% rata-rata).
-- **Aktif di T-203a:** `shape.simplify_epsilon`, `shape.smooth_px`, `shape.smooth_tension`, `shape.spline_steps`, `shape.edge_mode`, `stroke.width_base`,
-  `stroke.color`, `stroke.cap` (hanya `"round"`; nilai lain → error stage), `stroke.by_type.*.width_scale`, `paper.color`,
+- **Aktif (T-203a + T-401):** `shape.simplify_epsilon`, `shape.smooth_px`, `shape.smooth_tension`, `shape.spline_steps`, `shape.edge_mode`,
+  `shape.resample_points`, `stroke.width_base`, `stroke.width_variation`, `stroke.width_noise_scale`, `stroke.taper_ends`,
+  `stroke.taper_px`, `stroke.taper_min`, `stroke.color`, `stroke.cap` (hanya `"round"`; nilai lain → error stage),
+  `stroke.by_type.*.width_scale`, `stroke.by_type.*.taper_ends`, `jitter.param_seed` (seed noise tebal), `paper.color`,
   `render.ss`, `render.output_width`. Hanya parameter ini yang masuk hash style stage [5].
-- **Divalidasi tetapi BELUM aktif (dicatat di `strokes/manifest.json` → `ignored_params`; aktif di Phase 4):** `shape.resample_points`
-  (render tidak me-resample; resample arc-length dari `points[0]` dibutuhkan Phase 4, T-401 / T-402), `stroke.width_variation`,
-  `stroke.width_noise_scale`, `stroke.opacity`, `stroke.taper_*`, `stroke.by_type.*.opacity_scale`, `jitter.*`, `multipass.*`,
-  `texture.*`, `paper.enabled`, `paper.texture_*`, `paper.vignette`.
+- **Divalidasi tetapi BELUM aktif (dicatat di `strokes/manifest.json` → `ignored_params`; aktif di task Phase 4 berikutnya):**
+  `stroke.opacity`, `stroke.by_type.*.opacity_scale`, `jitter.*` selain `param_seed` (T-402), `multipass.*`, `texture.*`,
+  `paper.enabled`, `paper.texture_*`, `paper.vignette`.
+- **Tebal variabel (T-401):** `w = max(1 px output, width_base × unit × by_type.width_scale × (1 + width_variation × n) × taper)`;
+  `n` ∈ [−1, 1] = value noise 2D terkunci posisi (sel = `unit / width_noise_scale` px output; seed = hash(`jitter.param_seed`),
+  tanpa `frame_index`: tebal statis terhadap waktu); `taper` hanya di ujung bebas (smoothstep dari `taper_min` ke 1 sepanjang
+  `min(taper_px, panjang / 2)`). `by_type.<tipe>.taper_ends` (tidak ada / `null` = warisi `stroke.taper_ends`) mengesampingkan per
+  tipe. Default (keputusan Rio, penilaian visual 2026-10-06): variasi 0,5; skala noise 0,036 (×1; ×2 tampak "merayap" di garis
+  bergerak); `taper_px` 70, `taper_min` 0,5; taper aktif juga untuk oklusi; hierarki tipe rata (semua `width_scale` 1,0);
+  `resample_points` 4 (N ditentukan jarak maks 2 px ref).
 - **`shape.smooth_tension`:** Catmull-Rom seragam (uniform); tangen di titik i = `smooth_tension × (p[i+1] − p[i−1])`
   (0.5 = Catmull-Rom standar; 0 = segmen lurus berkecepatan tidak seragam). Ujung strok terbuka: titik ujung digandakan.
 

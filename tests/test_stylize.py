@@ -27,9 +27,18 @@ WIDTH_REF = 25.3             # px ref → 25.3 × (256 / 1080) = 6.0 px output
 FIDELITY_TOL_WIDTH_FRACTION = 0.35   # toleransi kesetiaan geometri sintetis = bagian dari tebal garis (bukan epsilon)
 
 
+CONST = {"stroke.width_variation": 0.0, "stroke.taper_ends": False}     # tebal konstan = setara T-203a (regresi T-401)
+
+
 def style_for(**ov):
-    base = {"render.output_width": OW, "stroke.width_base": WIDTH_REF}
+    """Style uji: TEBAL KONSTAN (variasi 0, taper mati) — test T-203a tetap berlaku; style T-401: style_var()."""
+    base = {"render.output_width": OW, "stroke.width_base": WIDTH_REF, **CONST}
     return load_style(None, overrides={**base, **ov})
+
+
+def style_var(**ov):
+    """Style uji dengan variasi tebal + taper (default kode)."""
+    return load_style(None, overrides={"render.output_width": OW, "stroke.width_base": WIDTH_REF, **ov})
 
 
 def geom_for(**ov):
@@ -368,15 +377,19 @@ def test_all_strokes_drawn_one_path_each_without_edges():
     assert [p.type for p in sm.parse_svg(svg)] == list(sty.TYPE_ORDER)                # urutan <g> tetap
 
 
-def test_svg_points_equal_raster_points():
-    pts = lattice([(15, 85), (35, 30), (60, 70), (85, 25), (90, 90)])
-    st = style_for()
-    g, svg, png, _, pieces, _ = render([stroke(pts)], None, st)
+def test_svg_outline_equals_piece_outline_and_matches_png():
+    """SVG = poligon kontur dari garis tengah + tebal yang SAMA dengan raster; raster nonzero dari SVG ≈ PNG."""
+    pts = lattice([(12, 85), (30, 45), (55, 30), (75, 45), (90, 85)])         # lengkung landai (tikungan rapat: test terpisah)
+    st = style_var(**{"render.output_width": 1080, "stroke.width_base": 9.0})
+    g, svg, png, _, pieces, cov = render([stroke(pts)], sty.make_geometry(st, W, H), st)
     parsed = sm.parse_svg(svg)
     assert len(parsed) == len(pieces)
     for a, b in zip(parsed, pieces):
-        assert a.closed == b.closed and np.allclose(a.points, b.points, atol=1e-9)
-    assert sty.render_png(parsed, g) == png                                          # raster dari titik SVG = PNG
+        want = sty.piece_outline(b, g)
+        assert len(a.polys) == len(want) and all(np.allclose(x, y, atol=1e-9) for x, y in zip(a.polys, want))
+    rep = sm.svg_png_report(parsed, cov, g)
+    assert rep["iou"] >= sm.SYNTH_SVG_PNG_IOU_MIN and rep["l1"] <= sm.SYNTH_SVG_PNG_L1_MAX
+    assert rep["big_diff_frac"] <= sm.SVG_PNG_BIG_DIFF_MAX and abs(rep["mass_ratio"] - 1) <= sm.SYNTH_INK_MASS_TOL
 
 
 def test_svg_structure_deterministic_and_wellformed():
@@ -390,7 +403,8 @@ def test_svg_structure_deterministic_and_wellformed():
     groups = [e.get("id") for e in root.iter(ns + "g")]
     assert groups == list(sty.TYPE_ORDER)
     g0 = next(root.iter(ns + "g"))
-    assert g0.get("stroke-linecap") == "round" and g0.get("stroke-linejoin") == "round" and g0.get("fill") == "none"
+    assert g0.get("fill-rule") == "nonzero" and g0.get("fill") == "#1a1a1a" and g0.get("stroke") == "none"
+    assert b" L" not in a and b"stroke-width" not in a                                # tanpa huruf L; tanpa stroke-width
     assert next(root.iter(ns + "rect")).get("fill") == "#f4f1ea"
 
 
@@ -417,7 +431,7 @@ def cv2_resize(mask, g):
 
 # ── Stage ──────────────────────────────────────────
 N_FRAMES = 4
-STYLE_YAML = f"render:\n  output_width: {OW}\nstroke:\n  width_base: {WIDTH_REF}\n"
+STYLE_YAML = (f"render:\n  output_width: {OW}\nstroke:\n  width_base: {WIDTH_REF}\n  width_variation: 0.0\n  taper_ends: false\n")
 
 
 def frame_strokes(i: int) -> list[dict]:
@@ -466,10 +480,11 @@ def test_run_writes_outputs_manifest_and_log(tmp_path, style_file, capsys):
     h = out_hashes(work)
     assert len(h) == 2 * N_FRAMES
     m = manifest(work)
-    assert m["contract"] == "T-203a" and m["algo_rev"] == sty.ALGO_REV and m["style"] == "test-style"
+    assert m["contract"] == "T-401" and m["algo_rev"] == sty.ALGO_REV and m["style"] == "test-style"
     assert m["output_size"] == {"width": OW, "height": OW} and m["scale"] == OW / W and m["edge_mode"] == "hide"
     assert m["contours"]["contract"] == "T-202" and m["contours"]["vectorize_hash"] == "h" * 8
-    assert "jitter.amplitude" in m["ignored_params"] and "shape.resample_points" in m["ignored_params"]
+    assert "jitter.amplitude" in m["ignored_params"] and "shape.resample_points" not in m["ignored_params"]
+    assert "stroke.width_variation" in m["style_params"] and "jitter.param_seed" in m["style_params"]
     assert set(m["style_params"]) == set(sty.active_param_names()) and m["style_hash"]
     recs = [json.loads(x) for x in (work / "strokes" / "frames.jsonl").read_text(encoding="utf-8").splitlines()]
     frames = [r for r in recs if r["event"] == "frame"]
@@ -624,7 +639,7 @@ def test_default_style_values_converted_from_look_test():
     assert s.stroke.width_base == 9.0 and s.shape.simplify_epsilon == 2.8 and s.shape.smooth_px == 5.0 and s.render.output_width == 1080
     assert s.shape.edge_mode == "hide"
     active, ignored, _ = sty.style_params(s)
-    assert not set(active) & set(ignored) and "shape.resample_points" in ignored
+    assert not set(active) & set(ignored) and "multipass.passes" in ignored and "shape.resample_points" in active
 
 
 # ── Data nyata (dilewati bila klip / contours T-202 tidak ada) ──

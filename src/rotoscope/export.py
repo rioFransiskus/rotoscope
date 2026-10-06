@@ -90,7 +90,7 @@ SETPARAMS_KEYS = {"colorspace": "colorspace", "color_primaries": "color_primarie
                   "color_range": "range"}                                           # nama flag → opsi filter setparams
 PROBE_COLOR_KEYS = {"colorspace": "color_space", "color_primaries": "color_primaries",
                     "color_trc": "color_transfer", "color_range": "color_range"}      # nama flag → field ffprobe
-SUPPORTED_STROKES_CONTRACTS = frozenset({"T-203a"})
+SUPPORTED_STROKES_CONTRACTS = frozenset({"T-401"})
 STROKES_REF_KEYS = ("contract", "style_hash", "created_utc", "output_size")
 SOURCE_KINDS_WITH_COLOR_TAGS = ("strokes",)
 

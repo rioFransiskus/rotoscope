@@ -362,7 +362,14 @@ def test_chain_stale_stable_with_seg_missing_outside_window_stops_in_stabilize(c
 REAL = Path("work/clips/test")
 
 
-@pytest.mark.skipif(not (REAL / "strokes" / "manifest.json").is_file(), reason="klip test tidak ada")
+def _real_strokes_current() -> bool:
+    """strokes/ klip nyata ada dan contract-nya = stylize sekarang (belum dihitung ulang oleh `run` → basi → dilewati)."""
+    import json
+    m = REAL / "strokes" / "manifest.json"
+    return m.is_file() and json.loads(m.read_text(encoding="utf-8")).get("contract") == sty.CONTRACT
+
+
+@pytest.mark.skipif(not _real_strokes_current(), reason="klip test tidak ada / strokes basi (contract lama)")
 def test_real_window_matches_existing_strokes(tmp_path):
     """Frame jendela yang dihitung ulang (stylize --from 73 --limit 3) = frame strokes/ yang sudah ada di run penuh."""
     import hashlib

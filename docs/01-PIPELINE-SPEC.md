@@ -749,17 +749,18 @@ dengan aturan tetap)*:
 
 ### [5] `stylize.py` (CPU)
 
-**Status:** **T-203a `DONE`** (garis polos, 2026-10-03): subperintah `python -m rotoscope stylize <video>`; bagian urutan `run`,
-tabel restart DAG, dan sumber `export.source: "strokes"` sejak **T-203b**. Jitter, taper, width modulation, multipass, tekstur,
-opasitas dan `shape.resample_points` **belum aktif** (Phase 4; `ignored_params` di manifest). Preview `--preview N` = T-204.
-Tanpa GPU: `torch` tidak pernah di-import (diuji di subprocess).
+**Status:** **T-203a `DONE`** (garis polos, 2026-10-03) + **T-401 `DONE`** (tebal variabel + taper + resample, 2026-10-06; `contract`
+`"T-401"`): subperintah `python -m rotoscope stylize <video>`; bagian urutan `run`, tabel restart DAG, dan sumber
+`export.source: "strokes"` sejak **T-203b**. Jitter / boil (T-402), multipass, tekstur, opasitas **belum aktif** (Phase 4;
+`ignored_params` di manifest). Preview `--preview N` = T-204. Tanpa GPU: `torch` tidak pernah di-import (diuji di subprocess).
 
 - **In:** `contours/frame_*.json`, `contours/manifest.json`, `meta.json`, style YAML (`--style`, default
   `configs/styles/rough-sketch.yaml`, selain itu default kode); config pipeline (`--config`) hanya untuk `paths.work_dir`.
 - **Out:** `strokes/frame_%05d.svg` + `strokes/frame_%05d.png` (RGB, latar `paper.color`) + `strokes/manifest.json` +
   `strokes/frames.jsonl` (log per frame: waktu per tahap, ukuran, jumlah strok / jalur / titik, statistik tepi).
-  Terukur (1080×1922): PNG median 67–71 KiB, SVG median 37–40 KiB per frame → total 7,8 + 4,2 MiB (`test_short`, 119 frame) dan
-  19,0 + 10,4 MiB (`test`, 283 frame): **14–30 MiB per klip** (estimasi lama 100–500 MB terlalu besar 10–25 kali).
+  Terukur T-203a (1080×1922, garis polos): PNG median 67–71 KiB, SVG median 37–40 KiB per frame → 14–30 MiB per klip.
+  **Terukur T-401 (default sekarang, `run` nyata):** PNG rata-rata 70,0 / 71,6 KiB, SVG rata-rata 89,9 / 91,9 KiB per frame
+  (poligon kontur, `resample_points` 4) → 8,1 + 10,4 MiB (`test_short`, 119 frame) dan 19,8 + 25,4 MiB (`test`, 283 frame).
 - **Satuan:** semua parameter panjang style = **px REFERENSI lebar 1080**; `unit = render.output_width / 1080`; geometri dihitung di
   px OUTPUT: titik kontur (pusat piksel kerja) × `s`, `s = output_width / width` (x' = s · x, sama untuk x dan y). Tinggi output
   = `round(height × output_width / width)` dinaikkan ke genap (integer: `(2·H·ow + W) // (2·W)`, +1 bila ganjil; 854 → 1922).
@@ -771,8 +772,22 @@ Tanpa GPU: `torch` tidak pernah di-import (diuji di subprocess).
 - **Pipeline geometri per strok (satu geometri untuk SVG dan raster):** skala → penanganan tepi (mode hide) → **penghalusan
   Gaussian arc-length** (`shape.smooth_px`) → `approxPolyDP` (`shape.simplify_epsilon`) → spline Catmull-Rom seragam
   (`shape.smooth_tension`; `shape.spline_steps` = minimum titik per segmen, digandakan sampai galat akor ≤ 0,03 px ref) →
-  ekstensi ujung di tepi → pembulatan 2 desimal (galat ≤ 0,007 px). **Tanpa resample** di render (resample N = 200 tetap merusak
-  bentuk: jarak titik 16–29 px, deviasi maks 12–13 px; resample arc-length dari `points[0]` = Phase 4, T-401 / T-402).
+  ekstensi ujung di tepi → pembulatan 2 desimal (galat ≤ 0,007 px) → **resample arc-length (T-401)** → tebal per titik.
+  - **Resample (T-401):** seragam menurut panjang busur dari `points[0]`; `N = max(shape.resample_points, ceil(L / (RESAMPLE_MAX_GAP_REF ×
+    unit)) [+1 bila terbuka])`, `RESAMPLE_MAX_GAP_REF` = 2 px ref (jarak titik ≤ 2 px ref, kesetiaan bentuk tidak memburuk: deviasi
+    centerline p50 / p95 / maks per tipe sama dengan jalur spline T-203a ±0,01 px). `shape.resample_points` = batas bawah N (default 4).
+    (Resample N = 200 TETAP di T-203a merusak bentuk; itu sebabnya N ditentukan jarak maks.)
+  - **Tebal per titik (T-401):** `w = max(WIDTH_FLOOR_PX, width_base × unit × by_type.width_scale × (1 + width_variation × n) × taper)`.
+    `WIDTH_FLOOR_PX` = 1,0 px OUTPUT (lantai absolut: di bawahnya raster ss = 3 terkuantisasi per 1/3 px, tidak monoton).
+    `n` ∈ [−1, 1]: value noise 2D, terkunci POSISI (koordinat titik / `unit / width_noise_scale`), hash bilangan bulat 64-bit
+    (splitmix64, numpy saja, `src/rotoscope/noise.py`), fade quintic + interpolasi bilinear → rentang dijamin konstruksi; seed =
+    hash(`jitter.param_seed`) SAJA (tanpa `frame_index` / `track_id` / waktu: tebal STATIS terhadap waktu; boil = T-402). Dipilih
+    atas varian busur dari `points[0]` (A) dan hibrida (C) dengan data (docs/04 "Keputusan T-401"): A pop p95 0,36–0,52 × `width_base`
+    vs B 0,055–0,066; tertutup tanpa takik karena medan global (tanpa titik awal).
+  - **Taper (T-401):** hanya ujung BEBAS; profil smoothstep dari `taper_min` (di ujung) ke 1; zona = `min(taper_px × unit, L / 2)`.
+    TIDAK ditaper: ujung di tepi frame (ekstensi mode hide), ujung yang bertemu strok lain (≤ `JOIN_DIST_PX` = 8 px ref dari strok
+    mana pun; oklusi ↔ oklusi ≤ `JOIN_DIST_OCC_PX` = 2 px ref), strok tertutup dan loop (titik akhir = titik awal). Override per
+    tipe: `stroke.by_type.<tipe>.taper_ends` (`null` = warisi `stroke.taper_ends`).
   - **Penghalusan** (keputusan Rio; konstanta struktural bernama): kontur dire-sample 1 px ref; sudut tajam (belok > 60° pada
     ±6 sampel) dikunci dan memecah jalur; ujung strok terbuka (termasuk titik silang tepi) tidak bergeser (pantulan ganjil);
     strok tertutup dan loop (titik akhir = titik awal, dibuang titik penutupnya) periodik tanpa takik. Penyusutan luas silhouette
@@ -787,17 +802,21 @@ Tanpa GPU: `torch` tidak pernah di-import (diuji di subprocess).
   (inset 0,5·s); peringatan stderr satu kali bila tebal < `draw_mode_min_width` (= s). Terukur: kontak dangkal 31/336 (`test_short`)
   dan 183/1152 (`test`) ujung; 0 ujung tepat di sudut kanvas; 0 ujung tidak mencapai tepi kanvas.
 - **Raster:** satu mask supersampling (`render.ss`, union semua strok; tumpang tindih tidak lebih gelap) → `INTER_AREA` → tabel warna
-  (kertas/tinta) → PNG (kompresi level 3). Garis = poligon terisi (kuad per segmen + cakram di tiap titik, sub-piksel 1/16) karena
-  `cv2.polylines` hanya menghasilkan lebar ganjil. Koordinat cv2 = x' · ss − 0,5 (titik cv2 integer = pusat piksel). Tebal tiap
-  tipe = `stroke.width_base × stroke.by_type.<tipe>.width_scale × unit`; tinta solid (opasitas diabaikan).
-- **SVG:** string manual (bukan svgwrite: byte-determinisme penuh, tanpa atribut otomatis, tanpa dependency; svgwrite 1.4.3 MIT tetap
-  terpasang, tidak dipakai): `<svg width height viewBox>` = ukuran output, `<rect>` latar `paper.color`, satu `<g id=tipe>` per tipe
-  (urutan silhouette, silhouette_hole, group_boundary, occlusion), satu `<path d="M … L … [Z]">` per jalur, `stroke-width` konstan,
-  `stroke-linecap` / `stroke-linejoin` `round`, `fill="none"`, titik yang SAMA dengan raster. Tanpa id acak / timestamp.
+  (kertas/tinta) → PNG (kompresi level 3). Garis = gabungan poligon terisi: trapesium per segmen (tebal berbeda di tiap ujung) +
+  cakram berjari-jari per titik (sub-piksel 1/16) karena `cv2.polylines` hanya menghasilkan lebar ganjil. Isian even-odd poligon
+  kontur DITOLAK (gagal di tikungan rapat; jari-jari < setengah tebal). `FILL_BIAS_SS` = 0,55 (kalibrasi terhadap luas poligon SVG).
+  Koordinat cv2 = x' · ss − 0,5. Tinta solid (opasitas diabaikan).
+- **SVG (T-401):** string manual (bukan svgwrite: byte-determinisme penuh, tanpa atribut otomatis, tanpa dependency):
+  `<svg width height viewBox>` = ukuran output, `<rect>` latar `paper.color`, satu `<g id=tipe>` per tipe (urutan silhouette,
+  silhouette_hole, group_boundary, occlusion), SATU `<path>` terisi per jalur (poligon kontur: sisi kiri + tutup bulat
+  `OUTLINE_CAP_STEPS` 8 + sisi kanan; strok tertutup = 2 sub-path orientasi berlawanan), `fill-rule="nonzero"` eksplisit, 2 desimal,
+  `M x y x y … Z` (lineto implisit), TANPA `stroke-width` (tebal tidak bisa diubah ulang di editor); geometri SAMA dengan raster.
+  Tanpa id acak / timestamp. Kesetaraan SVG–PNG (diukur, data nyata): IoU 0,992–0,996 (ambang 0,990), L1/tinta ≤ 0,0080
+  (≤ 0,010), piksel |selisih| > 0,5 maks 0,15% (≤ 0,2%), rasio massa 0,997–1,000 (±0,5%).
 - **Satu renderer untuk semua `type`**; parameter dasar + override per tipe (`stroke.by_type.*.width_scale`). Loop (`closed: false`
   dengan titik akhir = titik awal) diperlakukan sebagai tertutup. Garis oklusi berkedip digambar apa adanya (tanpa interpolasi antar
   frame; frame tanpa strok = hanya kertas, valid).
-- **Manifest** `strokes/manifest.json` (prinsip #4): `stage`, `contract` `"T-203a"`, `algo_rev` (`stylize.ALGO_REV`, mulai 1; naik hanya
+- **Manifest** `strokes/manifest.json` (prinsip #4): `stage`, `contract` `"T-401"` (T-203a → T-401: strokes lama basi otomatis), `algo_rev` (`stylize.ALGO_REV`, mulai 1; naik hanya
   untuk perbaikan perilaku; fitur baru menaikkan `contract`), `style` (nama), `style_hash` + `style_params` (HANYA parameter aktif),
   `ignored_params`, `contours` (`contract`, `vectorize_hash`, `algo_rev`, `created_utc`), `clip`, `frame_size` (kerja), `output_width`,
   `output_size`, `scale`, `unit`, `edge_mode`, `coords`, `created_utc`. **Basi** (CPU murah): field berubah → `strokes/` dihapus + dihitung
@@ -808,21 +827,28 @@ Tanpa GPU: `torch` tidak pernah di-import (diuji di subprocess).
   benar dan PNG utuh (signature, IHDR = ukuran output, trailer IEND); tulis PNG terakhir.
 - **Determinisme:** hash `strokes/frame_*.svg|png` identik antar run dari nol, `--limit 20` lalu penuh, dan setelah basi lalu kembali ke
   setelan awal. `manifest.json` / `frames.jsonl` memuat waktu → jangan di-hash.
-- **Parameter style aktif / belum aktif:** docs/02 "Satuan dan parameter aktif (T-203a)".
+- **Parameter style aktif / belum aktif:** docs/02 "Satuan dan parameter aktif (T-203a + T-401)". Aktif tambahan di T-401:
+  `shape.resample_points`, `stroke.width_variation`, `stroke.width_noise_scale`, `stroke.taper_ends|px|min`,
+  `stroke.by_type.*.taper_ends`, `jitter.param_seed`.
 - **Metrik + toleransi test (docs/05 T-203):** kesetiaan = jarak titik kontur asli terskala (titik tepi dikecualikan pada hide) ke
   polyline akhir; toleransi sintetis = 0,35 × tebal garis (BUKAN epsilon), data nyata = ambang regresi dari angka terukur. Fungsi:
   `tests/stylize_metrics.py`.
 - ⚠️ **Jitter** (T-402, Phase 4), dengan catatan dari [4]: `points[0]` garis terbuka melompat sampai 60–127 px saat strok memanjang
-  / memendek ([4] "Aturan anchor"); noise 1D berbasis panjang busur dari titik awal akan "pop". **Ditunda ke Phase 4 (keputusan Rio):**
-  pertimbangkan jitter terkunci posisi atau tidak bergantung titik awal; butuh resample arc-length dari `points[0]` (T-203a tidak
-  me-resample); seed = `hash(frame_index, param_seed, track_id)`; [5] membaca `points[0]` (bukan `anchor`) dan mengabaikan
-  `prev_sha256`.
+  / memendek ([4] "Aturan anchor"); noise berbasis panjang busur dari titik awal akan "pop". **Status setelah T-401:** terukur
+  (docs/04): busur dari `points[0]` pop p95 0,36–0,52 × `width_base`, terkunci posisi 0,055–0,066 → tebal T-401 TERKUNCI POSISI
+  (medan 2D global); jitter T-402 sebaiknya sama (noise yang sama + koordinat waktu; seed `hash(frame_index, param_seed, track_id)`
+  untuk jitter). [5] membaca `points[0]` (bukan `anchor`) dan mengabaikan `prev_sha256`.
 - ✅ **`output_width`** (terjawab, T-203a): 1080, satuan px ref × `unit`.
 - ✅ **Run titik di tepi frame** (terjawab, T-203a): **hide** (lihat "Tepi frame").
-- ⚠️ **`group_boundary` loop** = `closed: false` dengan titik akhir = titik awal (57 loop di `test`, 25 di `test_short`; terutama `hair|face`
-  dan `torso|left_arm`). **Taper loop ditunda ke Phase 4 (T-401):** taper ujung jangan menipiskan sambungan; kenali loop dari titik akhir =
-  titik awal dan perlakukan sebagai tertutup untuk taper. Berlaku juga untuk loop `occlusion` (4 di `test`, 5 di `test_short`). T-203a
-  menggambar loop sebagai tertutup tanpa takik.
+- ✅ **`group_boundary` loop** (terjawab, T-401) = `closed: false` dengan titik akhir = titik awal (57 loop di `test`, 25 di `test_short`;
+  terutama `hair|face` dan `torso|left_arm`; juga loop `occlusion`: 4 / 5): diperlakukan sebagai tertutup — tanpa ujung, tanpa taper,
+  tanpa takik (noise terkunci posisi → tebal sambungan kontinu).
+- ⚠️ **Batas yang diketahui T-401:** (1) 2,8–5,9% pasangan strok-frame bertrack sama berganti kelas ujung bebas ↔ bertemu antar
+  frame, sehingga taper muncul / hilang (pop `group_boundary` maks 1,05–1,14 × `width_base`); taper dengan `taper_min` 0,5 +
+  oklusi hidup (default): pop oklusi p95 0,39 (`test`) / 0,41 (`test_short`) × `width_base` (taper oklusi MATI 0,059 / 0,061; tipe lain
+  0,063–0,071) — taper oklusi hidup dipilih Rio secara visual dengan angka ini diketahui; kestabilan taper lewat
+  panjang strok yang dihaluskan antar frame (`track_id` ±2 frame) = bahan T-402. (2) Tebal tidak bisa diubah ulang di editor SVG.
+  (3) Tebal STATIS terhadap waktu (tanpa boil).
 - ⚠️ **Strok `occlusion` (T-201b):** (1) `strength` (rata-rata |grad|, 3 desimal) tersedia untuk memodulasi tebal / opacity
   tetapi skalanya per klip (bergantung normalisasi [3], akan berubah di T-302): jangan dipakai sebagai ambang absolut;
   (2) **temporal [3] belum aktif** (T-302/T-303), jadi garis oklusi antar frame masih berkedip (muncul / hilang, bergeser):
@@ -841,7 +867,7 @@ Tanpa GPU: `torch` tidak pernah di-import (diuji di subprocess).
   `foreground_color` / `background_color` tidak dipakai dan tidak ikut hash); `"silhouette"` (Phase 1) = `stable/groups/*.png`,
   grup ≠ 0 → `foreground_color` di atas `background_color`, resolusi kerja.
 - **Masukan source `strokes`** (divalidasi sebelum encode; semua kegagalan = exit 1 dengan perintah yang benar):
-  `strokes/manifest.json` ada, `contract` ∈ `SUPPORTED_STROKES_CONTRACTS` (`{"T-203a"}`), `clip` = `meta.json`, `frame_size`,
+  `strokes/manifest.json` ada, `contract` ∈ `SUPPORTED_STROKES_CONTRACTS` (`{"T-401"}` sejak T-401; strokes `T-203a` → "jalankan stylize"; salinan SVG lama di `out/svg/<nama>/` disalin ulang sebagai basi, bukan suntingan), `clip` = `meta.json`, `frame_size`,
   `output_size` bilangan genap; referensi `contours` di dalamnya (contract, vectorize_hash, created_utc) = `contours/manifest.json`
   sekarang (rantai diperiksa satu tingkat; [5] sendiri memeriksa contours → stable) → jalankan `stylize`; setiap `frame_*.png`
   ada, utuh (IHDR + IEND) dan berukuran `output_size`.
@@ -914,7 +940,7 @@ Tanpa GPU: `torch` tidak pernah di-import (diuji di subprocess).
 | [2c] depth | 0.3 GB |
 | [3] groups + depth_smooth | 0.3 GB |
 | [4] contours | < 0.1 GB |
-| [5] strokes | 0.014–0.030 GB (terukur T-203a, 119 / 283 frame; estimasi lama 0.25–0.75 GB terlalu besar) |
+| [5] strokes | 0.014–0.030 GB (terukur T-203a); T-401: 0.018 / 0.045 GB (`test_short` 8,1 + 10,4 MiB; `test` 19,8 + 25,4 MiB) |
 | **total [2]–[5]** | **±0.75–1.15 GB** (est. lama 1.0–1.9 GB; sisanya tidak berubah) |
 
 C: sisa ±54 GB → arahkan `paths.work_dir` ke drive lain kalau banyak klip disimpan bersamaan.
@@ -929,6 +955,7 @@ C: sisa ±54 GB → arahkan `paths.work_dir` ke drive lain kalau banyak klip dis
 | [3] spasial | CPU | – | ±43 s (0.12 s/frame, T-106) |
 | [4] T-201a | CPU | – | ±11 s (29–30 ms/frame rata-rata, p95 34–35 ms, maks 50 ms; 283 frame 8.5 s) |
 | [4] T-202 (+ oklusi + pelacakan) | CPU | – | median 74–93 ms/frame antar run (p95 84–112 ms, maks 88–135 ms, 0 frame > 1 s, target ≤ 150 ms; pelacakan sendiri median 8–11 ms, maks 19–26 ms), pass 2 saja; pass 1 ambang (baca ulang + gradien semua frame) 1,3 s (119 frame) / 2,7 s (283 frame) |
+| [5] T-401 | CPU | – | **terukur `run` nyata (default T-401):** rata-rata 198 ms (`test_short`; p95 238, maks 252, 1 frame > 250) dan 235 ms (`test`; p95 267, maks 407, 60 frame > 250) per frame; 119 frame 23,9 s, 283 frame 67,4 s. Ukur ulang di scratchpad: rata-rata 199 / p95 239 / maks 283 (6 frame > 250); ukuran awal Tahap 3 (resample 4, default lama) 153–157 ms — beda tidak dipecahkan (dugaan beban mesin, belum diverifikasi). Target 250 ms/frame dilampaui pada sebagian frame |
 | [5] T-203a | CPU | – | median 125–128 ms/frame pada 1080×1922 (p95 134–137, maks 148, 0 frame > 0,3 s; geometri + penghalusan ±36–38, mask 22, downsample + warna 27, encode PNG 41, SVG 4, tulis 5); 119 frame 16 s, 283 frame 39 s; memori puncak ±127 MiB |
 
 ---

@@ -249,7 +249,7 @@ class PipelineConfig:
 class ShapeConfig:
     simplify_epsilon: float = 2.8      # px referensi lebar 1080; keputusan Rio (visual): 5.6 membuang bentuk
     smooth_px: float = 5.0             # px ref; Gaussian arc-length SEBELUM approxPolyDP, 0 = mati (keputusan Rio, visual)
-    resample_points: int = 200
+    resample_points: int = 4           # batas bawah N titik per strok (T-401: N = max(ini, ceil(panjang / 2 px ref)))
     smooth_tension: float = 0.5
     spline_steps: int = 8
     edge_mode: str = "hide"
@@ -259,19 +259,20 @@ class ShapeConfig:
 class TypeScaleConfig:
     width_scale: float = 1.0
     opacity_scale: float = 1.0
+    taper_ends: bool | None = None     # None = warisi stroke.taper_ends (T-401)
 
 
 @dataclass(frozen=True)
 class StrokeConfig:
     width_base: float = 9.0            # px referensi 1080; keputusan Rio (visual); setara look test 7.2 (3.2 px kerja × 2.25)
-    width_variation: float = 0.45
-    width_noise_scale: float = 0.036
+    width_variation: float = 0.5       # keputusan Rio (visual, T-401)
+    width_noise_scale: float = 0.036   # panjang gelombang ≈ 28 px ref; x2 tampak "merayap" di garis bergerak (T-401)
     color: str = "#1a1a1a"
     opacity: float = 0.92
     cap: str = "round"
     taper_ends: bool = True
-    taper_px: float = 45.0
-    taper_min: float = 0.15
+    taper_px: float = 70.0
+    taper_min: float = 0.5
     by_type: Mapping[str, TypeScaleConfig] = field(
         default_factory=_frozen({t: TypeScaleConfig() for t in STROKE_TYPES}))
 
@@ -523,12 +524,12 @@ def _convert(hint, v, key: str, resolve):
         value_hint = get_args(hint)[1]
         return MappingProxyType({k: _convert(value_hint, vv, _join(key, k), resolve) for k, vv in v.items()})
     if v is None:
-        if hint == (str | None):
+        if hint in (str | None, bool | None):
             return None
         tip = (" — di YAML, '#' tanpa kutip dibaca sebagai komentar; kutip nilainya, mis. \"#1a1a1a\""
                if hint in (str, Path) else "")
         raise ConfigError(f"{key} (null) tidak boleh null{tip}")
-    if hint is bool:
+    if hint in (bool, bool | None):
         if not isinstance(v, bool):
             _type_error(key, v, "bool (true/false)")
         return v

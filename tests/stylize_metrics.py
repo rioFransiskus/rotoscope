@@ -5,9 +5,12 @@ fungsi di sini murni (numpy), tanpa efek samping."""
 from __future__ import annotations
 
 import re
+from typing import NamedTuple
 
 import cv2
 import numpy as np
+from scipy.ndimage import map_coordinates
+from scipy.spatial import cKDTree
 
 from rotoscope import stylize as sty
 
@@ -140,14 +143,141 @@ def min_distance_to_pieces(points: np.ndarray, pieces: list[sty.Piece]) -> np.nd
     return np.min([point_polyline_distance(points, piece_curve(p)) for p in pieces], axis=0)
 
 
-# ── SVG ────────────────────────────────────────────
-def parse_svg(svg: bytes) -> list[sty.Piece]:
-    """SVG (hasil render_svg) → daftar Piece (tipe dari id <g>; track_id tidak ada di SVG → 0)."""
-    text = svg.decode("utf-8")
+# ── SVG (T-401: poligon kontur terisi) ─────────────
+SVG_SUBPATH_RE = re.compile(r"M([^MZ]*)Z")
+SVG_PNG_IOU_MIN = 0.990           # keputusan Rio (docs/04 "Keputusan T-401" butir 3); terukur 0,9927–0,9947
+SVG_PNG_L1_MAX = 0.010            # selisih cakupan absolut / tinta
+SVG_PNG_BIG_DIFF_MAX = 0.002      # fraksi piksel tinta dengan |selisih cakupan| > 0,5 (hanya tikungan rapat / ujung)
+REGRESSION_IOU_MIN = 0.990        # tebal konstan vs T-203a (lantai noise kuantisasi cv2 1/16 piksel ss)
+INK_MASS_TOL = 0.005              # rasio massa tinta ±0,5% (frame nyata)
+SYNTH_SVG_PNG_IOU_MIN = 0.980     # strok sintetis tunggal: rasio tepi / luas besar → IoU / L1 lebih peka (terukur 0,988 / 0,0117)
+SYNTH_SVG_PNG_L1_MAX = 0.015
+SYNTH_INK_MASS_TOL = 0.015
+
+
+class SvgPath(NamedTuple):
+    type: str
+    polys: list[np.ndarray]       # sub-path (px output); terbuka = 1, tertutup = 2 (luar + dalam)
+
+
+def parse_svg(svg: bytes) -> list[SvgPath]:
+    """SVG (hasil render_svg) → daftar jalur (tipe dari id <g>; urutan dokumen)."""
     out = []
-    for typ, body in SVG_GROUP_RE.findall(text):
+    for typ, body in SVG_GROUP_RE.findall(svg.decode("utf-8")):
         for d in SVG_PATH_RE.findall(body):
-            closed = d.endswith(" Z")
-            nums = [float(v) for v in re.findall(r"-?\d+\.\d+", d)]
-            out.append(sty.Piece(typ, closed, np.array(nums).reshape(-1, 2), 0))
+            polys = [np.array([float(v) for v in sub.split()]).reshape(-1, 2) for sub in SVG_SUBPATH_RE.findall(d)]
+            out.append(SvgPath(typ, polys))
     return out
+
+
+def winding_grid(polys: list[np.ndarray], shape: tuple[int, int], ss: int) -> np.ndarray:
+    """Bilangan lilitan tiap piksel supersampling (pusat piksel ss) untuk poligon px output. Independen dari cv2 (fill nonzero
+    SVG): tiap sisi menambah ±1 pada kolom perpotongan scanline; jumlah kumulatif sepanjang x = lilitan."""
+    h, w = shape
+    delta = np.zeros((h * ss, w * ss + 1), np.int32)
+    for poly in polys:
+        a = poly * ss
+        b = np.roll(a, -1, axis=0)
+        for (x0, y0), (x1, y1) in zip(a, b):
+            if y0 == y1:
+                continue
+            sign = 1 if y1 > y0 else -1
+            ylo, yhi = min(y0, y1), max(y0, y1)
+            r0, r1 = max(int(np.ceil(ylo - 0.5)), 0), min(int(np.ceil(yhi - 0.5)), h * ss)
+            if r1 <= r0:
+                continue
+            rows = np.arange(r0, r1)
+            xs = x0 + (rows + 0.5 - y0) * (x1 - x0) / (y1 - y0)
+            cols = np.clip(np.ceil(xs - 0.5).astype(int), 0, w * ss)
+            np.add.at(delta, (rows, cols), sign)
+    return np.cumsum(delta, axis=1)[:, :w * ss]
+
+
+def rasterize_svg(paths: list[SvgPath], g: sty.Geometry) -> np.ndarray:
+    """Cakupan 0–1 per piksel output dari SVG: tiap <path> diisi nonzero sendiri-sendiri, lalu union (INTER_AREA dari grid ss)."""
+    mask = np.zeros((g.out_h * g.ss, g.out_w * g.ss), bool)
+    for p in paths:
+        mask |= winding_grid(p.polys, (g.out_h, g.out_w), g.ss) != 0
+    return cv2.resize(mask.astype(np.uint8) * 255, (g.out_w, g.out_h), interpolation=cv2.INTER_AREA).astype(np.float64) / 255.0
+
+
+def cov_report(a: np.ndarray, b: np.ndarray) -> dict:
+    """Kesetaraan dua peta cakupan (a vs acuan b): IoU (cakupan > 0,5), L1 / tinta, fraksi piksel selisih besar, rasio massa."""
+    ia, ib = a > 0.5, b > 0.5
+    ink = max(int(ib.sum()), 1)
+    return {"iou": float((ia & ib).sum() / max((ia | ib).sum(), 1)), "l1": float(np.abs(a - b).sum() / max(b.sum(), 1.0)),
+            "big_diff_frac": float((np.abs(a - b) > 0.5).sum() / ink), "mass_ratio": float(a.sum() / max(b.sum(), 1e-9))}
+
+
+def svg_png_report(paths: list[SvgPath], cov_png: np.ndarray, g: sty.Geometry) -> dict:
+    return cov_report(rasterize_svg(paths, g), cov_png)
+
+
+# ── Tebal ──────────────────────────────────────────
+def ink_width_along_normal(cov: np.ndarray, p: np.ndarray, n: np.ndarray, half: float = 14.0, step: float = 0.25) -> float:
+    """Tebal tinta terukur (px) di titik p sepanjang normal n: integral cakupan (bilinear). Hanya untuk strok terisolasi."""
+    ts = np.arange(-half, half + 1e-9, step)
+    xs, ys = p[0] + ts * n[0] - 0.5, p[1] + ts * n[1] - 0.5          # indeks piksel = koordinat − 0,5 (pusat piksel k + 0,5)
+    vals = map_coordinates(cov, [ys, xs], order=1, mode="constant", cval=0.0)
+    return float(vals.sum() * step)
+
+
+def piece_arclength(pc: sty.Piece) -> np.ndarray:
+    return np.r_[0.0, np.cumsum(np.hypot(*np.diff(pc.points, axis=0).T))]
+
+
+def seam_jump(pc: sty.Piece, g: sty.Geometry) -> tuple[float, float]:
+    """Strok tertutup: (selisih tebal titik awal ↔ titik terakhir, selisih maksimum antar titik bertetangga), px output."""
+    w = sty.piece_widths(pc, g)
+    return float(abs(w[0] - w[-1])), float(np.abs(np.diff(w)).max())
+
+
+def pop_by_type(prev: list[sty.Piece], cur: list[sty.Piece], g: sty.Geometry, base: float, match: float = 3.0,
+                still: float = 1.0) -> dict[str, dict[str, list[np.ndarray]]]:
+    """"Pop tebal" antar frame berurutan: untuk tiap titik strok di t, titik terdekat di strok bertrack sama di t−1 (jarak ≤ match
+    px ref); |Δtebal| dibagi `base` (= width_base × unit) dan dibagi tebal NOMINAL tipe itu sendiri (g.widths[tipe]).
+    Dipisah titik DIAM (jarak ≤ still px ref) dan BERGERAK. Return {tipe: {"base_still", "base_move", "own_still", "own_move"}}."""
+    out = {t: {"base_still": [], "base_move": [], "own_still": [], "own_move": []} for t in sty.TYPE_ORDER}
+    by_prev: dict[tuple[int, str], list[sty.Piece]] = {}
+    for pc in prev:
+        by_prev.setdefault((pc.track_id, pc.type), []).append(pc)
+    for pc in cur:
+        olds = by_prev.get((pc.track_id, pc.type))
+        if not olds:
+            continue
+        q = np.vstack([o.points for o in olds])
+        qw = np.concatenate([sty.piece_widths(o, g) for o in olds])
+        d, j = cKDTree(q).query(pc.points)
+        ok = d <= match * g.unit
+        if not ok.any():
+            continue
+        dw = np.abs(sty.piece_widths(pc, g)[ok] - qw[j[ok]])
+        near = d[ok] <= still * g.unit
+        for key, nominal in (("base", base), ("own", g.widths[pc.type])):
+            out[pc.type][f"{key}_still"].append(dw[near] / nominal)
+            out[pc.type][f"{key}_move"].append(dw[~near] / nominal)
+    return out
+
+
+def summarize_pop(acc: dict) -> dict:
+    """Gabungkan daftar array pop_by_type → {tipe: {kunci: {n, p50, p95, max}}}."""
+    res = {}
+    for t, kv in acc.items():
+        res[t] = {}
+        for k, lst in kv.items():
+            a = np.concatenate(lst) if lst else np.zeros(0)
+            res[t][k] = {"n": int(len(a)), "p50": float(np.percentile(a, 50)) if len(a) else 0.0,
+                         "p95": float(np.percentile(a, 95)) if len(a) else 0.0, "max": float(a.max()) if len(a) else 0.0}
+    return res
+
+
+def taper_depth(pieces: list[sty.Piece], flags: list[tuple[bool, bool]], g: sty.Geometry) -> dict[str, float]:
+    """Kedalaman taper per tipe: median (tebal di ujung bebas / tebal nominal tipe). 1,0 = tanpa taper. Dipasangkan dengan pop
+    supaya taper mati tidak tampak "menang"."""
+    res: dict[str, list[float]] = {}
+    for pc, fl in zip(pieces, flags):
+        w = sty.piece_widths(pc, g)
+        for e, free in enumerate(fl):
+            if free:
+                res.setdefault(pc.type, []).append(float(w[0 if e == 0 else -1] / g.widths[pc.type]))
+    return {t: float(np.median(v)) for t, v in res.items()}
