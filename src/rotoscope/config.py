@@ -175,7 +175,6 @@ DEFAULT_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
 class TemporalConfig:
     enabled: bool = True
     mask_ema_alpha: float = 0.7
-    optical_flow_blend: float = 0.4
     boil_preserve: float = 0.3
     qc_fail_weight: float = 0.1
     cut_diff: float = 0.08
@@ -705,7 +704,6 @@ def _validate_pipeline(c: PipelineConfig) -> None:
 
     t = c.stabilize.temporal
     _between("stabilize.temporal.mask_ema_alpha", t.mask_ema_alpha, 0, 1, lo_open=True)
-    _unit("stabilize.temporal.optical_flow_blend", t.optical_flow_blend)
     _unit("stabilize.temporal.boil_preserve", t.boil_preserve)
     _unit("stabilize.temporal.qc_fail_weight", t.qc_fail_weight)
     _unit("stabilize.temporal.cut_diff", t.cut_diff)

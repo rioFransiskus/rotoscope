@@ -385,14 +385,14 @@ dan temporal fill tidak cukup. D-002 (pose hanya fallback, bukan primary) tetap 
 ### [3] `stabilize.py` — stage tersulit, alokasikan waktu paling banyak (CPU)
 - **In:** `seg/probs/`, `seg/classmap/` (tie-break seri, T-106), `seg/manifest.json`, `depth/`,
   `depth/manifest.json`, `depth/frames.jsonl` (status `finite`), `frames/` (deteksi cut T-302 — dibaca hanya bila temporal aktif,
-  R > 0, `cut_diff` > 0; optical flow = T-303), `qc_report.json` (bobot temporal T-302 — dibaca hanya bila temporal aktif dan R > 0;
+  R > 0, `cut_diff` > 0), `qc_report.json` (bobot temporal T-302 — dibaca hanya bila temporal aktif dan R > 0;
   tidak ada / frame tanpa baris → berhenti + perintah `segment`); config `groups`, `stabilize`
 - **Langkah:**
   1. Probabilitas kelas → **probabilitas grup** (jumlah per grup / 255, float32). Definisi grup:
      `groups:` di `configs/default.yaml` (lihat 02). Tanpa temporal, argmax dihitung dari jumlah uint8
      per grup (integer, eksak — sama dengan argmax float32). `classes` di `seg/manifest.json` wajib sama
      persis dengan `sapiens2_classes.json` (urutan kelas menentukan pemetaan ke grup).
-  2. **Temporal** (T-302, kalau `stabilize.temporal.enabled`; **tanpa optical flow** — warp Farnebäck = T-303):
+  2. **Temporal** (T-302, kalau `stabilize.temporal.enabled`; **tanpa optical flow: DITOLAK di T-303 berdasarkan data**, docs/04 "Hasil T-303 (ditolak)"):
      **kernel eksponensial simetris TERPOTONG** (bukan EMA IIR dua arah) pada jumlah grup:
      - frame t: `p_t = Σ_k w_k · S_(t+k) / Σ_k w_k`, `w_k = ρ^|k| · q_(t+k)`, k = −R..+R, ρ = (1 − α) / (1 + α),
        α = `mask_ema_alpha` (≈ bobot frame tengah; α = 1 → R = 0 → persis jalur spasial T-106, byte-identik);
@@ -412,9 +412,10 @@ dan temporal fill tidak cukup. D-002 (pose hanya fallback, bukan primary) tetap 
        (0,97 / 0,90), 2 berurutan (0,963) dan tepi klip (0,957 / 0,942); 3 berurutan 0,80, 5 berurutan 0,67 — **batas yang diketahui:
        tidak lebih dari 2 berurutan pada q berapa pun dengan R = 2** (3+ berurutan tidak pulih penuh). Biaya positif palsu (frame sehat
        yang ditandai gagal) kecil: frame itu tetap berbobot ρ-tetangga. Kalibrasi nyata menunggu klip kedua;
-     - **`optical_flow_blend` ≠ 0** saat temporal aktif: DIABAIKAN dengan satu peringatan per run; manifest mencatat
-       `temporal.optical_flow: "inactive (T-303)"` ("off" bila 0). `mask_ema_alpha` dikalibrasi ulang di T-303 (kriteria T-302 =
-       batas bawah).
+     - **Optical flow: DITOLAK (T-303, 2026-10-06).** Parameter `optical_flow_blend`, peringatan, dan field manifest
+       `temporal.optical_flow` dihapus (key lama di YAML → "tidak dikenal"). Alasan: DIS / Farnebäck tidak mengalahkan α adaptif
+       murah pada derau statis dan menurunkan pop garis akhir hanya −8% / −1%, dengan biaya 2–3× waktu [3]; data di docs/04.
+       `mask_ema_alpha` 0,7 tetap (kalibrasi ulang bukan lagi bagian T-303).
   3. argmax → peta grup. **Seri eksak** → grup dari `seg/classmap` (argmax logits tanpa pembulatan)
      kalau grup itu ikut seri; selain itu id terkecil. Jumlah piksel seri dicatat per frame (klip uji
      5–43 px/frame). Setelah temporal aktif (T-302) seri eksak jarang (argmax float32), tapi aturan tetap berlaku.
@@ -430,7 +431,7 @@ dan temporal fill tidak cukup. D-002 (pose hanya fallback, bukan primary) tetap 
      grup asli; seri antara grup lain → id terkecil. K = 1 → mati.
   6. **Kedalaman:** normalisasi **per frame** (disparity DA hanya benar sampai skala + offset per
      frame; kedalaman mentah tidak boleh langsung di-EMA), lalu temporal (kalau `temporal.enabled` **dan**
-     `stabilize.depth.temporal`; default mati sampai T-303). `stabilize.depth.normalize` (T-302, diukur pada kedua klip uji):
+     `stabilize.depth.temporal`; default dan tetap MATI: flow ditolak di T-303). `stabilize.depth.normalize` (T-302, diukur pada kedua klip uji):
      - **`log_median_iqr` (A, T-106, kompatibilitas):** `(log max(d, log_eps) − median) / max(IQR, iqr_min)`. Median + IQR
        (p75 − p25) dari foreground = peta grup bersih ≠ 0 frame itu; foreground kosong → seluruh frame (`region: "frame"` di
        log). IQR < `iqr_min` → pembagi di-clamp (`iqr_clamped` di log). Pembagi IQR per frame membuat gradien antar frame tidak
@@ -448,9 +449,8 @@ dan temporal fill tidak cukup. D-002 (pose hanya fallback, bukan primary) tetap 
        muat float16; tidak finite → berhenti dengan error.
      - Frame `finite: false` di `depth/frames.jsonl` disalin ke `stable/frames.jsonl` (`depth_finite`),
        tanpa perlakuan khusus selama temporal mati.
-- Optical flow (T-303) tidak di-cache (±1.2 GB/klip) — dihitung ulang (±20–50 ms/frame *est.*).
 - Default sejak T-302 DONE: `stabilize.temporal.enabled: true` (α 0,7, R = 2, b 0,3, `cut_diff` 0,08, `qc_fail_weight` 0,1, normalisasi
-  `log_median`, `depth.temporal: false`); langkah 2 tanpa optical flow (T-303). `enabled: false` = hanya langkah 1, 3–6 (spasial, jalur T-106).
+  `log_median`, `depth.temporal: false`); langkah 2 tanpa optical flow (ditolak, T-303). `enabled: false` = hanya langkah 1, 3–6 (spasial, jalur T-106).
   Temporal butuh `frames/` + `qc_report.json` (klip yang di-ingest + di-segment lewat `run` memilikinya).
 - ⚠️ Jangan over-smooth. Sedikit boil = hand-drawn feel (`boil_preserve`), bukan nol (P-001).
 
@@ -458,7 +458,7 @@ dan temporal fill tidak cukup. D-002 (pose hanya fallback, bukan primary) tetap 
 |---|---|---|---|---|
 | `stable/groups/frame_%05d.png` | id grup: 0 = background, 1..G = urutan `groups:` di YAML | uint8 | kerja | ±2.4 MB (±6.6 KB/frame, terukur T-106) |
 | `stable/depth_smooth/frame_%05d.npy` | kedalaman ternormalisasi per frame (+ temporal) | float16 | kerja | 295 MB (820 KB/frame) |
-| `stable/manifest.json` | **`temporal`** (T-302: `{enabled: false}`, atau `enabled`, `radius`, `depth_radius`, `cut_frames`, `qc_fail_frames`, `optical_flow`), section `stabilize` + `stabilize_hash`, `groups` + `groups_hash`, referensi `seg/manifest.json` (model, model id, revision, precision, processor, `num_labels`, frame_size, classes, `created_utc`) + `depth/manifest.json` (model id, revision, lisensi, precision, processor, ukuran input, output, frame_size, `created_utc`), frame_size, `clip` (identitas klip, T-108) | – | – | kecil |
+| `stable/manifest.json` | **`temporal`** (T-302: `{enabled: false}`, atau `enabled`, `radius`, `depth_radius`, `cut_frames`, `qc_fail_frames`), section `stabilize` + `stabilize_hash`, `groups` + `groups_hash`, referensi `seg/manifest.json` (model, model id, revision, precision, processor, `num_labels`, frame_size, classes, `created_utc`) + `depth/manifest.json` (model id, revision, lisensi, precision, processor, ukuran input, output, frame_size, `created_utc`), frame_size, `clip` (identitas klip, T-108) | – | – | kecil |
 | `stable/frames.jsonl` | log per frame: waktu per langkah, piksel seri, piksel berubah di filter pulau / mode, luas foreground, `depth_finite`, statistik normalisasi (region, median + IQR log, clamp) + min / median / maks `depth_smooth` | – | – | kecil |
 
 - **Tulis atomik + `*.tmp`:** aturan sama dengan [2] (helper `stage_common.py`).

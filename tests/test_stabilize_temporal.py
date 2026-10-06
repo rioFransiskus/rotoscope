@@ -30,7 +30,7 @@ TORSO_ID, LARM_ID = CID["Torso"], CID["Left_Lower_Arm"]
 GID_TORSO, GID_LARM = 3, 4
 NO_FILTER = {"stabilize.island_min_px": 0, "stabilize.mode_k": 1}
 DEPTH_OFF = {"stabilize.depth.temporal": False}
-ON = {"stabilize.temporal.enabled": True, "stabilize.temporal.optical_flow_blend": 0.0,
+ON = {"stabilize.temporal.enabled": True,
       "stabilize.temporal.boil_preserve": 0.0, "stabilize.temporal.mask_ema_alpha": 0.7, **NO_FILTER}
 
 
@@ -530,18 +530,15 @@ def test_stale_when_qc_failure_set_changes(tmp_path):
     assert any(s.startswith("temporal") for s in r["stale"]) and r["processed"] == 6
 
 
-def test_optical_flow_warning_once_and_manifest(tmp_path):
+def test_optical_flow_removed_no_warning_no_manifest_field(tmp_path):
+    """T-303: optical flow ditolak → parameter, peringatan, dan field manifest `temporal.optical_flow` tidak ada."""
     work = make_clip(tmp_path, noisy(static_cm(), 4, 0.1))
     msgs = []
-    stb.run_stabilize(tst.cfg_for(work, **{**ON, "stabilize.temporal.optical_flow_blend": 0.4}), log=msgs.append)
-    assert sum("optical_flow_blend" in m for m in msgs) == 1
+    stb.run_stabilize(tst.cfg_for(work, **ON), log=msgs.append)
+    assert not any("optical_flow" in m or "T-303" in m for m in msgs)
     m = json.loads((work / "stable" / "manifest.json").read_text(encoding="utf-8"))
-    assert m["temporal"]["optical_flow"] == "inactive (T-303)"
-    work2 = make_clip(tmp_path / "z", noisy(static_cm(), 4, 0.1))
-    msgs2 = []
-    stb.run_stabilize(tst.cfg_for(work2, **ON), log=msgs2.append)
-    assert not any("optical_flow_blend" in m for m in msgs2)
-    assert json.loads((work2 / "stable" / "manifest.json").read_text(encoding="utf-8"))["temporal"]["optical_flow"] == "off"
+    assert "optical_flow" not in m["temporal"]
+    assert "optical_flow_blend" not in m["stabilize"]["temporal"]
 
 
 def test_manifest_temporal_disabled(tmp_path):

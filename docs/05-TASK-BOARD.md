@@ -1359,12 +1359,19 @@ Tiga langkah, jadikan refleks:
     linear memberi Done-when 5/5 dan frame tanpa oklusi 144 (vs 160) di `test`; efek log dan efek IQR belum dipisah. Uji metode
     normalisasi (mis. IQR tetap per klip, domain linear) dengan metrik Done-when T-201b (`docs/04` D-010 "Hasil T-201b")
 
-### T-303 · Optical flow warp · `TODO`
-- **Kerjakan:** `cv2.calcOpticalFlowFarneback` pada `frames/` → warp probabilitas grup + kedalaman
+### T-303 · Optical flow warp · `SKIP`
+- **Kerjakan (rencana awal, TIDAK dikerjakan):** `cv2.calcOpticalFlowFarneback` pada `frames/` → warp probabilitas grup + kedalaman
   frame sebelumnya ke frame sekarang → blend dengan bobot `optical_flow_blend`
-- **Done when:** boiling turun signifikan tanpa lag terlihat
-- **Catatan:** ini mitigasi paling efektif untuk P-001
+- **Done when (catatan penutupan, ditulis ulang 2026-10-06):** DITOLAK berdasarkan data; alat ukur dipertahankan. "Boiling turun signifikan" TIDAK tercapai oleh tuas yang diukur
+  (flow DIS / Farnebäck, α adaptif): derau grup turun, tetapi pop garis akhir turun ≤ 8% (flow) atau naik 5–7% (α adaptif) vs T-302, di bawah ambang yang terlihat. Hipotesis penyebab
+  "pop berasal dari oklusi" SEBAGIAN SALAH (lubang siluet 46–48% pop absolut, oklusi 19–36%; per satuan panjang oklusi paling pop). Hasil lengkap: docs/04 "Hasil T-303 (ditolak)"
+- **Catatan:** semula dianggap mitigasi paling efektif untuk P-001; terukur tidak. Preseden: T-301 SKIP. Parameter `stabilize.temporal.optical_flow_blend` DIHAPUS.
+  Alat ukur: `tests/temporal_metrics.py` (pop energy per tipe, galat alignment, konsistensi maju-mundur) + `scripts/t303_flow_study.py`
 - **Update log:**
+  - [2026-10-06] **SKIP (keputusan Rio, opsi D).** Gerbang go / no-go gagal: flow −37% / −30% derau statis vs pembanding α adaptif −40% / −36% (margin: ≥ 5 poin lebih baik DAN pop hilir
+    ≥ 10% lebih rendah pada kedua klip; flow −8% / −1%). B (flow hanya kedalaman: ≈ −0,4% / −2,5% pop total) dan A (α adaptif: pop +5% / +7%, rasio lengan 0,972 < 0,975) ditolak.
+    Dikerjakan: parameter mati dihapus (`stable/` byte-identik pada kedua klip; hanya `stabilize_hash` / manifest berubah), alat ukur dipertahankan, diagnostik lubang / oklusi
+    (bahan T-305). Papan: Phase 3 = 1/5, total 23/38 (SKIP tidak dihitung selesai)
   - [2026-10-05] **Baseline T-303 (penilaian Rio setelah T-302):** "pop" garis akhir (kedip, loncat) `before` vs `after_a0.7_b0.3` = SAMA; kedip piksel di batas
     grup pada jendela statis berkurang jelas, tanpa hantu / lag di jendela cepat. Optical flow / α adaptif HARUS mengalahkan ini (metrik hilir: id baru per strok-frame
     `group_boundary` / `occlusion`, umur track; id baru per frame group_boundary T-302 pada b 0,3: 0,432 / 0,635, umur 15,9 / 11,9). `mask_ema_alpha` dikalibrasi ulang di
@@ -1382,6 +1389,8 @@ Tiga langkah, jadikan refleks:
 - **Done when:** ada nilai default yang kamu setujui secara artistik
 - **Catatan:** ini penilaian mata, bukan metrik. Tidak bisa didelegasikan ke Claude Code
 - **Update log:**
+  - [2026-10-06] Dari T-302 / T-303 (keputusan Rio): bukti T-302 = perbandingan b 0 vs 0,3 "tidak jelas". Pembandingan yang bermakna butuh rentang lebar {0; 0,3; 0,6; 1,0} dan DITUNDA sampai
+    jitter / variasi tebal (Phase 4) terlihat, karena boil yang diinginkan datang dari jitter (T-402), bukan dari derau segmentasi
   - [2026-10-05] Dari T-302: default b = 0,3. Penilaian Rio `after_a0.7_b0` vs `after_a0.7_b0.3`: "b0 terlihat lebih bersih" — TIDAK jelas. Pembanding terukur (α 0,7,
     `test_short` / `test`): b 0 vs 0,3 derau statis −41% / −36% vs −31% / −26%; rasio luas lengan semua frame min 0,9737 / 0,9752 vs 0,977 / 0,983; IoU grup min
     0,902 / 0,667 vs 0,921 / 0,725. Boil yang diinginkan lebih tepat datang dari jitter yang disengaja (T-402) daripada derau segmentasi (P-003)
@@ -1393,6 +1402,12 @@ Tiga langkah, jadikan refleks:
 - **Done when:** default di `configs/default.yaml` + `docs/02` diperbarui dengan data, disetujui Rio
 - **🎯 Milestone Phase 3:** flicker terkendali
 - **Update log:**
+  - [2026-10-06] Bahan T-305 dari T-303 (SKIP; data di docs/04 "Hasil T-303 (ditolak)"): (a) **lubang siluet = sumber pop terbesar** (46–48% pop energy; oklusi 19–36%, group_boundary 19–30%)
+    — TETAPI `min_hole_area` {50…300} dan histeresis temporal lubang (200 / T_low 100–170) hanya menggeser pop lubang ≤ 3% (300 memperburuk +20% di `test_short`); lubang besar (> 1,2×θ) lahir / hilang
+    sekaligus, jadi penyebab dugaan = celah lengan–badan terbuka / tertutup (topologi), BELUM diuji; histeresis pada L oklusi (30 / 15) menurunkan pop oklusi −13% / −14% dengan +22–26% strok tampil
+    (≈ −5% / −2,5% pop total): tidak dibuka sebagai task baru; (b) **klip kedua dibutuhkan** untuk `area_drop_min`, `qc_fail_weight` (SEMENTARA), ambang ukuran, `cut_diff`; skrip studi dapat diulang
+    (`scripts/t303_flow_study.py holes|occl --clips ...`, `tests/temporal_metrics.py::pop_energy_by_type`); (c) bercak hijau frame 197 = salah label segmentasi konsisten (bukan flicker; filter pulau N).
+    T-304 (`boil_preserve`, penilaian mata Rio) tidak berubah
   - [2026-10-05] Bahan T-305 dari penilaian visual T-302 (Rio): frame 197 (`test`) ada **bercak hijau di lengan** = salah label segmentasi, juga ada di argmax mentah (bukan
     efek temporal) → evaluasi filter pulau N (kini di peta GRUP, dan pulau besar di dalam lengan mungkin > N = 30 px); juga ukur ulang N / K / M / D / L / persentil pada default
     baru (temporal aktif, `log_median`: T_high / T_low klip uji 0,0291 / 0,0125 `test_short` dan 0,0257 / 0,0112 `test`) dan strok oklusi (frame tanpa oklusi `test` 158)
@@ -1505,12 +1520,15 @@ Tiga langkah, jadikan refleks:
 | 0 Setup | T-001 … T-005 | 5/5 |
 | 1 Skeleton | T-101 … T-108 (T-102 → a/b/c, T-104 → a/b) — ✅ **Phase 1 selesai** (🎯 milestone T-104b, T-107 DONE) | 11/11 |
 | 2 Vectorize | T-201 … T-204 (T-201 → a/b, T-203 → a/b) — T-201a ✅, T-201b ✅ DONE (dengan batas kaki), T-202 ✅ DONE, T-203a ✅ DONE, T-203b ✅ DONE, T-204 ✅ DONE — 🎯 **Milestone Phase 2 tercapai** | 6/6 |
-| 3 Stabilize | T-301 … T-305 (T-301 SKIP) — T-302 ✅ DONE (temporal tanpa flow; boiling terlihat menunggu T-303) | 1/5 |
+| 3 Stabilize | T-301 … T-305 (T-301 SKIP, T-303 SKIP) — T-302 ✅ DONE (temporal tanpa flow); T-303 SKIP (optical flow ditolak berdasarkan data, docs/04) | 1/5 |
 | 4 Style | T-401 … T-406 | 0/6 |
 | 5 Fallback | T-501 … T-502 (BLOCKED) | 0/2 |
 | 6 Opsional | T-601 … T-603 | 0/3 |
 
-**Total: 38 task** (5 + 11 + 6 + 5 + 6 + 2 + 3) · Selesai: 23/38 (5 + 11 + 6 + 1; SKIP — T-301, T-601 — tidak dihitung selesai).
+**Total: 38 task** (5 + 11 + 6 + 5 + 6 + 2 + 3) · Selesai: 23/38 (5 + 11 + 6 + 1; SKIP — T-301, T-303, T-601 — tidak dihitung selesai).
+Catatan Phase 3 (2026-10-06): tuas stabilisasi grup tuntas (T-302); pop garis akhir tidak membaik oleh tuas yang diukur (flow, α adaptif, ambang lubang / oklusi; docs/04 "Hasil T-303 (ditolak)");
+evaluasi ulang di Phase 4 (jitter / variasi tebal); T-305 menunggu klip kedua.
+Rekonsiliasi 2026-10-06: T-303 SKIP (ditolak berdasarkan data) → Phase 3 tetap 1/5, total tetap 23/38 (5 + 11 + 6 + 1 = 23; jumlah per Phase = total).
 Rekonsiliasi 2026-10-05: T-302 DONE → Phase 3 = 1/5, total 23/38 (5 + 11 + 6 + 1 = 23; jumlah per Phase = total).
 Rekonsiliasi 2026-10-05: T-204 DONE → Phase 2 = 6/6, total 22/38.
 Rekonsiliasi 2026-10-05: T-203b DONE → Phase 2 = 5/6, total 21/38.

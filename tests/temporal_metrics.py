@@ -6,6 +6,10 @@ Semua fungsi murni numpy atas peta grup (T, H, W) uint8 (0 = background). Metrik
 - flip-flop: piksel yang berubah grup di frame t lalu kembali ke grup frame t−1 pada t+1 atau t+2 (A→B→A ≤ 2 frame);
 - kesetiaan: IoU grup / foreground vs argmax mentah, centroid error (px), rasio luas lengan, lag luas (korelasi silang);
 - jendela otomatis: frame "statis" (derau murni) dan "gerak cepat" dipilih dari data, bukan nomor frame tetap.
+
+T-303 (optical flow DITOLAK, docs/04) menambah alat ukur yang dipertahankan: pop energy per tipe strok dari contours/ (`pop_energy_by_type`,
+`track_ages`), galat alignment sebuah warp (`alignment_error`) dan konsistensi maju-mundur (`fb_error`, `inconsistent_fraction`) atas flow yang
+diberikan pemanggil — tidak ada kode flow produksi.
 """
 
 from __future__ import annotations
@@ -177,6 +181,134 @@ def limb_ratio(g: np.ndarray, raw: np.ndarray, groups: tuple[int, ...] = ARM_GRO
         b = np.isin(raw[t], groups).sum()
         out.append(np.isin(g[t], groups).sum() / b if b else 1.0)
     return np.array(out)
+
+
+# ── T-303: pop garis akhir per tipe strok + galat alignment / konsistensi flow (alat ukur dipertahankan; flow produksi TIDAK ada) ──
+# "Pop" = strok yang lahir / mati di frame t. Strok = (tipe, track_id) di contours/frame_*.json (T-202). Pop energy per tipe =
+# panjang (px) strok tipe itu yang lahir ATAU mati di frame t, dibagi total panjang SEMUA strok frame t; dirata-ratakan atas frame 1..T−1.
+STROKE_TYPES = ("silhouette", "silhouette_hole", "group_boundary", "occlusion")
+ALIGN_DILATE_PX = 7               # piksel bergerak = XOR argmax t vs t+k, didilatasi kotak 7×7
+FB_THRESHOLDS_PX = (0.5, 1.0, 2.0)  # ambang inkonsistensi maju-mundur (px)
+
+
+def stroke_length(points, closed: bool) -> float:
+    """Panjang polyline (px); closed → termasuk segmen penutup."""
+    p = np.asarray(points, float)
+    if len(p) < 2:
+        return 0.0
+    total = float(np.hypot(*np.diff(p, axis=0).T).sum())
+    if closed:
+        total += float(np.hypot(*(p[0] - p[-1])))
+    return total
+
+
+def stroke_lengths_from_dir(contours_dir) -> list[dict[tuple[str, int], float]]:
+    """contours/frame_*.json terurut → per frame {(tipe, track_id): panjang px}."""
+    import json
+    from pathlib import Path
+
+    out = []
+    for f in sorted(Path(contours_dir).glob("frame_*.json")):
+        d = json.loads(f.read_text(encoding="utf-8"))
+        out.append({(s["type"], s["track_id"]): stroke_length(s["points"], s["closed"]) for s in d["strokes"]})
+    return out
+
+
+def pop_energy_by_type(frames: list[dict], types: tuple[str, ...] = STROKE_TYPES) -> dict:
+    """frames = keluaran stroke_lengths_from_dir. Per tipe: pop_energy_mean, pop_sum, born / died per frame, length_share_mean,
+    id_new_per_stroke_frame, pop_per_length_share, pop_share_pct (porsi terhadap total semua tipe), age_mean / age_median, frames_without.
+    `total_pop_energy_mean` = jumlah pop energy semua tipe (rata-rata atas frame 1..T−1)."""
+    n = len(frames)
+    per, total = {}, 0.0
+    for ty in types:
+        pop, born_n, died_n, share, n_str = [], [], [], [], []
+        for t in range(1, n):
+            cur = {k: v for k, v in frames[t].items() if k[0] == ty}
+            prv = {k: v for k, v in frames[t - 1].items() if k[0] == ty}
+            all_len = sum(frames[t].values()) or 1.0
+            born = [v for k, v in cur.items() if k not in prv]
+            died = [v for k, v in prv.items() if k not in cur]
+            pop.append((sum(born) + sum(died)) / all_len)
+            born_n.append(len(born)), died_n.append(len(died))
+            share.append(sum(cur.values()) / all_len)
+            n_str.append(len(cur))
+        ages = track_ages(frames, ty)
+        per[ty] = {"pop_energy_mean": float(np.mean(pop)) if pop else 0.0, "pop_sum": float(np.sum(pop)),
+                   "born_per_frame": float(np.mean(born_n)) if pop else 0.0, "died_per_frame": float(np.mean(died_n)) if pop else 0.0,
+                   "length_share_mean": float(np.mean(share)) if pop else 0.0,
+                   "id_new_per_stroke_frame": float(np.sum(born_n) / max(np.sum(n_str), 1)) if pop else 0.0,
+                   "age_mean": float(np.mean(ages)) if ages else None, "age_median": float(np.median(ages)) if ages else None,
+                   "frames_without": frames_without_type(frames, ty)}
+        total += per[ty]["pop_sum"]
+    for ty in types:
+        p = per[ty]
+        p["pop_share_pct"] = 100 * p["pop_sum"] / total if total else None
+        p["pop_per_length_share"] = p["pop_energy_mean"] / p["length_share_mean"] if p["length_share_mean"] else None
+    return {"frames": n, "total_pop_energy_mean": total / max(n - 1, 1), "types": per}
+
+
+def track_ages(frames: list[dict], ty: str) -> list[int]:
+    """Panjang (frame) tiap run berurutan sebuah (tipe, track_id); track yang putus lalu muncul lagi = dua run."""
+    ages = []
+    for key in {k for f in frames for k in f if k[0] == ty}:
+        run = 0
+        for f in frames:
+            if key in f:
+                run += 1
+            elif run:
+                ages.append(run)
+                run = 0
+        if run:
+            ages.append(run)
+    return ages
+
+
+def frames_without_type(frames: list[dict], ty: str) -> int:
+    return sum(1 for f in frames if not any(k[0] == ty for k in f))
+
+
+def fb_error(f_fwd: np.ndarray, f_bwd: np.ndarray) -> np.ndarray:
+    """Galat konsistensi maju-mundur per piksel (px): |f(x) + b(x + f(x))|. f_fwd, f_bwd (H, W, 2) float32 (dx, dy); b dibaca
+    bilinear di x + f(x) (tepi gambar direplikasi)."""
+    import cv2
+
+    h, w = f_fwd.shape[:2]
+    yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+    mx, my = xx + f_fwd[..., 0], yy + f_fwd[..., 1]
+    bx = cv2.remap(f_bwd[..., 0], mx, my, cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+    by = cv2.remap(f_bwd[..., 1], mx, my, cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+    return np.hypot(f_fwd[..., 0] + bx, f_fwd[..., 1] + by)
+
+
+def inconsistent_fraction(err: np.ndarray, mask: np.ndarray | None = None,
+                          thresholds: tuple[float, ...] = FB_THRESHOLDS_PX) -> dict[float, float]:
+    """Fraksi piksel (dalam mask; default semua) dengan galat maju-mundur > ambang."""
+    sel = np.ones(err.shape, bool) if mask is None else mask
+    if not sel.any():
+        return {th: 0.0 for th in thresholds}
+    return {th: float((err[sel] > th).mean()) for th in thresholds}
+
+
+def moving_mask(raw_t: np.ndarray, raw_tk: np.ndarray, dilate_px: int = ALIGN_DILATE_PX) -> np.ndarray:
+    """Piksel bergerak antara dua argmax: XOR (label berbeda) didilatasi kotak dilate_px × dilate_px."""
+    import cv2
+
+    return cv2.dilate((raw_t != raw_tk).astype(np.uint8), np.ones((dilate_px, dilate_px), np.uint8)).astype(bool)
+
+
+def alignment_error(raw_t: np.ndarray, warped: np.ndarray, raw_tk: np.ndarray, valid: np.ndarray | None = None,
+                    dilate_px: int = ALIGN_DILATE_PX) -> dict:
+    """Galat alignment sebuah warp: pada piksel bergerak (moving_mask ∩ valid), fraksi label yang BEDA dari argmax frame t —
+    `err_warp` = label hasil warp (argmax tetangga yang di-warp ke t) vs raw_t, `err_nowarp` = label tetangga mentah vs raw_t
+    (pembanding tanpa warp). Warp berguna ⇔ err_warp < err_nowarp. `warped` = peta label (H, W) hasil warp."""
+    m = moving_mask(raw_t, raw_tk, dilate_px)
+    if valid is not None:
+        m &= valid
+    n = int(m.sum())
+    if n == 0:
+        return {"moving_px": 0, "err_warp": 0.0, "err_nowarp": 0.0}
+    return {"moving_px": n, "err_warp": 1.0 - float((warped[m] == raw_t[m]).sum()) / n,
+            "err_nowarp": 1.0 - float((raw_tk[m] == raw_t[m]).sum()) / n}
 
 
 def recovery_iou(g: np.ndarray, ref: np.ndarray, frames: list[int]) -> np.ndarray:

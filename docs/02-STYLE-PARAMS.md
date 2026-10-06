@@ -71,9 +71,8 @@ groups:
 # ── STABILIZE [3] ──────────────────────────────────
 stabilize:
   temporal:
-    enabled: true            # T-302: kernel simetris terpotong (tanpa optical flow, T-303); false = hanya spasial
+    enabled: true            # T-302: kernel simetris terpotong (tanpa optical flow: ditolak di T-303, docs/04); false = hanya spasial
     mask_ema_alpha: 0.7      # 1.0 = tanpa smoothing. Turun = lebih stabil, lebih lag
-    optical_flow_blend: 0.4  # bobot probabilitas hasil warp; DIABAIKAN sampai T-303 (peringatan + manifest "inactive (T-303)")
     boil_preserve: 0.3       # 0 = mati total, 1 = boiling penuh
     qc_fail_weight: 0.1      # SEMENTARA — bobot frame gagal QC di kernel; harus < ρ (0,176 pada α 0,7); klip kedua → T-305
     cut_diff: 0.08           # selisih abu-abu rata-rata antar frame (0–1) yang dianggap cut → jendela temporal dipotong; 0 = mati
@@ -83,7 +82,7 @@ stabilize:
     normalize: "log_median"  # T-302: log − median (tanpa IQR); "log_median_iqr" = kompatibilitas
     log_eps: 1.0e-6          # log(max(d, eps)) — hanya menahan disparity ≤ 0 (min klip uji 0.64)
     iqr_min: 0.01            # SEMENTARA — batas bawah pembagi IQR (log) foreground, dikalibrasi di T-302
-    temporal: false          # EMA kedalaman; hanya berlaku kalau temporal.enabled. Mati sampai T-303 (tanpa flow: ghost edge, id oklusi ×3)
+    temporal: false          # EMA kedalaman; hanya berlaku kalau temporal.enabled. Tetap MATI (tanpa flow: ghost edge, id oklusi ×3; flow ditolak di T-303)
 
 # ── VECTORIZE [4] ──────────────────────────────────
 vectorize:
@@ -134,7 +133,7 @@ export:
 | `qc.area_median_window` | int ganjil ≥ 3 |
 | `groups` | lihat aturan grup di bawah |
 | `stabilize.temporal.mask_ema_alpha` | (0, 1] |
-| `stabilize.temporal.optical_flow_blend`, `boil_preserve`, `qc_fail_weight` | 0–1 |
+| `stabilize.temporal.boil_preserve`, `qc_fail_weight` | 0–1 |
 | `stabilize.temporal.cut_diff` | 0–1 (0 = pengaman cut mati) |
 | `stabilize.island_min_px` | int ≥ 0 (0 = mati) |
 | `stabilize.mode_k` | int ganjil ≥ 1 (1 = mati) |
@@ -236,8 +235,9 @@ render:
   output_width: 1080         # lebar output (px, genap, 256–2160); tinggi mengikuti rasio klip, dinaikkan ke genap
 ```
 
-Bagian `temporal:` lama (mask_ema_alpha, optical_flow_blend, boil_preserve) **pindah** ke
-`stabilize.temporal` di `default.yaml` — dibaca stage [3], bukan [5] (D-010).
+Bagian `temporal:` lama (mask_ema_alpha, boil_preserve) **pindah** ke
+`stabilize.temporal` di `default.yaml` — dibaca stage [3], bukan [5] (D-010). `optical_flow_blend` (juga di bagian lama
+itu) DIHAPUS di T-303: optical flow ditolak berdasarkan data (docs/04 "Hasil T-303 (ditolak)").
 
 ### Validasi style (saat load)
 

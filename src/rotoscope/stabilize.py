@@ -1,7 +1,7 @@
 """Stage [3] stabilize: seg/probs + seg/classmap + depth/ → stable/groups/*.png + stable/depth_smooth/*.npy
 + stable/manifest.json + stable/frames.jsonl (D-010). Kontrak lengkap: docs/01 [3].
 
-T-106 = spasial; T-302 = temporal (kernel simetris, tanpa optical flow; optical flow = T-303). CPU saja, tanpa
+T-106 = spasial; T-302 = temporal (kernel simetris, tanpa optical flow; optical flow DITOLAK di T-303, docs/04). CPU saja, tanpa
 torch. Per frame:
   1. probabilitas kelas uint8 (29, H, W) → probabilitas grup = jumlah per grup / 255. argmax dihitung
      dari jumlah integer (eksak, sama dengan argmax float32). Seri eksak → grup dari seg/classmap
@@ -89,8 +89,6 @@ R_MAX = 8                 # batas atas radius R
 WEIGHT_SUM_MIN = 1e-6     # jumlah bobot jendela < ini → hanya frame tengah (dipakai apa adanya)
 CUT_THUMB_WIDTH = 48      # lebar thumbnail abu-abu untuk skor selisih frame (tinggi mengikuti aspek)
 GRAY_MAX = 255.0
-OPTICAL_FLOW_INACTIVE = "inactive (T-303)"
-OPTICAL_FLOW_OFF = "off"
 
 # Kunci manifest yang harus sama untuk resume; beda → output basi (dihapus + dihitung ulang).
 MANIFEST_MATCH_KEYS = ("stabilize_hash", "groups_hash", "seg", "depth", "frame_size", CLIP_KEY, "temporal")
@@ -335,9 +333,6 @@ def build_plan(cfg: PipelineConfig, clip: "Clip", log: Callable[[str], None] = p
     t = cfg.stabilize.temporal
     n = len(clip.names)
     radius = kernel_radius(t.mask_ema_alpha) if t.enabled else 0
-    if t.enabled and t.optical_flow_blend != 0:
-        log(f"PERINGATAN: stabilize.temporal.optical_flow_blend = {t.optical_flow_blend} diabaikan — optical flow "
-            f"belum ada (T-303); manifest mencatat '{OPTICAL_FLOW_INACTIVE}'")
     if radius == 0:
         return spatial_plan(n)
     cut_before = [False] * n
@@ -520,14 +515,13 @@ def _read_inputs(clip: Clip, name: str, n_classes: int) -> tuple[np.ndarray, np.
 
 # ── Manifest ───────────────────────────────────────
 def temporal_manifest(cfg: PipelineConfig, clip: Clip, plan: TemporalPlan) -> dict:
-    """Bagian manifest yang bukan parameter tapi menentukan hasil: radius, cut, frame gagal QC, status optical flow."""
+    """Bagian manifest yang bukan parameter tapi menentukan hasil: radius, cut, frame gagal QC."""
     t = cfg.stabilize.temporal
     if not t.enabled:
         return {"enabled": False}
     return {"enabled": True, "radius": plan.radius, "depth_radius": plan.depth_radius,
             "cut_frames": [clip.names[k] for k in plan.cut_frames],
-            "qc_fail_frames": [clip.names[k] for k in plan.qc_fail_frames],
-            "optical_flow": OPTICAL_FLOW_INACTIVE if t.optical_flow_blend != 0 else OPTICAL_FLOW_OFF}
+            "qc_fail_frames": [clip.names[k] for k in plan.qc_fail_frames]}
 
 
 def build_manifest(cfg: PipelineConfig, clip: Clip, seg_m: dict, dep_m: dict, plan: TemporalPlan) -> dict:

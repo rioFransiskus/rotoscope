@@ -933,6 +933,110 @@ rata-rata 136,8 / 194,0 per 10k piksel foreground; jendela statis ±30; `iou_pre
 - **Penyimpangan dan catatan proses:** satu edit lewat skrip Python di shell (butir 19). Dua skrip scratchpad diperbaiki dan dijalankan ulang (kunci hasil `occlusion` tertimpa;
   default `boil_preserve` 0,3 tertukar dengan b 0 di satu run hilir); tidak ada efek ke repo.
 
+#### Hasil T-303 (2026-10-06): optical flow DITOLAK berdasarkan data — SKIP (alat ukur dipertahankan)
+
+- **Keputusan (Rio, setelah laporan Tahap 1):** opsi D — tutup tanpa mengubah default; flow ditolak untuk grup DAN kedalaman. B (flow hanya untuk kedalaman) ditolak: efek total pada
+  pop = porsi oklusi (36% / 19%) × turunnya pop oklusi (−1% / −13%) ≈ −0,4% / −2,5%, di bawah ambang yang terlihat (turun 7–11% di T-302 dinilai "sama"), dengan biaya 2–3× waktu [3] dan
+  kompleksitas kode. A (α adaptif) ditolak: derau grup turun tetapi pop hilir naik 5% / 7% dan rasio luas lengan melanggar 0,975. C (flow penuh) ditolak: gerbang gagal. **Margin gerbang
+  tidak diubah.** Status docs/05: `SKIP` (preseden T-301); SKIP tidak dihitung selesai.
+- **Gerbang go / no-go** (diajukan sebelum data final, disetujui Rio): flow "mengalahkan" pembanding murah α adaptif per frame bila (i) derau jendela statis ≥ 5 poin persentase LEBIH RENDAH
+  dari pembanding pada kesetiaan setara DAN (ii) pop hilir total ≥ 10% lebih rendah dari T-302 pada KEDUA klip. **Hasil:** (i) gagal — flow −37% / −30% vs pembanding −40% / −36% (3–6 poin
+  LEBIH BURUK; IoU grup, centroid, rasio lengan juga tidak lebih baik); (ii) gagal — −8% / −1% (α 0,55 R_flow 2 b 0,4) atau −7% / −7% (α 0,4 R_flow 3 b 0,4). Kesimpulan: NO-GO.
+- **Pembanding α adaptif (rumus persis; hanya evaluasi, tidak diimplementasikan):** dari argmax MENTAH, kecepatan centroid foreground v (px / frame) dan XOR foreground x (t vs t−1, dibagi luas):
+  `u_v = clip((v − 3) / (4 − 3), 0, 1)`, `u_x = clip((x − 0,06) / (0,08 − 0,06), 0, 1)` (batas = aturan jendela statis / cepat T-302), `u_j = (u_v + u_x) / 2` (u di frame 0 = u di frame 1),
+  `u_t = max(u_t, u_{t+1})`, `α_t = α_statis + (α_cepat − α_statis) · u_t`; R dan ρ dihitung dari α_t dengan kernel T-302 yang sama (bobot QC, cut, `boil_preserve` 0,3, filter pulau, mode filter).
+  `test_short` / `test`, tiap baris = flip-flop jendela statis / cepat vs α 1,0:
+
+  | konfigurasi | statis | cepat | IoU grup rata-rata | IoU grup min | centroid maks (px) | rasio lengan min (semua frame) |
+  |---|---|---|---|---|---|---|
+  | T-302 (α 0,7 b 0,3, dikirim) | −31% / −26% | −10% / −11% | 0,9915 / 0,9915 | 0,921 / 0,725 | 1,09 / 1,41 | 0,977 / 0,983 |
+  | α seragam 0,55 | −42% / −37% | – | – | 0,895 / 0,631 | – | – |
+  | adaptif 0,55 → 0,85 | −40% / −36% | −5% / −5% | 0,9908 / 0,9928 | 0,923 / 0,725 | 0,55 / 0,82 | **0,972** / 0,978 (< 0,975 di `test_short`) |
+  | adaptif 0,4 → 0,85 | −50% / −46% | – | – | – | – | **0,969 / 0,971** |
+  | flow DIS MEDIUM α 0,55 R_flow 2 b 0,4 (aturan Sundaram) | −37% / −30% | −6% / −8% | 0,990 / 0,990 | 0,928 / 0,736 | 0,65 / 1,21 | **0,966** / 0,978 |
+
+- **Pop hilir** (vectorize nyata pada salinan scratchpad; pop energy total = Σ tipe; `test_short` / `test`; Done-when kaki 5/5 di semua konfigurasi, CV p95 |grad| hampir sama):
+
+  | konfigurasi | pop total | vs T-302 | `occlusion` id baru / strok-frame |
+  |---|---|---|---|
+  | T-302 | 0,0488 / 0,0633 | – | 0,354 / 0,440 |
+  | adaptif 0,55 → 0,85 | 0,0513 / 0,0676 | +5% / +7% | 0,365 / 0,441 |
+  | adaptif 0,4 → 0,85 | 0,0509 / 0,0679 | +4% / +7% | 0,369 / 0,451 |
+  | flow α 0,55 R_flow 2 b 0,4 | 0,0450 / 0,0629 | −8% / −1% | 0,330 / 0,437 |
+  | flow α 0,4 R_flow 3 b 0,4 | 0,0456 / 0,0590 | −7% / −7% | 0,340 / 0,433 |
+
+- **Kualitas flow** (gray 480 × 854; galat warp = fraksi label beda dari argmax frame t pada piksel bergerak [XOR argmax t vs t+k, dilatasi 7 × 7] ∩ valid, k = 2, semua frame; tanpa warp
+  0,359 / 0,475; `test_short` / `test`; inkonsisten = fg dengan galat maju-mundur > 1 px, `test`, jendela statis / cepat):
+
+  | metode | galat warp | waktu per flow (median) | inkonsisten statis / cepat |
+  |---|---|---|---|
+  | DIS MEDIUM | **0,087 / 0,084** | 18–21 ms | 10% / 47% |
+  | DIS FAST | 0,109 / 0,106 | 7 ms | 8% / 50% |
+  | Farnebäck dasar | 0,119 / 0,141 | 78–103 ms | 9% / 47% |
+  | Farnebäck besar | 0,135 / 0,149 | 87–116 ms | 7% / 42% |
+
+  Farnebäck memburuk di gerak cepat dan k ≥ 3; DIS stabil. Aturan konsistensi (tetap 1 / 2 / 4 px, Sundaram, lunak) hanya mengubah hasil ±1–2%. Blend 0,4 lebih baik dari 1,0 untuk grup, kebalikannya untuk
+  kedalaman. **Determinisme:** hash flow identik antar dua run dan untuk 1 / 4 / 12 benang (DIS FAST / MEDIUM dan Farnebäck dasar / besar, 4 pasang frame; diulang lewat `scripts/t303_flow_study.py determinism` pada `test_short`,
+  `work/t303/determinism.json`) — kunci benang tidak diperlukan. Belum diuji lintas proses / mesin.
+  **Kasus gagal:** overlay statis ada tetapi flow di sana ≈ 0 (0,04–0,14 px), jadi aman; area datar di latar 15–19% inkonsisten dan latar sendiri bergerak ±1,5 px; `test` punya 33 frame kabur
+  (186–281; korelasi kecepatan −0,50), `test_short` tidak.
+- **Kedalaman ber-flow** (prototipe; DIS MEDIUM, bilinear, α 0,7, R_flow 2, aturan Sundaram, tanpa grup berubah): warp blend 1,0 memberi strok oklusi 193 / 250 (T-302 194 / 254), id baru / strok-frame
+  0,346 / 0,411 (0,354 / 0,440), pop oklusi −1% / −13%, CV p95 0,147 / 0,261 (0,159 / 0,272), Done-when kaki 5/5. Warp nearest ≈ bilinear; gerbang selisih kedalaman dan bobot dekat tepi tidak membantu.
+  **Blend 0,4 untuk kedalaman BURUK** (hantu: strok 428 di `test`, pop ×1,5, id baru 0,61). Alasan penolakan: lihat keputusan di atas.
+- **Biaya:** T-302 = 0,15 s / frame. Flow + warp semua tetangga sampai R_flow 3: DIS FAST 0,46, DIS MEDIUM 0,65–0,82, Farnebäck 2,2 s / frame; perkiraan produksi (R_flow 2 + cache LRU flow dua arah)
+  0,3–0,5 s / frame (2–3× T-302), memori warp ≈ 11,5 MB per tetangga. Tidak diukur penuh karena tidak diimplementasikan.
+- **Alternatif ditolak:** Farnebäck (kalah akurasi dan 4–5× lebih lambat dari DIS MEDIUM); DIS FAST (galat +25%; ULTRAFAST tidak diukur penuh); blend 1,0 untuk grup; kedalaman ber-flow (B di atas: diprototipekan,
+  efek total ≈ −0,4% / −2,5% pop); α adaptif (A di atas). Flow berantai (komposisi flow antar frame bertetangga) tidak diukur.
+- **Hipotesis "pop berasal dari oklusi" = SEBAGIAN SALAH.** Pop energy per tipe strok = panjang strok yang lahir atau mati di frame t ÷ total panjang strok frame t (`tests/temporal_metrics.py`
+  `pop_energy_by_type`; track = `track_id` T-202). T-302 default, `test_short` / `test`:
+
+  | tipe | pop energy | porsi pop | pop / porsi panjang | id baru / strok-frame | umur rata-rata (frame) | frame tanpa tipe |
+  |---|---|---|---|---|---|---|
+  | silhouette_hole | 0,0222 / 0,0305 | **45,5% / 48,2%** | 0,18 / 0,25 | 0,128 / 0,150 | 7,6 / 6,6 | 14 / 46 |
+  | occlusion | 0,0174 / 0,0121 | 35,6% / 19,2% | **0,50 / 0,68** | 0,354 / 0,441 | 2,8 / 2,2 | 36 / 158 |
+  | group_boundary | 0,0092 / 0,0187 | 18,9% / 29,6% | 0,05 / 0,09 | 0,053 / 0,081 | 15,9 / 11,9 | 0 / 0 |
+  | silhouette | 0 / 0,0019 | 0% / 3,0% | ~0 | 0 / 0,011 | 119 / 71,8 | 0 / 0 |
+  | **total** | 0,0488 / 0,0633 | | | | | |
+
+  Baseline pra-T-302 (temporal mati, `log_median_iqr`): total 0,0526 / 0,0709 (lubang 0,0251 / 0,0317; oklusi 0,0174 / 0,0114) → T-302 menurunkannya −7% / −11%. **Per satuan panjang, oklusi paling "pop"
+  (3–10× batas grup), tetapi dalam energi absolut lubang siluet (celah lengan–badan) 46–48% dan oklusi hanya 19–36%.**
+- **Diagnostik tambahan (poin 6; baca-saja pada salinan; `scripts/t303_flow_study.py holes|occl`; bukti `work/t303/holes_*.json`, `occl_*.json`, `holes.md`, `occl.md`; BAHAN T-305, vectorize TIDAK diubah).**
+  Hipotesis: "pop lubang = lubang lahir / mati ketika luasnya dekat `min_hole_area` 200". Kontur dihitung ulang dari `stable/groups` dengan `min_hole_area` = 0, dilacak dengan `track.Tracker`
+  produksi, lalu ambang disimulasikan (simulasi θ = 200 mereproduksi produksi: pop lubang 0,0222 / 0,0313 vs 0,0222 / 0,0305).
+  - **(a) Luas saat lahir / mati (θ = 200; `test_short` / `test`):** lubang MENTAH rata-rata 2,3 / 2,4 per frame; dari 41 / 145 track mentah lahir, 66% / 63% lahir di bawah θ dan tak pernah tampil. Pada
+    track yang TAMPIL (lahir 26 / 73, mati 23 / 73) luas relatif θ saat lahir: 0,8–1,2× 5 / 10, 1,2–2× 10 / 21, > 2× 11 / 42; saat mati: 7 / 18, 6 / 18, 10 / 37 (bin < 0,8× kosong menurut konstruksi, karena
+    tampil ⇒ luas ≥ θ). Sebab: "crossing" (track masih ada, hanya di bawah / di atas θ) hanya **33% / 16%** panjang strok lahir dan **26% / 16%** mati; sisanya lubang BARU muncul / HILANG sekaligus,
+    kebanyakan jauh di atas θ (> 1,2θ: 21 dari 26 dan 63 dari 73 kelahiran). **Pop lubang terutama kejadian topologi (celah lengan–badan menutup / terbuka), bukan ambang ukuran.**
+  - **(b) Sweep `min_hole_area`** — pop energy lubang (`test_short` / `test`): 50: 0,0218 / 0,0330; 100: 0,0217 / 0,0320; 150: 0,0232 / 0,0320; **200: 0,0222 / 0,0313**; 300: 0,0267 / 0,0320. Tidak monoton dan
+    hampir datar (terbaik −2% dari θ = 200; 300 memperburuk +20% di `test_short`). Lubang tampil per frame 2,10 / 2,12 (θ 50) → 1,45 / 1,43 (θ 300).
+  - **(c) Histeresis temporal** (muncul bila luas ≥ 200, bertahan sampai < T_low): T_low 100: 0,0215 / 0,0303 (−3% / −3%); 140: 0,0218 / 0,0308 (−2% / −2%); 170: 0,0222 / 0,0311 (0% / −1%). Lubang ekstra yang tampil
+    (luas 100–200 px, vs θ 200): 0,076 / 0,088 per frame di T_low 100 (maks 1 per frame; 9 dari 119 / 25 dari 283 frame), 0,034 / 0,050 di 140, 0,008 / 0,021 di 170 — risiko kekacauan visual kecil, tetapi
+    **manfaatnya ≤ 3% dari pop lubang (≤ ±1,5% dari pop total)**. Hipotesis ambang / histeresis untuk LUBANG DIBANTAH (efek jauh di bawah ambang yang terlihat).
+  - **(d) Strok oklusi vs L (`min_len_px` 30, ukuran = jumlah piksel komponen skeleton) dan persentil:** simulasi L = 30 mereproduksi produksi (pop oklusi 0,0177 / 0,0127 vs 0,0174 / 0,0121). Track mentah (L = 0)
+    191 / 356 lahir, 75% / 80% di bawah L. Track tampil: lahir 69 / 115, mati 68 / 117; luas relatif L saat lahir 0,8–1,2× 17 / 43, 1,2–2× 29 / 41, > 2× 23 / 31 (mati: 14 / 41, 30 / 44, 24 / 32) → **23% / 36%
+    kejadian dekat L**; "crossing" L = 28% / 34% panjang strok lahir dan 36% / 35% mati. Kekuatan strok relatif T_high (persentil 95): < 1,0× 18 / 35, 1,0–1,2× 3 / 14, 1,2–1,5× 8 / 7, 1,5–2× 7 / 14, > 2× 33 / 45
+    kelahiran (mati serupa) — kejadian tersebar, tidak menumpuk di T_high. Sweep L (pop oklusi, `test_short` / `test`): 20: 0,0201 / 0,0145; 30: 0,0177 / 0,0127; 40: 0,0168 / 0,0094; 50: 0,0158 / 0,0085; 70: 0,0120 / 0,0063
+    (L naik menurunkan pop terutama dengan MENGHILANGKAN strok: tampil per frame 1,63 / 0,90 → 0,62 / 0,27 di L 70). Histeresis pada L (ada bila ≥ 30, bertahan sampai < L_low): L_low 15: 0,0153 / 0,0110 (−14% / −13%
+    pop oklusi, tetapi +0,35 / +0,24 strok tampil per frame = +22% / +26%); 20: 0,0160 / 0,0111; 25: 0,0166 / 0,0115. **Efek pada pop total ≈ −5% / −2,5%** (porsi oklusi 36% / 19%) — di bawah ambang yang terlihat.
+  - **Kesimpulan untuk T-305:** `min_hole_area` bukan tuas pop yang berarti; histeresis temporal strok di [4] (lubang ≤ 3%, oklusi ≈ −13% pop oklusi) TIDAK dibuka sebagai task baru karena efeknya < ambang terlihat.
+    Hipotesis berikutnya yang BELUM diuji: lubang besar (> 1,2θ) lahir / hilang sekaligus = celah lengan–badan yang terbuka / tertutup oleh jembatan tipis beberapa piksel di peta grup; mengujinya butuh pelacak
+    topologi (di luar T-303). Per-frame, sumber pop terbesar tetap lubang siluet (46–48%).
+- **Alat ukur yang dipertahankan:** `tests/temporal_metrics.py` (+ `tests/test_temporal_metrics.py`, 11 test): `pop_energy_by_type`, `track_ages`, `frames_without_type`, `stroke_lengths_from_dir`, `alignment_error`,
+  `moving_mask`, `fb_error`, `inconsistent_fraction`. `scripts/t303_flow_study.py` (sekali pakai, di git) mengulang studi pada klip kedua; tidak ada kode flow di `src/`.
+- **Penghapusan parameter mati:** `stabilize.temporal.optical_flow_blend` dihapus (config.py + validasi, configs/default.yaml, docs/02 satu langkah), peringatan di `build_plan`, konstanta `OPTICAL_FLOW_*`, dan field
+  manifest `temporal.optical_flow`; docs/01 [3] dan CLAUDE.md diperbarui. `stable/` (groups + depth_smooth) BYTE-IDENTIK pada kedua klip sebelum / sesudah (dihitung ulang di salinan scratchpad; hash di
+  `work/t303/hash_before.json`, `stable_identik.json`); yang berubah hanya `stabilize_hash` (6637caa2e64f → 2a6f1d2231dc) dan field manifest, jadi stage hilir dihitung ulang otomatis pada run berikutnya.
+- **Batas yang diketahui:** (a) "pop" garis akhir T-302 tidak membaik oleh tuas mana pun yang diukur (flow, α adaptif, ambang lubang / oklusi) di atas ambang yang terlihat; sumber terbesar (lubang siluet) belum
+  dipahami penyebabnya; (b) prototipe kedalaman ber-flow tidak dikonsolidasikan di skrip studi (parameter di atas); (c) flow hanya diuji pada dua klip dengan satu subjek dan latar hampir statis; (d) histogram luas
+  lubang / oklusi memakai pelacakan ulang (id bisa beda dari produksi); (e) nilai hasil visual TIDAK dinilai (tidak ada PNG / MP4 dibuka); (f) metrik pop energy hanya menghitung LAHIR dan MATI strok; ia
+  tidak mengukur getar posisi strok yang bertahan maupun loncat titik awal garis terbuka (T-202: 60–127 px pada 7–13% strok-frame) — bila "pop" yang dilihat Rio ternyata getar geometri, pengukuran ini belum
+  menyentuhnya; (g) dugaan (BELUM diuji): sebagian kelahiran / kematian lubang besar (> 1,2 × `min_hole_area`) adalah perubahan TOPOLOGI sah (celah lengan–badan terbuka ke luar menjadi bagian siluet luar, atau
+  menutup saat lengan menyentuh badan), yang tidak bisa dan tidak seharusnya diredam smoothing; klasifikasi (terbuka ke luar / menutup / derau) dapat diuji di T-305 bila perlu.
+- **Bahan T-304 / T-305:** T-304 (`boil_preserve`, penilaian mata Rio) tidak berubah. T-305: lubang siluet = sumber pop terbesar (46–48%) tetapi `min_hole_area` dan histeresis lubang terbukti ≤ 3%; klip kedua
+  dibutuhkan (`area_drop_min`, `qc_fail_weight` = SEMENTARA, ambang ukuran, `cut_diff`); bercak hijau frame 197 (salah label segmentasi konsisten, bukan flicker; filter pulau N).
+- **Penyimpangan dan catatan proses:** Tahap 1 ditutup dengan rekomendasi NO-GO dan Rio memilih D; blok "Keputusan T-303, 2026-10-05" yang direncanakan di prompt digantikan oleh blok ini. Satu perintah shell
+  salah ketik (`cat > "$SCRATCH_DUMMY"`) gagal tanpa efek; folder `work/t303/` dibuat lewat shell (bukan berkas teks repo).
+
 ---
 
 ## Pitfall yang sudah diketahui

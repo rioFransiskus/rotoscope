@@ -179,7 +179,7 @@ PIPELINE_INVALID = [
     ({"stabilize.temporal.enabled": 1}, r"stabilize\.temporal\.enabled.*bool"),
     ({"stabilize.temporal.mask_ema_alpha": 0}, r"stabilize\.temporal\.mask_ema_alpha"),
     ({"stabilize.temporal.mask_ema_alpha": 1.01}, r"stabilize\.temporal\.mask_ema_alpha"),
-    ({"stabilize.temporal.optical_flow_blend": 1.1}, r"optical_flow_blend"),
+    ({"stabilize.temporal.optical_flow_blend": 0.4}, r"optical_flow_blend"),    # dihapus di T-303 → key tak dikenal
     ({"stabilize.temporal.boil_preserve": -0.1}, r"boil_preserve"),
     ({"stabilize.temporal.qc_fail_weight": 2}, r"qc_fail_weight"),
     ({"stabilize.island_min_px": -1}, r"stabilize\.island_min_px"),
