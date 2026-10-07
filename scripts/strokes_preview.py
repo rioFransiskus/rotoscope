@@ -31,6 +31,11 @@ T-403 (keluaran ke work/t403/; render LANGSUNG dari contours/ klip; strokes/ dan
     python scripts/strokes_preview.py worst403    # kasus terburuk per pass (sambungan, Jacobian, tepi, persilangan, seam) + JSON
     python scripts/strokes_preview.py all403
 
+T-404a (keluaran ke work/t404a/nilai/; render LANGSUNG dari contours/ klip `test`; strokes/ dan out/ tidak dipakai; tanpa GPU; semua panel tekstur crop 1:1):
+    python scripts/strokes_preview.py boards404a  # 01-06: tekstur (gain x opacity), vignette (penuh 0,5x), kombinasi + sudut; frame 80 dan 233
+    python scripts/strokes_preview.py videos404a  # 07-08: video [T-403 datar | kandidat] jendela statis 25-36 dan cepat 73-92 (kompresi H.264)
+    python scripts/strokes_preview.py all404a
+
 Membaca contours/ + strokes/ klip (tidak mengubahnya). Label alat T-203a: "garis polos T-203a - belum ada jitter / taper / tekstur".
 Fungsi metrik dipakai ulang dari tests/stylize_metrics.py; encode dipakai ulang dari rotoscope.export.
 """
@@ -51,10 +56,12 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tests"))
 
 import jitter_metrics as jm  # noqa: E402
+import paper_oracle as po  # noqa: E402
 import stylize_metrics as sm  # noqa: E402
 
 from rotoscope import export as ex  # noqa: E402
 from rotoscope import noise  # noqa: E402
+from rotoscope import paper as pap  # noqa: E402
 from rotoscope import stylize as sty  # noqa: E402
 from rotoscope.config import load_style  # noqa: E402
 
@@ -1303,6 +1310,150 @@ def cmd_worst403() -> None:
     (OUT403 / "worst403_summary.json").write_text(json.dumps(summary, indent=1), encoding="utf-8")
 
 
+# ── T-404a: papan kertas bertekstur + vignette (keluaran ke work/t404a/nilai/; render LANGSUNG dari contours/; tanpa GPU) ──
+OUT404A = ROOT / "work" / "t404a"
+REF_B404A = ROOT / "assets" / "reference" / "B.png"          # referensi B (bila ada; Tahap 3 disertakan di papan 03 / 04)
+FRAMES404A = (80, 233)
+WINDOWS404A = {"statis": (25, 36), "cepat": (73, 92)}
+CROP404A = 480                                               # sisi crop 1:1 (px output; skala 0,5× menghapus butiran kertas 1 px)
+CAND404A = {"paper.texture_opacity": 0.35, "paper.texture_gain": 3.0, "paper.vignette": 0.12}
+
+
+def p404(op: float = 0.0, gain: float = 1.0, vig: float = 0.0) -> dict:
+    return {"paper.texture_opacity": op, "paper.texture_gain": gain, "paper.vignette": vig}
+
+
+def title404(ov: dict) -> str:
+    op, gain, vig = ov["paper.texture_opacity"], ov["paper.texture_gain"], ov["paper.vignette"]
+    if op == 0 and vig == 0:
+        return "T-403 datar"
+    parts = [f"tekstur op {op:g} gain {gain:g}"] if op > 0 else []
+    if vig > 0:
+        parts.append(f"vignette {vig:g}")
+    return " + ".join(parts)
+
+
+def rgb404(passes, g: sty.Geometry, layer) -> np.ndarray:
+    """Frame RGB papan: kertas datar = PNG [5]; bertekstur = ORACLE jalur [5] lama (tests/paper_oracle.py; setara susunan export, selisih ≤ 1 level)."""
+    return po.flat_rgb(passes, g) if layer is None else po.render_rgb(passes, g, layer)
+
+
+def header404(img: np.ndarray, text: str) -> np.ndarray:
+    strip = np.full((44, img.shape[1], 3), 255, np.uint8)
+    cv2.putText(strip, text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (20, 20, 20), 2, cv2.LINE_AA)
+    return np.vstack([strip, img])
+
+
+def grid404(panels: list[np.ndarray], cols: int, gap: int = 10) -> np.ndarray:
+    rows = []
+    for r in range(0, len(panels), cols):
+        row = panels[r:r + cols]
+        h = max(p.shape[0] for p in row)
+        parts = []
+        for p in row:
+            parts += [np.vstack([p, np.full((h - p.shape[0], p.shape[1], 3), 255, np.uint8)]), np.full((h, gap, 3), 255, np.uint8)]
+        rows.append(np.hstack(parts[:-1]))
+    w = max(r.shape[1] for r in rows)
+    rows = [np.hstack([r, np.full((r.shape[0], w - r.shape[1], 3), 255, np.uint8)]) for r in rows]
+    out = []
+    for r in rows:
+        out += [r, np.full((gap, w, 3), 255, np.uint8)]
+    return np.vstack(out[:-1])
+
+
+def crop404(img: np.ndarray, cx: float, cy: float, size: int = CROP404A) -> np.ndarray:
+    h, w = img.shape[:2]
+    x0 = int(min(max(cx - size / 2, 0), w - size))
+    y0 = int(min(max(cy - size / 2, 0), h - size))
+    return np.ascontiguousarray(img[y0:y0 + size, x0:x0 + size])
+
+
+class Frame404:
+    """Geometri (garis multipass default) satu frame; paper berbeda dirender tanpa menghitung ulang geometri."""
+
+    def __init__(self, clip: str, idx: int):
+        m = meta(clip)
+        self.g = sty.make_geometry(style_with(), int(m["working_width"]), int(m["working_height"]))
+        self.passes = sty.frame_passes(load_doc(clip, idx), self.g)[0]
+        self.cx, self.cy = body_center(clip, idx)
+        self.cache: dict = {}
+
+    def rgb(self, ov: dict) -> np.ndarray:
+        key = json.dumps(ov, sort_keys=True)
+        if key not in self.cache:
+            st = style_with(**ov)
+            self.cache[key] = rgb404(self.passes, self.g, pap.paper_layer(st, self.g.out_w, self.g.out_h))
+        return self.cache[key]
+
+
+def reference_b_panel(height: int) -> list[np.ndarray]:
+    if not REF_B404A.is_file():
+        return []
+    img = read_png_rgb(REF_B404A)
+    return [header404(cv2.resize(img, (max(1, int(img.shape[1] * height / img.shape[0])), height), interpolation=cv2.INTER_AREA), "referensi B")]
+
+
+def cmd_boards404a() -> None:
+    nilai = OUT404A / "nilai"
+    nilai.mkdir(parents=True, exist_ok=True)
+    tex_panels = [p404(), p404(0.35, 3), p404(0.35, 6), p404(0.5, 3), p404(0.5, 6),
+                  p404(1.0, 1), p404(1.0, 3), p404(1.0, 6), p404(1.0, 10), p404(0.35, 1)]
+    vig_panels = [p404(), p404(vig=0.12), p404(vig=0.25), p404(**{"op": 0.35, "gain": 3.0, "vig": 0.12})]
+    combo = [p404(), p404(0.35, 3, 0.12), p404(0.5, 3, 0.12), p404(0.5, 6, 0.25)]
+    num = {80: ("01", "03", "05"), 233: ("02", "04", "06")}
+    for idx in FRAMES404A:
+        fr = Frame404(BOARD_CLIP, idx)
+        a, b, c = num[idx]
+        crops = [header404(crop404(fr.rgb(ov), fr.cx, fr.cy), title404(ov)) for ov in tex_panels]
+        write_png(nilai / f"{a}_f{idx:03d}_tekstur_crop1x1.png", grid404(crops, 5))
+        full = [header404(cv2.resize(fr.rgb(ov), None, fx=0.5, fy=0.5, interpolation=cv2.INTER_AREA), title404(ov)) for ov in vig_panels]
+        write_png(nilai / f"{b}_f{idx:03d}_vignette_penuh_0p5x.png", grid404(full + reference_b_panel(full[0].shape[0] - 44), 5))
+        top = [header404(crop404(fr.rgb(ov), fr.cx, fr.cy), title404(ov)) for ov in combo]
+        corner = [header404(crop404(fr.rgb(ov), CROP404A / 2, CROP404A / 2), title404(ov) + " (sudut kiri-atas)") for ov in combo]
+        write_png(nilai / f"{c}_f{idx:03d}_kombinasi_crop1x1.png", grid404(top + corner, 4))
+
+
+class PaperSource(ex.FrameSource):
+    """Frame video T-404a: panel [T-403 datar | varian] berdampingan, ukuran penuh, encode dengan tag warna produksi (kind "strokes")."""
+    kind = "strokes"
+
+    def __init__(self, clip: str, panels: list[dict]):
+        self.clip, self.panels = clip, panels
+        m = meta(clip)
+        self.g = sty.make_geometry(style_with(), int(m["working_width"]), int(m["working_height"]))
+        self.layers = [pap.paper_layer(style_with(**ov), self.g.out_w, self.g.out_h) for ov in panels]
+
+    def check(self, names: list[str]) -> None:
+        return None
+
+    def render(self, name: str) -> np.ndarray:
+        idx = int(Path(name).stem.split("_")[1])
+        passes = sty.frame_passes(load_doc(self.clip, idx), self.g)[0]
+        return hstack([header404(rgb404(passes, self.g, layer), title404(ov) + f" | f{idx}")
+                       for ov, layer in zip(self.panels, self.layers)], 1.0)
+
+
+def cmd_videos404a() -> None:
+    nilai = OUT404A / "nilai"
+    nilai.mkdir(parents=True, exist_ok=True)
+    sizes = {}
+    for num, (wname, (a, b)) in zip(("07", "08"), WINDOWS404A.items()):
+        frames = list(range(a, b + 1))
+        src = PaperSource(BOARD_CLIP, [p404(), CAND404A])
+        first = src.render(f"frame_{frames[0]:05d}.png")
+        h, w = first.shape[:2]
+        h, w = h + h % 2, w + w % 2
+        out = nilai / f"{num}_video_{wname}_{a}-{b}_datar_vs_kandidat.mp4"
+        tmp = out.with_suffix(".tmp")
+        ex.encode(src, [f"frame_{i:05d}.png" for i in frames], (w, h), np.array(ex.parse_hex("#ffffff"), np.uint8),
+                  float(meta(BOARD_CLIP)["target_fps"]), VIDEO_CRF, VIDEO_PRESET, None, tmp)
+        os.replace(tmp, out)
+        sizes[out.name] = out.stat().st_size
+        print(f"  {out.relative_to(ROOT)} ({out.stat().st_size / 1024:.0f} KiB, {len(frames)} frame, {w}x{h})", flush=True)
+    (OUT404A / "videos404a_sizes.json").write_text(json.dumps(sizes, indent=1), encoding="utf-8")
+
+
+T404A_COMMANDS = ("boards404a", "videos404a")
 T403_COMMANDS = ("videos403", "helpers403", "worst403")
 T402_COMMANDS = ("videos402", "helpers402", "worst402")
 
@@ -1310,28 +1461,32 @@ T402_COMMANDS = ("videos402", "helpers402", "worst402")
 COMMANDS = {"final": cmd_final, "videos": cmd_videos, "edge": cmd_edge, "widths": cmd_widths, "epsilon": cmd_epsilon, "worst": cmd_worst,
             "zoom": cmd_zoom, "boards": cmd_boards, "variants": cmd_variants, "videos401": cmd_videos401, "changemap": cmd_changemap,
             "worst401": cmd_worst401, "svgsample": cmd_svgsample, "videos402": cmd_videos402, "helpers402": cmd_helpers402,
-            "worst402": cmd_worst402, "videos403": cmd_videos403, "helpers403": cmd_helpers403, "worst403": cmd_worst403}
+            "worst402": cmd_worst402, "videos403": cmd_videos403, "helpers403": cmd_helpers403, "worst403": cmd_worst403,
+            "boards404a": cmd_boards404a, "videos404a": cmd_videos404a}
 T203_ONLY = ("final", "videos", "edge", "widths", "epsilon", "worst", "zoom")          # alat T-203a (strokes/ klip, work/t203a/)
 T401_COMMANDS = ("boards", "variants", "videos401", "changemap", "worst401", "svgsample")
 
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("what", choices=[*COMMANDS, "all", "all401", "all402", "all403"])
+    p.add_argument("what", choices=[*COMMANDS, "all", "all401", "all402", "all403", "all404a"])
     p.add_argument("--clips-root", type=Path, default=None,
                    help="folder berisi <klip>/{meta.json,contours/} (default work/clips); T-402: SALINAN scratchpad")
     args = p.parse_args(argv)
     if args.clips_root is not None:
         global CLIPS
         CLIPS = args.clips_root
-    if args.what in T403_COMMANDS or args.what == "all403":
+    if args.what in T404A_COMMANDS or args.what == "all404a":
+        OUT404A.mkdir(parents=True, exist_ok=True)
+    elif args.what in T403_COMMANDS or args.what == "all403":
         OUT403.mkdir(parents=True, exist_ok=True)
     elif args.what in T402_COMMANDS or args.what == "all402":
         OUT402.mkdir(parents=True, exist_ok=True)
     else:
         OUT.mkdir(parents=True, exist_ok=True)
         OUT401.mkdir(parents=True, exist_ok=True)
-    names = (list(COMMANDS) if args.what == "all" else list(T401_COMMANDS) if args.what == "all401"
+    names = ([n for n in COMMANDS if n not in T404A_COMMANDS] if args.what == "all" else list(T404A_COMMANDS) if args.what == "all404a"
+             else list(T401_COMMANDS) if args.what == "all401"
              else list(T402_COMMANDS) if args.what == "all402" else list(T403_COMMANDS) if args.what == "all403" else [args.what])
     for name in names:
         print(f"== {name}")

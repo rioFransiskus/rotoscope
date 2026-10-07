@@ -62,8 +62,9 @@ paper:
   enabled: true
   color: "#f4f1ea"
   texture_image: "assets/paper/rough_01.jpg"
-  texture_opacity: 0.35
-  vignette: 0.12
+  texture_opacity: 0.35      # T-404a (keputusan Rio): pencampur tekstur kertas (0 = kertas datar, tekstur tidak dimuat). Dipakai EXPORT [6], bukan [5]
+  texture_gain: 3.0          # T-404a (keputusan Rio): penguat kontras tekstur t' = 1 + gain × (t − 1); 1 = tekstur asli (std 1,37%), 0 = datar
+  vignette: 0.0              # T-404a: pengelapan radial KERTAS (bukan tinta): pusat 1,0, sudut 1 − vignette; 0 = mati (keputusan Rio; parameter tetap ada)
 
 # ── RENDER ─────────────────────────────────────────
 render:

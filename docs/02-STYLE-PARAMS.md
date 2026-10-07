@@ -229,8 +229,9 @@ paper:
   enabled: true
   color: "#f4f1ea"
   texture_image: "assets/paper/rough_01.jpg"
-  texture_opacity: 0.35
-  vignette: 0.12
+  texture_opacity: 0.35      # T-404a (keputusan Rio): pencampur tekstur kertas (0 = kertas datar, tekstur tidak dimuat). Dipakai EXPORT [6], bukan [5]
+  texture_gain: 3.0          # T-404a (keputusan Rio): penguat kontras tekstur t' = 1 + gain × (t − 1); 1 = tekstur asli (std 1,37%), 0 = datar
+  vignette: 0.0              # T-404a: pengelapan radial KERTAS (bukan tinta): pusat 1,0, sudut 1 − vignette; 0 = mati (keputusan Rio; parameter tetap ada)
 
 # ── RENDER ─────────────────────────────────────────
 render:
@@ -271,8 +272,9 @@ itu) DIHAPUS di T-303: optical flow ditolak berdasarkan data (docs/04 "Hasil T-3
 | `multipass.temporal_mode` | `"fixed"` \| `"frame"` (T-403) |
 | `texture.mode` | `"none"` \| `"brush_stamp"` \| `"grain_overlay"` |
 | `stroke.taper_ends`, `multipass.enabled`, `paper.enabled` | bool |
-| `texture.brush_image`, `paper.texture_image` | path relatif → di-resolve terhadap **root project** (folder berisi `pyproject.toml`, dicari dari lokasi paket — editable install), **bukan** cwd; absolut boleh; root tidak ditemukan → error. File wajib ada hanya kalau dipakai (`texture.mode == "brush_stamp"` / `paper.enabled`). Aturan ini khusus aset input — `paths.*` tetap relatif terhadap cwd |
+| `texture.brush_image`, `paper.texture_image` | path relatif → di-resolve terhadap **root project** (folder berisi `pyproject.toml`, dicari dari lokasi paket — editable install), **bukan** cwd; absolut boleh; root tidak ditemukan → error. File wajib ada hanya kalau dipakai (`texture.mode == "brush_stamp"` / `paper.enabled` dan `paper.texture_opacity` > 0 dan `paper.texture_gain` > 0). Aturan ini khusus aset input — `paths.*` tetap relatif terhadap cwd |
 | `texture.stamp_spacing` | > 0 |
+| `paper.texture_gain` | ≥ 0 (T-404a; 1,0 = tekstur asli) |
 | `texture.pressure_noise`, `texture.grain_strength`, `paper.texture_opacity`, `paper.vignette` | 0–1 |
 | `render.ss` | int 1–8 |
 | `render.output_width` | int genap 256–2160 |
@@ -298,9 +300,19 @@ itu) DIHAPUS di T-303: optical flow ditolak berdasarkan data (docs/04 "Hasil T-3
   `stroke.by_type.*.width_scale`, `stroke.by_type.*.taper_ends`, `jitter.param_seed` (seed noise tebal + dasar seed jitter), `paper.color`,
   `render.ss`, `render.output_width`; **T-402:** `jitter.amplitude`, `jitter.frequency`, `jitter.temporal_seed_mode`,
   `jitter.temporal_drift`, `jitter.hold_frames`, `jitter.stroke_independence`; **T-403:** `stroke.opacity`, `stroke.by_type.*.opacity_scale`,
-  `multipass.enabled`, `multipass.passes`, `multipass.offset`, `multipass.opacity_falloff`, `multipass.temporal_mode`. Hanya parameter ini yang masuk hash style stage [5].
-- **Divalidasi tetapi BELUM aktif (dicatat di `strokes/manifest.json` → `ignored_params`; aktif di task Phase 4 berikutnya):**
-  `texture.*`, `paper.enabled`, `paper.texture_*`, `paper.vignette`.
+  `multipass.enabled`, `multipass.passes`, `multipass.offset`, `multipass.opacity_falloff`, `multipass.temporal_mode`. Hanya parameter ini yang masuk hash style stage [5] (`paper.color` = satu-satunya `paper.*` aktif di [5]: dasar LUT PNG).
+- **Divalidasi tetapi TIDAK dipakai [5] (dicatat di `strokes/manifest.json` → `ignored_params`; mengubahnya TIDAK membuat strokes basi):**
+  `texture.*` (belum aktif; T-404b) dan `paper.enabled`, `paper.texture_image`, `paper.texture_opacity`, `paper.texture_gain`, `paper.vignette` — yang terakhir ini DIPAKAI stage [6] export (T-404a, Opsi B).
+- **Kertas (T-404a, Opsi B; keputusan Rio, docs/04 "Keputusan T-404" dan "Hasil T-404a"):** dibaca export dari YAML style yang SAMA (`--style` pada `run` dan `export`). Kertas = `paper.color` × ((1 − op) + op × t') × vignette, op = `texture_opacity`, t' = max(1 + `texture_gain` × (t − 1), 0,05), t = luminansi `texture_image` (diputar bila orientasi berlawanan, potong "cover" di tengah tanpa resampling bila cukup, selain itu diskalakan cubic) dinormalisasi ke rata-rata 1,0. Vignette: v = 1 − `vignette` × d², d = jarak elips (dinormalisasi per sumbu, sudut = 1). Statis antar frame; kertas bertekstur dan vignette HANYA di MP4 (strokes/*.png dan *.svg = kertas datar `paper.color`; salinan SVG tidak berubah); tinta tidak terkena vignette. `paper.enabled` false = kertas datar apa pun parameter lain; `texture_opacity` 0 (atau `texture_gain` 0) dan `vignette` 0 = MP4 byte-identik T-403. Butiran kertas 1 px pada semua `output_width`.
+
+  | Parameter | Fungsi | Rentang | Default (Rio) |
+  |---|---|---|---|
+  | `paper.enabled` | false = kertas datar | bool | true |
+  | `paper.color` | warna kertas (aktif di [5] dan export; harus sama) | `#rrggbb` | `#f4f1ea` |
+  | `paper.texture_image` | gambar tekstur (luminansi saja); wajib ada hanya bila dipakai | path | `assets/paper/rough_01.jpg` |
+  | `paper.texture_opacity` | pencampur tekstur; 0 = tanpa tekstur | 0–1 | 0,35 |
+  | `paper.texture_gain` | penguat kontras tekstur t' = 1 + gain × (t − 1); tekstur asli std 1,37% → gain 3 | ≥ 0 | 3,0 |
+  | `paper.vignette` | pengelapan radial kertas (sudut = 1 − vignette); parameter tetap ada | 0–1 | 0,0 |
 - **Multipass (T-403; keputusan Rio, docs/04 "Keputusan T-403"):** pass 0 = garis asli (setelah jitter); pass k ≥ 1 = titik pass 0 + medan koheren 2D (mesin jitter T-402,
   salt tersendiri per k, penjaga tepi φ), statis terhadap waktu (`temporal_mode` "fixed"; "frame" = evolusi per gambar lewat `jitter.hold_frames` / `jitter.temporal_drift`).
   `offset` = MEDIAN |D| (px ref): amplitudo A = offset / 0,59, panjang gelombang = A / 0,15 (r konstan 0,15, skala medan mengikuti offset); offset 2,7 ≈ RMS 3,0, p95 4,7.

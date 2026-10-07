@@ -4,7 +4,9 @@ Kontrak lengkap: docs/01 [6].
 Satu jalur encode untuk semua sumber gambar (`FrameSource`):
   - "silhouette" (Phase 1): stable/groups/*.png, grup ≠ 0 = foreground `export.foreground_color` di atas
     `export.background_color`.
-  - "strokes" (Phase 2, T-203b): strokes/*.png dari [5] apa adanya (ukuran output, bukan resolusi kerja).
+  - "strokes" (Phase 2, T-203b): strokes/*.png dari [5] (ukuran output, bukan resolusi kerja), kertas DATAR. T-404a (Opsi B): bila style
+    meminta kertas bertekstur / vignette (`paper.*`, rotoscope.paper) PNG itu disusun ulang di atas kertas bertekstur sebelum encode
+    (level tinta dipulihkan dari invers LUT); kertas datar = PNG apa adanya (MP4 byte-identik T-403).
     Hanya jalur ini yang diberi tag warna bt709 lengkap (COLOR_TAGS) dan menyalin strokes/*.svg ke
     out/svg/<nama>/ (penanda `.rotoscope-clip.json` + sha256 per berkas saat disalin: SVG yang disunting
     pengguna tidak pernah ditimpa tanpa --restart).
@@ -31,7 +33,7 @@ sumber hilang = ERROR, bukan diam-diam tanpa audio.
 CLI final (T-104b): python -m rotoscope export <video> [--config PATH] [--restart] [--limit N]; atau seluruh
 pipeline: python -m rotoscope run <video>. cli.py memanggil main() ini in-process dengan --work-dir <folder klip>
 (paths.out_dir tetap dari config):
-    python -m rotoscope.export [--config PATH] [--work-dir DIR] [--restart] [--limit N]
+    python -m rotoscope.export [--config PATH] [--style PATH] [--work-dir DIR] [--restart] [--limit N]
 --limit N → <nama>.limitN.mp4 (preview N frame pertama; tanpa manifest, tanpa pengaman, tanpa salinan SVG,
 tidak menyentuh hasil utama). Exit code: 0 sukses, 1 prasyarat gagal (3 = OOM tidak dipakai di stage CPU).
 """
@@ -53,10 +55,11 @@ from pathlib import Path
 
 import numpy as np
 
+from rotoscope import paper as pap
 from rotoscope import stabilize as stab
 from rotoscope import stylize as sty
 from rotoscope.config import (
-    ConfigError, PipelineConfig, ensure_dir, load_pipeline, section_hash, to_dict,
+    ConfigError, PipelineConfig, StyleConfig, ensure_dir, load_pipeline, load_style, section_hash, to_dict,
 )
 from rotoscope.ingest import META_FILENAME
 from rotoscope.stage_common import (
@@ -90,7 +93,7 @@ SETPARAMS_KEYS = {"colorspace": "colorspace", "color_primaries": "color_primarie
                   "color_range": "range"}                                           # nama flag → opsi filter setparams
 PROBE_COLOR_KEYS = {"colorspace": "color_space", "color_primaries": "color_primaries",
                     "color_trc": "color_transfer", "color_range": "color_range"}      # nama flag → field ffprobe
-SUPPORTED_STROKES_CONTRACTS = frozenset({"T-403"})
+SUPPORTED_STROKES_CONTRACTS = frozenset({"T-403"})     # T-404a Opsi B: [5] tidak berubah (kertas bertekstur disusun di sini)
 STROKES_REF_KEYS = ("contract", "style_hash", "created_utc", "output_size")
 SOURCE_KINDS_WITH_COLOR_TAGS = ("strokes",)
 
@@ -104,7 +107,9 @@ SVG_EDITED_SHOWN = 5
 # Kunci manifest yang harus sama agar export dilewati; beda → basi (di-encode ulang). "strokes" hanya terisi
 # untuk source strokes, "stable" hanya untuk silhouette (kunci yang tidak ada = None di kedua sisi → manifest
 # silhouette lama tidak basi). "ffmpeg" (versi) sengaja TIDAK ada di sini: hanya penjelas.
-MANIFEST_MATCH_KEYS = ("export_hash", "clip", "stable", "strokes", "frame_count", "frame_size", "fps", "audio")
+MANIFEST_MATCH_KEYS = ("export_hash", "clip", "stable", "strokes", "paper", "frame_count", "frame_size", "fps", "audio")
+# "paper" (T-404a) = `paper.paper_ref(style)`: None bila kertas datar (manifest T-403 lama tidak basi), selain itu parameter kertas + sha256 tekstur
+# → mengubah parameter kertas = MP4 di-encode ulang (strokes tetap). "paper_info" (ukuran / orientasi / statistik) hanya informasi.
 
 DEFAULT_CONFIG = Path("configs") / "default.yaml"
 
@@ -175,15 +180,27 @@ class SilhouetteSource(FrameSource):
         return img
 
 
+class TexturedPaper:
+    """T-404a Opsi B: kertas bertekstur / bervignette untuk jalur strokes — PNG [5] (kertas datar) → level tinta (invers LUT) → tinta di atas
+    kertas `layer`. Tanpa objek ini PNG dipakai apa adanya (MP4 byte-identik T-403)."""
+
+    def __init__(self, layer: pap.PaperLayer, levels: pap.LevelMap, ink: tuple[int, int, int]):
+        self.layer, self.levels, self.ink = layer, levels, ink
+
+    def __call__(self, img: np.ndarray) -> np.ndarray:
+        return pap.compose_textured(img, self.levels, self.layer, self.ink)
+
+
 class StrokesSource(FrameSource):
-    """strokes/*.png apa adanya (ukuran output [5], genap — dijamin config)."""
+    """strokes/*.png (ukuran output [5], genap — dijamin config) apa adanya, atau (T-404a) disusun di atas kertas bertekstur (`textured`)."""
 
     kind = "strokes"
 
-    def __init__(self, work_dir: Path, size: tuple[int, int]):
+    def __init__(self, work_dir: Path, size: tuple[int, int], textured: TexturedPaper | None = None):
         self.work_dir = work_dir
         self.dir = work_dir / sty.STROKES_DIRNAME
         self.size = size
+        self.textured = textured
 
     def _png(self, name: str) -> Path:
         return self.dir / (Path(name).stem + sty.PNG_SUFFIX)
@@ -200,7 +217,7 @@ class StrokesSource(FrameSource):
         if img.shape[:2] != (self.size[1], self.size[0]):
             raise StageError(f"{self._png(name).name} berukuran {img.shape[1]}x{img.shape[0]} ≠ "
                              f"{self.size[0]}x{self.size[1]} — jalankan stage [5]: {cli_cmd('stylize', self.work_dir)}")
-        return img
+        return img if self.textured is None else self.textured(img)
 
 
 def load_strokes_ref(work_dir: Path, clip: stab.Clip, identity: dict) -> dict:
@@ -241,14 +258,40 @@ def load_strokes_ref(work_dir: Path, clip: stab.Clip, identity: dict) -> dict:
     return {k: m[k] for k in STROKES_REF_KEYS}
 
 
-def make_source(cfg: PipelineConfig, clip: stab.Clip, strokes_ref: dict | None = None) -> FrameSource:
+def strokes_colors(work_dir: Path) -> tuple[tuple[int, int, int], tuple[int, int, int]]:
+    """(paper.color, stroke.color) yang DIPAKAI [5] (strokes/manifest.json → style_params): dasar LUT PNG datar."""
+    m = read_manifest(work_dir / sty.STROKES_DIRNAME / sty.MANIFEST_FILENAME) or {}
+    sp = m.get("style_params")
+    try:
+        return pap.hex_rgb(sp["paper.color"]), pap.hex_rgb(sp["stroke.color"])
+    except (TypeError, KeyError, ValueError):
+        raise StageError(f"strokes/manifest.json tidak memuat style_params paper.color / stroke.color — jalankan ulang stage [5]: "
+                         f"{cli_cmd('stylize', work_dir)} --restart") from None
+
+
+def make_textured(work_dir: Path, style: StyleConfig, size: tuple[int, int]) -> TexturedPaper | None:
+    """None = kertas datar (PNG apa adanya). paper.color style harus = paper.color strokes (LUT PNG)."""
+    if pap.paper_flat(style):
+        return None
+    paper_rgb, ink_rgb = strokes_colors(work_dir)
+    if pap.hex_rgb(style.paper.color) != paper_rgb:
+        raise StageError(f"paper.color style ({style.paper.color}) ≠ paper.color strokes/ (#{''.join(f'{c:02x}' for c in paper_rgb)}) — "
+                         f"PNG [5] dibuat dengan warna lain: jalankan ulang stage [5] (paper.color aktif di [5]): "
+                         f"{cli_cmd('stylize', work_dir)}")
+    return TexturedPaper(pap.render_paper(size[0], size[1], style), pap.LevelMap(paper_rgb, ink_rgb), ink_rgb)
+
+
+def make_source(cfg: PipelineConfig, clip: stab.Clip, strokes_ref: dict | None = None,
+                style: StyleConfig | None = None) -> FrameSource:
     if cfg.export.source == SilhouetteSource.kind:
         return SilhouetteSource(cfg, clip)
     if cfg.export.source == StrokesSource.kind:
         if strokes_ref is None:
             raise StageError("export.source = 'strokes' membutuhkan referensi strokes/manifest.json")
         osz = strokes_ref["output_size"]
-        return StrokesSource(cfg.paths.work_dir, (osz["width"], osz["height"]))
+        size = (osz["width"], osz["height"])
+        textured = make_textured(cfg.paths.work_dir, style, size) if style is not None else None
+        return StrokesSource(cfg.paths.work_dir, size, textured)
     raise StageError(f"export.source = {cfg.export.source!r} tidak dikenal")
 
 
@@ -594,9 +637,10 @@ def apply_svg_sync(strokes_dir: Path, svg_dir: Path, identity: dict, plan: dict)
 
 # ── Run ────────────────────────────────────────────
 def run_export(cfg: PipelineConfig, *, restart: bool = False, limit: int | None = None, start: int | None = None,
-               log: Callable[[str], None] = print) -> dict:
+               style: StyleConfig | None = None, log: Callable[[str], None] = print) -> dict:
     """Jalankan stage [6] (naif). Return ringkasan run. `start` (--from, T-204) = jendela [start, start+limit),
-    wajib bersama `limit`; seperti --limit: tanpa manifest, pengaman, atau salinan SVG."""
+    wajib bersama `limit`; seperti --limit: tanpa manifest, pengaman, atau salinan SVG.
+    `style` (T-404a, hanya source strokes): parameter kertas `paper.*`; None = kertas datar (PNG [5] apa adanya, perilaku T-403)."""
     if limit is not None and limit < 1:
         raise StageError(f"--limit harus ≥ 1, dapat {limit}")
     ex = cfg.export
@@ -628,7 +672,9 @@ def run_export(cfg: PipelineConfig, *, restart: bool = False, limit: int | None 
         if stable_m.get("groups_hash") != section_hash(cfg, "groups"):
             raise StageError("definisi groups di config ≠ stable/manifest.json — jalankan stage [3] stabilize "
                              "(output basi dihitung ulang otomatis)")
-    source = make_source(cfg, clip, strokes_ref)
+    if ex.source != StrokesSource.kind:
+        style = None                                      # kertas bertekstur hanya untuk source strokes
+    source = make_source(cfg, clip, strokes_ref, style)
     source.check(names)
     color_tags = source.kind in SOURCE_KINDS_WITH_COLOR_TAGS
 
@@ -661,6 +707,9 @@ def run_export(cfg: PipelineConfig, *, restart: bool = False, limit: int | None 
     if strokes_ref is not None:
         manifest["strokes"] = strokes_ref
         manifest["color_tags"] = dict(COLOR_TAGS)
+        manifest["paper"] = pap.paper_ref(style) if style is not None else None
+        if style is not None:
+            manifest["paper_info"] = pap.paper_info(style, size[0], size[1])
     else:
         manifest["stable"] = {k: stable_m.get(k) for k in ("stabilize_hash", "groups_hash", "created_utc")}
 
@@ -745,6 +794,9 @@ def main(argv: list[str] | None = None) -> int:
                                             "out/<nama>.mp4 (+ out/svg/<nama>/ untuk strokes)")
     p.add_argument("--config", type=Path, default=None,
                    help=f"YAML pipeline (default: {DEFAULT_CONFIG.as_posix()} kalau ada, selain itu default kode)")
+    p.add_argument("--style", type=Path, default=None,
+                   help=f"YAML style (parameter kertas paper.*; default: {sty.DEFAULT_STYLE.as_posix()} kalau ada, selain itu default kode); "
+                        f"harus YAML yang sama dengan stage [5]")
     add_work_dir_arg(p)
     p.add_argument("--restart", action="store_true", help="encode ulang walau up-to-date (menimpa file tanpa manifest)")
     p.add_argument("--limit", type=int, default=None, help="preview N frame pertama → <nama>.limitN.mp4")
@@ -759,7 +811,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         path = args.config if args.config is not None else (DEFAULT_CONFIG if DEFAULT_CONFIG.is_file() else None)
         cfg = load_pipeline(path, overrides=work_dir_overrides(args.work_dir))
-        run = run_export(cfg, restart=args.restart, limit=args.limit, start=args.start, log=log)
+        spath = args.style if args.style is not None else (sty.DEFAULT_STYLE if sty.DEFAULT_STYLE.is_file() else None)
+        style = load_style(spath)
+        run = run_export(cfg, restart=args.restart, limit=args.limit, start=args.start, style=style, log=log)
         log(f"selesai: {run['output']}")
     except (StageError, ConfigError) as e:
         print(f"ERROR: {e}", file=sys.stderr)

@@ -92,6 +92,36 @@ def frame_report(ref: np.ndarray, dec: np.ndarray) -> dict:
             "paper_delta": flat_color_delta(ref, dec, PAPER_RGB), "ink_delta": flat_color_delta(ref, dec, INK_RGB)}
 
 
+# ── T-404a: kertas bertekstur (docs/04 "Keputusan T-404" butir 9) ──
+# Kertas datar mengandaikan latar konstan (`PAPER_RGB`) → untuk kertas bertekstur / bervignette: mask tinta dari f pulih
+# (`stylize_metrics.recover_f` dengan kertas float32 dari `render_paper`), "kertas datar" diganti BIAS rata-rata dec − ref di area jauh dari tinta.
+# Data Tahap 3 (test_short frame 73–112, crf 18 → crf 23, PSNR min seluruh frame; `work/t404a/t3_mp4.json`):
+#   datar T-403 41,66 → 39,84 | op 0,35 gain 1 + vig 0,12 41,24 → 39,44 | op 0,35 gain 3 + vig 40,56 → 38,52 | op 0,35 gain 6 40,22 → 37,79
+#   op 0,5 gain 3 40,59 → 38,31 | op 0,5 gain 6 40,19 → 37,44 | op 1,0 gain 1 / 3 / 6 / 10 (batas atas) 40,30 / 39,98 / 39,03 / 38,46 → 38,31 … 35,64
+# Aturan harfiah "minimum crf 18 semua varian − 1 dB" = 37,46 dB TIDAK membedakan crf 23 (6 dari 9 varian bertekstur lolos pada crf 23).
+# Ambang ini = di antara crf 23 tertinggi dan crf 18 terendah pada kandidat (op ≤ 0,5 dengan vignette): crf 23 maks 39,44 < 39,8 ≤ 40,19 (crf 18 min).
+# Varian batas atas (op 1,0, gain ≥ 3) di luar rentang: crf 18 sendiri < 39,8 (kertas sengaja berisik).
+PSNR_TEXTURED_MIN_DB = 39.8
+PAPER_BIAS_MAX = 3.0               # |rata-rata dec − ref| per kanal di area jauh dari tinta (level)
+INK_F_THRESHOLD = 0.02             # f pulih > ini = piksel tinta (sebelum dilatasi)
+
+
+def ink_mask_from_f(f: np.ndarray, dilate_px: int = INK_DILATE_PX) -> np.ndarray:
+    k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * dilate_px + 1, 2 * dilate_px + 1))
+    return cv2.dilate((f > INK_F_THRESHOLD).astype(np.uint8), k).astype(bool)
+
+
+def textured_report(ref: np.ndarray, dec: np.ndarray, f: np.ndarray) -> dict:
+    """ref = PNG sumber (RGB), dec = frame MP4 terdekode, f = fraksi tinta pulih dari ref. PSNR seluruh frame, MAE / selisih maks di
+    sekitar tinta (dilatasi 5 px), bias kertas di area jauh dari tinta."""
+    m = ink_mask_from_f(f)
+    d = np.abs(ref.astype(int) - dec.astype(int))
+    far = ~m
+    bias = (dec.astype(np.float64) - ref.astype(np.float64))[far].mean(axis=0) if far.any() else np.zeros(3)
+    return {"psnr": psnr(ref, dec), "ink_px": int(m.sum()), "mae": float(d[m].mean()) if m.any() else 0.0,
+            "max_diff": int(d[m].max()) if m.any() else 0, "paper_bias": [float(x) for x in bias]}
+
+
 def sample_indices(n: int, step: int = 10) -> list[int]:
     """Frame pertama, tengah, terakhir + setiap `step` frame."""
     return sorted({0, n // 2, n - 1, *range(0, n, step)})

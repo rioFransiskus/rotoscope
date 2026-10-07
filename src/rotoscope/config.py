@@ -312,7 +312,8 @@ class PaperConfig:
     color: str = "#f4f1ea"
     texture_image: Path = Path("assets/paper/rough_01.jpg")
     texture_opacity: float = 0.35
-    vignette: float = 0.12
+    texture_gain: float = 3.0
+    vignette: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -805,8 +806,10 @@ def _validate_style(c: StyleConfig) -> None:
     _hex("paper.color", p.color)
     _unit("paper.texture_opacity", p.texture_opacity)
     _unit("paper.vignette", p.vignette)
-    if p.enabled and not p.texture_image.is_file():
-        _fail("paper.texture_image", p.texture_image, "tidak ada (dipakai karena paper.enabled = true)")
+    _at_least("paper.texture_gain", p.texture_gain, 0)
+    if p.enabled and p.texture_opacity > 0 and p.texture_gain > 0 and not p.texture_image.is_file():
+        _fail("paper.texture_image", p.texture_image,
+              "tidak ada (dipakai karena paper.enabled = true, texture_opacity > 0 dan texture_gain > 0)")
 
     _between("render.ss", c.render.ss, 1, RENDER_SS_MAX)
     _between("render.output_width", c.render.output_width, OUTPUT_WIDTH_MIN, OUTPUT_WIDTH_MAX)

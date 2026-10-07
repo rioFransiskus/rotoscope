@@ -6,7 +6,7 @@ cli.py memanggil main(). TANPA GPU: torch tidak pernah di-import.
 
 Garis bertebal variabel (T-401): latar `paper.color`, tinta `stroke.color`, solid. Tebal per titik = lantai(dasar × skala tipe ×
 (1 + variasi × noise 2D terkunci posisi) × taper); taper hanya di ujung BEBAS. Jitter, multipass, tekstur, opasitas BELUM aktif
-(`ignored_params` di manifest).
+(`ignored_params` di manifest). T-404a (Opsi B): [5] tetap menulis kertas DATAR (PNG + SVG); kertas bertekstur / vignette disusun saat export (rotoscope.paper).
 
 Satuan panjang style = px REFERENSI lebar 1080 × unit (unit = render.output_width / 1080). Geometri dihitung di px
 OUTPUT: titik kontur (pusat piksel kerja) × s, s = output_width / width.
@@ -136,6 +136,7 @@ ACTIVE_SCALARS = ("shape.simplify_epsilon", "shape.smooth_px", "shape.smooth_ten
                   "jitter.hold_frames", "jitter.stroke_independence", "stroke.opacity", "multipass.enabled", "multipass.passes",
                   "multipass.offset", "multipass.opacity_falloff", "multipass.temporal_mode",
                   "paper.color", "render.ss", "render.output_width")
+# T-404a (Opsi B): paper.* LAINNYA (enabled, texture_*, vignette) tidak dipakai [5] → ignored_params; kertas disusun saat export (rotoscope.paper)
 ACTIVE_BY_TYPE_PREFIX = "stroke.by_type."
 ACTIVE_BY_TYPE_SUFFIXES = (".width_scale", ".taper_ends", ".opacity_scale")
 MANIFEST_MATCH_KEYS = ("contract", "algo_rev", "style_hash", "style_params", "contours", "clip", "frame_size",
@@ -908,7 +909,8 @@ def ink_fraction(passes: list[list[Piece]], g: Geometry) -> np.ndarray:
 
 
 def render_png_passes(passes: list[list[Piece]], g: Geometry) -> bytes:
-    """PNG semua pass. g.legacy (1 pass, opacity 1,0, scale 1,0) = jalur T-402 persis; selain itu f dikuantisasi ke 256 level → LUT."""
+    """PNG semua pass. g.legacy (1 pass, opacity 1,0, scale 1,0) = jalur T-402 persis; selain itu f dikuantisasi ke 256 level → LUT.
+    Kertas SELALU datar (`paper.color`); kertas bertekstur / vignette disusun saat export (rotoscope.paper, T-404a Opsi B)."""
     if g.legacy:
         bgr = cv2.cvtColor(compose(render_mask(passes[0], g), g), cv2.COLOR_RGB2BGR)
     else:
@@ -1215,7 +1217,7 @@ def run_stylize(cfg, style: StyleConfig, style_name: str = "default", *, restart
         print(warning, file=sys.stderr, flush=True)
     _, _, ignored_nondefault = style_params(style)
     if ignored_nondefault:
-        log("catatan: parameter style belum aktif di T-403 (diabaikan): "
+        log("catatan: parameter style tidak dipakai stage [5] (diabaikan; kertas disusun saat export): "
             + ", ".join(f"{k}={v!r}" for k, v in ignored_nondefault.items()))
 
     stale: list[str] = []

@@ -13,7 +13,7 @@ lewat `--work-dir` (menang atas config) — tanpa menulis YAML.
 Prinsip #3 docs/01: stage GPU ([2] segment, [2c] depth) selalu proses sendiri (subprocess; stdout/stderr
 diteruskan apa adanya) dan proses induk TIDAK meng-import torch / menyentuh CUDA. Stage CPU (ingest, stabilize,
 vectorize, export) dipanggil in-process lewat main(argv) stage-nya, jadi flag stage tidak diparse ulang di sini.
-[4] vectorize dan [5] stylize masuk urutan `run` (T-203b; --style hanya diteruskan ke stylize).
+[4] vectorize dan [5] stylize masuk urutan `run` (T-203b; --style diteruskan ke stylize dan, sejak T-404a, ke export untuk kertas bertekstur).
 
 Exit code: 0 sukses | 1 prasyarat gagal (config, pre-flight, VRAM, identitas, ...) | 2 salah pakai argumen |
 3 OOM di stage GPU | 130 dihentikan (Ctrl+C). Kode stage yang gagal dikembalikan apa adanya.
@@ -36,6 +36,7 @@ from pathlib import Path
 from rotoscope import depth as depth_stage
 from rotoscope import export as export_stage
 from rotoscope import ingest as ingest_stage
+from rotoscope import paper
 from rotoscope import segment as segment_stage
 from rotoscope import stabilize as stabilize_stage
 from rotoscope import stylize as stylize_stage
@@ -95,7 +96,7 @@ class Ctx:
     cfg: PipelineConfig
     work_dir: Path
     config: Path | None = None            # hanya kalau diberikan pengguna (stage memuat default sendiri)
-    style: Path | None = None             # hanya diteruskan ke stylize
+    style: Path | None = None             # diteruskan ke stylize dan export (kertas, T-404a)
     seg_model: str | None = None
     limit: int | None = None
     restart: tuple[str, ...] = ()         # stage yang dijalankan dengan --restart
@@ -164,8 +165,9 @@ def preflight_style(style: Path | None) -> None:
     `render.output_width` divalidasi genap oleh load_style, jadi ukuran output (yuv420p) tidak perlu cek lain."""
     path = style if style is not None else (stylize_stage.DEFAULT_STYLE if stylize_stage.DEFAULT_STYLE.is_file() else None)
     try:
-        load_style(path)
-    except ConfigError as e:
+        style = load_style(path)
+        paper.validate_texture(style)             # T-404a: gambar kertas ada + terdekode bila dipakai (export di akhir run tidak boleh gagal karena ini)
+    except (ConfigError, StageError) as e:
         raise CliError(str(e)) from None
 
 
@@ -278,7 +280,7 @@ def stage_args(stage: str, ctx: Ctx) -> list[str]:
         a += ["--config", str(ctx.config)]
     if stage == "segment" and ctx.seg_model:
         a += ["--seg-model", ctx.seg_model]
-    if stage == "stylize" and ctx.style is not None:
+    if stage in ("stylize", "export") and ctx.style is not None:
         a += ["--style", str(ctx.style)]
     if stage in ctx.restart:
         a.append("--restart")
@@ -378,7 +380,7 @@ def preview_args(stage: str, ctx: Ctx, k: int, n: int) -> list[str]:
         return [str(ctx.video), *a]
     if ctx.config is not None:
         a += ["--config", str(ctx.config)]
-    if stage == "stylize" and ctx.style is not None:
+    if stage in ("stylize", "export") and ctx.style is not None:
         a += ["--style", str(ctx.style)]
     if stage == "vectorize":
         a += ["--limit", str(k + n)]
@@ -588,7 +590,8 @@ def build_parser() -> argparse.ArgumentParser:
     r = sub.add_parser("run", help="ingest → segment → depth → stabilize → vectorize → stylize → export untuk satu video")
     r.add_argument("video", type=Path)
     r.add_argument("--config", type=Path, default=None)
-    r.add_argument("--style", type=Path, default=None, help="YAML style, hanya untuk stage [5] stylize")
+    r.add_argument("--style", type=Path, default=None,
+                   help="YAML style: stage [5] stylize (garis) dan [6] export (kertas bertekstur / vignette, T-404a)")
     r.add_argument("--seg-model", choices=("0.8b", "0.4b"), default=None,
                    help="model segmentasi untuk SELURUH klip (tidak pernah fallback otomatis)")
     r.add_argument("--limit", type=int, default=None, help="hanya N frame pertama (export → <nama>.limitN.mp4)")
@@ -617,7 +620,7 @@ def build_parser() -> argparse.ArgumentParser:
                         ("stylize", "[5] contours/ → strokes/ (SVG + PNG garis polos); flag: --style --restart "
                                     "--limit"),
                         ("export", "[6] strokes/ (atau stable/groups) → out/<nama>.mp4 + out/svg/<nama>/; flag: "
-                                   "--restart --limit")):
+                                   "--style --restart --limit")):
         s = sub.add_parser(stage, help=text, description=text)
         s.add_argument("video", type=Path, help="video sumber (menentukan folder kerja klip)")
         s.add_argument("rest", nargs=argparse.REMAINDER, help="flag stage, diteruskan apa adanya")

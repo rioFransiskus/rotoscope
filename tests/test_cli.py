@@ -282,15 +282,17 @@ def write_conf(tmp_path: Path, body: str) -> Path:
     return conf
 
 
-def test_style_forwarded_only_to_stylize(rec, tmp_path):
+def test_style_forwarded_to_stylize_and_export_only(rec, tmp_path):
+    """T-404a: --style juga diteruskan ke export (parameter kertas); stage lain tidak."""
     style = tmp_path / "s.yaml"
     style.write_text("stroke:\n  width_base: 7.0\n", encoding="utf-8")
     assert run_cli("run", str(make_video(tmp_path)), "--style", str(style)) == 0
     for stage in rec.stages:
         a = rec.args(stage)
-        assert ("--style" in a) == (stage == "stylize")
-    a = rec.args("stylize")
-    assert a[a.index("--style") + 1] == str(style)
+        assert ("--style" in a) == (stage in ("stylize", "export"))
+    for stage in ("stylize", "export"):
+        a = rec.args(stage)
+        assert a[a.index("--style") + 1] == str(style)
 
 
 @pytest.mark.parametrize("body", ["render:\n  output_width: 1001\n", "stroke:\n  width_base: -3\n", "bukan: [yaml"])

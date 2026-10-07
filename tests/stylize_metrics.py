@@ -63,11 +63,35 @@ def stroke_deviation(stroke: dict, g: sty.Geometry, edge_mode: str | None = None
 
 
 # ── Raster ─────────────────────────────────────────
-def coverage(img_rgb: np.ndarray, g: sty.Geometry) -> np.ndarray:
-    """Cakupan tinta 0–1 per piksel dari PNG hasil render (kanal dengan kontras terbesar)."""
+def coverage(img_rgb: np.ndarray, g: sty.Geometry, paper_f32: np.ndarray | None = None) -> np.ndarray:
+    """Cakupan tinta 0–1 per piksel dari PNG hasil render (kanal dengan kontras terbesar). T-404a: `paper_f32` (render_paper(...).f32)
+    = kertas bertekstur / bervignette → pemulihan per piksel (`recover_f`); None = kertas datar `g.paper`."""
+    if paper_f32 is not None:
+        return recover_f(img_rgb, paper_f32, g.ink)
     paper, ink = np.array(g.paper, float), np.array(g.ink, float)
     ch = int(np.argmax(np.abs(paper - ink)))
     return (paper[ch] - img_rgb[..., ch].astype(float)) / (paper[ch] - ink[ch])
+
+
+RECOVER_F_TOL = 1.0 / 255         # T-404a: galat pemulihan f ≤ 1 level (terukur maks 0,0032 pada kertas float32; kertas uint8 sampai 0,0050)
+RECOVER_MIN_CONTRAST = 30.0       # kontras kertas–tinta per kanal (level) di bawah ini = pemulihan tidak terdefinisi baik
+
+
+def recover_f_bound(paper_f32: np.ndarray, ink_rgb) -> float:
+    """Batas galat pemulihan f: pembulatan uint8 (± 0,5 level) dibagi kontras terkecil kertas–tinta (kanal terbesar per piksel), ×1,02.
+    Palet produksi (#f4f1ea / #1a1a1a, vignette ≤ 0,25): ≈ 0,0032 ≤ RECOVER_F_TOL."""
+    contrast = np.abs(paper_f32 - np.array(ink_rgb, np.float32)).max(axis=-1).min()
+    return float(0.5 / contrast * 1.02)
+
+
+def recover_f(img_rgb: np.ndarray, paper_f32: np.ndarray, ink_rgb) -> np.ndarray:
+    """T-404a: fraksi tinta f per piksel dari PNG berlatar kertas bertekstur: f = (kertas − piksel) / (kertas − tinta) pada kanal dengan
+    kontras terbesar PER PIKSEL. `paper_f32` = keluaran `render_paper(...).f32` (float32, fungsi SAMA dengan produksi; kertas uint8 → galat > 1 level)."""
+    ink = np.array(ink_rgb, np.float32)
+    d = paper_f32 - ink
+    ch = np.argmax(np.abs(d), axis=-1)[..., None]
+    num = np.take_along_axis(paper_f32, ch, -1)[..., 0] - np.take_along_axis(img_rgb.astype(np.float32), ch, -1)[..., 0]
+    return (num / np.take_along_axis(d, ch, -1)[..., 0]).astype(np.float32)
 
 
 def decode_png(data: bytes) -> np.ndarray:

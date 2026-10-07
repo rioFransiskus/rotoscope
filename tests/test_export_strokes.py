@@ -12,9 +12,13 @@ import numpy as np
 import pytest
 
 import export_metrics as em
+import paper_oracle as po
+import stylize_metrics as sm_metrics
 import test_export as te
 from rotoscope import export as ex
-from rotoscope.config import load_pipeline
+from rotoscope import paper as pap
+from rotoscope import stylize as sty
+from rotoscope.config import load_pipeline, load_style
 from rotoscope.stage_common import StageError, clip_identity
 
 pytestmark = pytest.mark.skipif(
@@ -550,9 +554,11 @@ def test_main_cli_strokes_exit_codes(tmp_path, capsys):
     cfg, work, out = clip_strokes(tmp_path)
     conf = tmp_path / "c.yaml"
     conf.write_text(f"paths:\n  work_dir: '{work}'\n  out_dir: '{out}'\nexport:\n  source: strokes\n", encoding="utf-8")
-    assert ex.main(["--config", str(conf)]) == 0
+    flat = tmp_path / "flat.yaml"                                 # PNG sintetis ini bukan keluaran LUT [5] → kertas datar (T-404a: default = bertekstur)
+    flat.write_text("paper:\n  enabled: false\n", encoding="utf-8")
+    assert ex.main(["--config", str(conf), "--style", str(flat)]) == 0
     (work / "strokes" / "manifest.json").unlink()
-    assert ex.main(["--config", str(conf)]) == 1 and "stylize" in capsys.readouterr().err
+    assert ex.main(["--config", str(conf), "--style", str(flat)]) == 1 and "stylize" in capsys.readouterr().err
 
 
 # ── metrik objektif pada klip nyata (dilewati bila tidak ada) ──
@@ -565,8 +571,74 @@ def _real(clip: str):
     return d if read_json(m).get("contract") in ex.SUPPORTED_STROKES_CONTRACTS else None
 
 
+def textured_clip_frames(n: int = 10, w: int = 100, h: int = 178):
+    """Frame sintetis kertas bertekstur (kandidat op 0,35 gain 3 vignette 0,12; aset nyata) dengan strok miring: PNG sumber 1080 × 1922."""
+    st = load_style(None, overrides={"paper.texture_opacity": 0.35, "paper.texture_gain": 3.0, "paper.vignette": 0.12,
+                                     "render.output_width": 1080})
+    g = sty.make_geometry(st, w, h)
+    layer = pap.paper_layer(st, g.out_w, g.out_h)
+    frames = []
+    for i in range(n):
+        s = {"track_id": 1, "type": "silhouette", "closed": True, "groups": ["background"], "anchor": 0,
+             "points": [[30.5 + i, 40.5], [70.5 + i, 50.5], [60.5, 120.5 - i], [35.5, 130.5]]}
+        s2 = {"track_id": 2, "type": "group_boundary", "closed": False, "groups": ["a", "b"], "points": [[10.5, 20.5 + i], [90.5, 60.5]]}
+        doc = {"frame_index": i, "width": w, "height": h, "source": {}, "prev_sha256": None, "strokes": [s, s2]}
+        passes, _ = sty.frame_passes(doc, g)
+        frames.append(po.render_rgb(passes, g, layer))                    # ORACLE jalur [5] lama: kertas bertekstur dirender langsung
+    return st, g, layer, frames
+
+
+class _ArraySource(ex.FrameSource):
+    kind = "strokes"
+
+    def __init__(self, frames):
+        self.frames = frames
+
+    def check(self, names):
+        return None
+
+    def render(self, name):
+        return self.frames[int(Path(name).stem.split("_")[1])]
+
+
+def test_textured_paper_mp4_thresholds_separate_crf18_from_crf23(tmp_path):
+    """T-404a: PSNR_TEXTURED_MIN_DB (39,8) membedakan crf 18 (lolos) dari crf 23 (gagal) pada kertas bertekstur sintetis; MAE tinta, selisih
+    maks dan bias kertas lolos pada crf 18. Pemulihan f dari kertas float32 (render_paper) menentukan mask tinta."""
+    st, g, layer, frames = textured_clip_frames()
+    names = [f"frame_{i:05d}.png" for i in range(len(frames))]
+    res = {}
+    for crf in (18, 23):
+        out = tmp_path / f"t{crf}.mp4"
+        ex.encode(_ArraySource(frames), names, (g.out_w, g.out_h), np.array([255, 255, 255], np.uint8), 24.0, crf, "medium", None, out)
+        reps = []
+        for i in (0, len(frames) // 2, len(frames) - 1):
+            f = sm_metrics.recover_f(frames[i], layer.f32, g.ink)
+            reps.append(em.textured_report(frames[i], em.decode_rgb(out, i), f))
+        res[crf] = {"psnr": min(r["psnr"] for r in reps), "mae": max(r["mae"] for r in reps), "max": max(r["max_diff"] for r in reps),
+                    "bias": max(max(abs(x) for x in r["paper_bias"]) for r in reps)}
+    assert res[18]["psnr"] >= em.PSNR_TEXTURED_MIN_DB and res[23]["psnr"] < em.PSNR_TEXTURED_MIN_DB, res
+    assert res[18]["mae"] <= em.INK_MAE_MAX and res[18]["max"] <= em.INK_MAX_DIFF and res[18]["bias"] <= em.PAPER_BIAS_MAX, res
+
+
+def test_textured_report_hand_values():
+    ref = np.full((20, 20, 3), 200, np.uint8)
+    f = np.zeros((20, 20), np.float32)
+    f[10, 10] = 1.0
+    dec = ref.copy()
+    dec[0, 0, 0] += 4                                    # jauh dari tinta: ikut bias, bukan MAE tinta
+    dec[10, 10] = (190, 200, 200)                       # di tinta
+    r = em.textured_report(ref, dec, f)
+    assert r["max_diff"] == 10 and r["ink_px"] > 0 and r["mae"] > 0
+    m = em.ink_mask_from_f(f)
+    assert m[10, 10] and not m[0, 0] and r["ink_px"] == int(m.sum())
+    assert r["paper_bias"][0] == pytest.approx(4 / int((~m).sum())) and r["paper_bias"][1] == 0.0       # satu piksel +4 di kertas
+    assert r["mae"] == pytest.approx(10 / (3 * int(m.sum()))) and r["psnr"] < 99
+
+
+@pytest.mark.parametrize("textured", [False, True])
 @pytest.mark.parametrize("clip", ["test_short", "test"])
-def test_real_clip_objective_metrics(tmp_path, clip):
+def test_real_clip_objective_metrics(tmp_path, clip, textured):
+    """textured False = kertas datar (ambang T-203b); True = kertas bertekstur default (T-404a Opsi B: style default → export menyusun kertas)."""
     work = _real(clip)
     if work is None:
         pytest.skip(f"klip nyata {clip} tidak ada")
@@ -574,13 +646,29 @@ def test_real_clip_objective_metrics(tmp_path, clip):
     cfg = load_pipeline(overrides={"paths.work_dir": str(work), "paths.out_dir": str(out), **STROKES})
     sm = read_json(work / "strokes" / "manifest.json")
     n = read_json(work / "meta.json")["frame_count"]
-    run = ex.run_export(cfg, log=quiet)
+    style = load_style(None) if textured else None
+    if textured and sty.params_hash(sty.style_params(style)[0]) != sm["style_hash"]:
+        pytest.skip("strokes klip nyata dihitung dengan style lain dari default")
+    run = ex.run_export(cfg, style=style, log=quiet)
     mp4 = run["output"]
     st = em.ffprobe_stream(mp4)
     osz = sm["output_size"]
     assert (int(st["width"]), int(st["height"])) == (osz["width"], osz["height"])        # (a)
     assert int(st["nb_read_packets"]) == n
     worst_psnr, worst_mae, worst_max, worst_paper, worst_ink = 99.0, 0.0, 0, 0.0, 0.0
+    if textured:                                                   # T-404a: kertas bertekstur → metrik pemulihan f dari kertas float32
+        layer = pap.render_paper(osz["width"], osz["height"], style)
+        lm = pap.LevelMap(pap.hex_rgb(style.paper.color), pap.hex_rgb(style.stroke.color))
+        ink = pap.hex_rgb(style.stroke.color)
+        bias = 0.0
+        for i in em.sample_indices(n, step=20):
+            ref = pap.compose_textured(em.read_png_rgb(work / "strokes" / f"frame_{i:05d}.png"), lm, layer, ink)
+            rep = em.textured_report(ref, em.decode_rgb(mp4, i), sm_metrics.recover_f(ref, layer.f32, ink))
+            worst_psnr, worst_mae, worst_max = min(worst_psnr, rep["psnr"]), max(worst_mae, rep["mae"]), max(worst_max, rep["max_diff"])
+            bias = max(bias, max(abs(x) for x in rep["paper_bias"]))
+        assert worst_psnr >= em.PSNR_TEXTURED_MIN_DB and worst_mae <= em.INK_MAE_MAX and worst_max <= em.INK_MAX_DIFF
+        assert bias <= em.PAPER_BIAS_MAX
+        return
     for i in em.sample_indices(n, step=20):                                                # (b)(c)
         rep = em.frame_report(em.read_png_rgb(work / "strokes" / f"frame_{i:05d}.png"), em.decode_rgb(mp4, i))
         worst_psnr, worst_mae, worst_max = min(worst_psnr, rep["psnr"]), max(worst_mae, rep["mae"]), \

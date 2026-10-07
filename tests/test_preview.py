@@ -124,8 +124,8 @@ def test_preview_runs_cpu_stages_with_window_args(real, monkeypatch):   # noqa: 
     assert opt(a["vectorize"], "--limit") == "5" and "--from" not in a["vectorize"]
     for s in ("stylize", "export"):
         assert opt(a[s], "--from") == "3" and opt(a[s], "--limit") == "2"
-    assert opt(a["stylize"], "--style") == str(style)
-    assert all("--style" not in a[s] for s in ("stabilize", "vectorize", "export"))
+    assert opt(a["stylize"], "--style") == str(style) and opt(a["export"], "--style") == str(style)      # T-404a: kertas dibaca export
+    assert all("--style" not in a[s] for s in ("stabilize", "vectorize"))
     assert all("--restart" not in v for v in a.values())
 
 

@@ -266,8 +266,9 @@ STYLE_INVALID = [
     ({"texture.brush_image": "assets/brushes/tidak_ada.png"}, r"texture\.brush_image.*tidak ada"),
     ({"paper.enabled": "no"}, r"paper\.enabled.*bool"),
     ({"paper.color": "#fff"}, r"paper\.color"),
-    ({"paper.texture_image": "assets/paper/tidak_ada.jpg"}, r"paper\.texture_image.*tidak ada"),
+    ({"paper.texture_image": "assets/paper/tidak_ada.jpg", "paper.texture_opacity": 0.35}, r"paper\.texture_image.*tidak ada"),
     ({"paper.texture_opacity": 2}, r"paper\.texture_opacity"),
+    ({"paper.texture_gain": -0.1}, r"paper\.texture_gain"),
     ({"paper.vignette": -1}, r"paper\.vignette"),
     ({"render.ss": 0}, r"render\.ss"),
     ({"render.ss": 9}, r"render\.ss"),
@@ -283,6 +284,10 @@ def test_style_validation_rejects(overrides, match):
 def test_unused_assets_not_checked():
     load_style(overrides={"texture.mode": "none", "texture.brush_image": "tidak_ada.png"})
     load_style(overrides={"paper.enabled": False, "paper.texture_image": "tidak_ada.jpg"})
+    # T-404a: berkas hanya wajib bila tekstur dipakai (enabled + opacity > 0 + gain > 0)
+    load_style(overrides={"paper.texture_image": "tidak_ada.jpg", "paper.texture_opacity": 0.0})
+    load_style(overrides={"paper.texture_image": "tidak_ada.jpg", "paper.texture_opacity": 0.5, "paper.texture_gain": 0})
+    load_style(overrides={"paper.texture_image": "tidak_ada.jpg", "paper.texture_opacity": 0.5, "paper.enabled": False})
 
 
 # ── Path ───────────────────────────────────────────
