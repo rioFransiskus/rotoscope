@@ -279,11 +279,13 @@ class StrokeConfig:
 
 @dataclass(frozen=True)
 class JitterConfig:
-    amplitude: float = 4.0
+    amplitude: float = 0.0              # T-402: DEFAULT MATI (keputusan Rio, docs/04): garis mekanis = byte-identik T-401; jitter hanya lewat style
     frequency: float = 0.053
     temporal_seed_mode: str = "frame"
     temporal_drift: float = 0.35
     param_seed: int = 0
+    hold_frames: int = 2                # T-402: "gambar" jitter diperbarui tiap N frame (1 = tiap frame, 2 = "on twos")
+    stroke_independence: float = 0.0    # T-402: 0 = medan koheren saja, 1 = hanya getar independen per track_id
 
 
 @dataclass(frozen=True)
@@ -781,6 +783,8 @@ def _validate_style(c: StyleConfig) -> None:
     _at_least("jitter.frequency", j.frequency, 0)
     _choice("jitter.temporal_seed_mode", j.temporal_seed_mode, TEMPORAL_SEED_MODES)
     _unit("jitter.temporal_drift", j.temporal_drift)
+    _at_least("jitter.hold_frames", j.hold_frames, 1)
+    _unit("jitter.stroke_independence", j.stroke_independence)
 
     mp = c.multipass
     _at_least("multipass.passes", mp.passes, 1)

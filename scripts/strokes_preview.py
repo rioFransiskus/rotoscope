@@ -18,6 +18,13 @@ T-401 (keluaran ke work/t401/; render LANGSUNG dari contours/ klip, strokes/ dan
     python scripts/strokes_preview.py svgsample   # SVG sampel frame 80 + info struktur
     python scripts/strokes_preview.py all401
 
+T-402 (keluaran ke work/t402/; render LANGSUNG dari contours/ SALINAN klip: --clips-root <scratchpad>/work/clips; klip asli tidak dipakai):
+    python scripts/strokes_preview.py videos402 --clips-root R   # video papan [T-401 | varian] ukuran penuh: amplitudo, frequency, hold x drift,
+                                                                 # stroke_independence (+ peta id baru), jendela statis otomatis + gerak cepat, panel fixed
+    python scripts/strokes_preview.py helpers402 --clips-root R  # strip 3 frame ditumpuk, zoom 3x sambungan T / seam / garis sejajar / tepi / tikungan
+    python scripts/strokes_preview.py worst402 --clips-root R    # PNG kasus terburuk (sambungan, Jacobian, ujung tepi, persilangan) + ringkasan JSON
+    python scripts/strokes_preview.py all402 --clips-root R
+
 Membaca contours/ + strokes/ klip (tidak mengubahnya). Label alat T-203a: "garis polos T-203a - belum ada jitter / taper / tekstur".
 Fungsi metrik dipakai ulang dari tests/stylize_metrics.py; encode dipakai ulang dari rotoscope.export.
 """
@@ -37,6 +44,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tests"))
 
+import jitter_metrics as jm  # noqa: E402
 import stylize_metrics as sm  # noqa: E402
 
 from rotoscope import export as ex  # noqa: E402
@@ -777,20 +785,350 @@ def cmd_svgsample() -> None:
     print(f"  {p.relative_to(ROOT)} {info}")
 
 
+# ── T-402: jitter (video papan + gambar bantu; keluaran ke work/t402/; klip dari --clips-root, default work/clips) ─────
+# Python 3.11, tanpa GPU. Semua pada SALINAN klip (scratchpad); strokes/ dan out/ klip tidak dipakai (render langsung dari contours/).
+OUT402 = ROOT / "work" / "t402"
+LABEL402 = "T-402 jitter"
+EVAL402 = {"jitter.amplitude": 4.0, "jitter.frequency": 0.053, "jitter.temporal_drift": 0.35, "jitter.hold_frames": 2,
+           "jitter.stroke_independence": 0.0, "jitter.temporal_seed_mode": "frame"}     # nilai evaluasi awal (HANYA papan; bukan default)
+BASELINE402 = {"jitter.amplitude": 0.0}                                                  # T-401 tanpa jitter (byte-identik)
+STATIC_SPEED_PX, STATIC_XOR, STATIC_MIN_FRAMES, WINDOW_LEN = 2.0, 0.04, 10, 20           # aturan jendela statis T-302
+ZOOM_HALF402 = 90
+
+
+def style402(**ov):
+    return style_with(**{**EVAL402, **ov})
+
+
+def r_of(style) -> float:
+    j = style.jitter
+    return sty.jitter_fold_r(j.amplitude, j.frequency, j.stroke_independence)
+
+
+def param_line(style, baseline: bool = False) -> str:
+    j = style.jitter
+    if baseline:
+        return "T-401 tanpa jitter (amplitudo 0)"
+    return (f"amp {j.amplitude:g} freq {j.frequency:g} drift {j.temporal_drift:g} hold {j.hold_frames} s {j.stroke_independence:g} "
+            f"mode {j.temporal_seed_mode} | r = {r_of(style):.3f}")
+
+
+def find_static_window(clip: str) -> tuple[int, int]:
+    """Jendela statis OTOMATIS (aturan T-302): ≥ 10 frame berurutan, kecepatan centroid ≤ 2 px/frame dan XOR foreground ≤ 4%
+    (foreground = isi siluet dari contours/; piksel kerja). Terpanjang dipilih; panjang jendela dibatasi 20."""
+    n = frame_count(clip)
+    m = meta(clip)
+    h, w = int(m["working_height"]), int(m["working_width"])
+    masks, cents = [], []
+    for i in range(n):
+        d = load_doc(clip, i)
+        mk = np.zeros((h, w), np.uint8)
+        for s in d["strokes"]:
+            if s["type"] == "silhouette":
+                cv2.fillPoly(mk, [np.rint(np.asarray(s["points"], float) - 0.5).astype(np.int32)], 1)
+        for s in d["strokes"]:
+            if s["type"] == "silhouette_hole":
+                cv2.fillPoly(mk, [np.rint(np.asarray(s["points"], float) - 0.5).astype(np.int32)], 0)
+        mo = cv2.moments(mk, binaryImage=True)
+        masks.append(mk)
+        cents.append(np.array([mo["m10"], mo["m01"]]) / max(mo["m00"], 1.0))
+    ok = [float(np.hypot(*(cents[i] - cents[i - 1]))) <= STATIC_SPEED_PX and
+          float((masks[i] ^ masks[i - 1]).sum()) / max(float(masks[i].sum()), 1.0) <= STATIC_XOR for i in range(1, n)]
+    best, cur = (0, 0), 0
+    for i, v in enumerate(ok):
+        cur = cur + 1 if v else 0
+        if cur + 1 > best[1] - best[0] + 1 and cur + 1 >= STATIC_MIN_FRAMES:
+            best = (i + 1 - cur, i + 1)
+    if best == (0, 0):
+        raise SystemExit(f"jendela statis tidak ditemukan di {clip} (aturan T-302)")
+    return best[0], min(best[1], best[0] + WINDOW_LEN - 1)
+
+
+def mark_new_ids(img: np.ndarray, pieces: list[sty.Piece], g: sty.Geometry, prev_ids: set) -> tuple[np.ndarray, int]:
+    """Strok yang (type, track_id)-nya baru dibanding frame sebelumnya diwarnai merah (peta loncatan G saat s > 0)."""
+    new = [pc for pc in pieces if (pc.type, pc.track_id) not in prev_ids]
+    if not new:
+        return img, 0
+    cov = cv2.resize(sty.render_mask(new, g), (g.out_w, g.out_h), interpolation=cv2.INTER_AREA).astype(np.float32)[..., None] / 255.0
+    red = np.array([230, 30, 30], np.float32)
+    return (img * (1 - cov) + red * cov).astype(np.uint8), len(new)
+
+
+class JitterSource(ex.FrameSource):
+    """Frame video T-402: panel pertama = T-401 tanpa jitter (di-cache), panel berikutnya = varian jitter; berdampingan, ukuran penuh."""
+    kind = "live"
+
+    def __init__(self, clip: str, panels: list[tuple[str, object]], mark_ids: bool = False):
+        self.clip, self.panels, self.mark_ids = clip, panels, mark_ids
+        self.cache: dict = {}
+
+    def check(self, names: list[str]) -> None:
+        return None
+
+    def panel_img(self, idx: int, title: str, style, doc: dict, baseline: bool) -> np.ndarray:
+        key = (idx, baseline)
+        if baseline and key in self.cache:
+            img = self.cache[key]
+        else:
+            g, pcs = pieces_for(self.clip, doc, style, "B")
+            img = rgb_of(pcs, g)
+            if baseline:
+                self.cache[key] = img
+        lines = [f"{LABEL402} | {self.clip} f{idx:03d} | {title}", param_line(style, baseline)]
+        if not baseline and self.mark_ids and style.jitter.stroke_independence > 0 and idx > 0:
+            g, pcs = pieces_for(self.clip, doc, style, "B")
+            prev = {(s["type"], s["track_id"]) for s in load_doc(self.clip, idx - 1)["strokes"]}
+            img, k = mark_new_ids(img, pcs, g, prev)
+            lines.append(f"merah = strok dengan track_id BARU di frame ini ({k} dari {len(pcs)} jalur): pola G loncat")
+        return label(img, lines)
+
+    def render(self, name: str) -> np.ndarray:
+        idx = int(Path(name).stem.split("_")[1])
+        doc = load_doc(self.clip, idx)
+        outs = [self.panel_img(idx, t, s, doc, baseline=(k == 0)) for k, (t, s) in enumerate(self.panels)]
+        return hstack(outs, 1.0)
+
+
+def make_video402(clip: str, frames: list[int], name: str, panels, mark_ids: bool = False) -> None:
+    src = JitterSource(clip, panels, mark_ids)
+    first = src.render(f"frame_{frames[0]:05d}.png")
+    h, w = first.shape[:2]
+    h, w = h + h % 2, w + w % 2
+    bg = np.array(ex.parse_hex(style_with().paper.color), np.uint8)
+    OUT402.mkdir(parents=True, exist_ok=True)
+    tmp, final = OUT402 / (name + ".tmp"), OUT402 / name
+    ex.encode(src, [f"frame_{i:05d}.png" for i in frames], (w, h), bg, float(meta(clip)["target_fps"]), VIDEO_CRF, VIDEO_PRESET, None, tmp)
+    os.replace(tmp, final)
+    print(f"  {final.relative_to(ROOT)} ({final.stat().st_size / 1024:.0f} KiB, {len(frames)} frame, {w}x{h})", flush=True)
+
+
+def video_sets402() -> dict[str, list[tuple[str, dict]]]:
+    """Papan keputusan Rio (item 6): amplitudo dipasangkan dengan frequency yang menjaga r ≤ 0,21; satu panel LIPATAN (informasi)."""
+    amp = [(f"amplitudo {a:g} @ freq {f:g}", {"jitter.amplitude": a, "jitter.frequency": f})
+           for a, f in ((2, 0.053), (4, 0.053), (6, 0.035), (8, 0.0265))]
+    amp.append((f"LIPATAN (informasi): r = {8 * 0.053:.3f} amplitudo 8 @ freq 0.053", {"jitter.amplitude": 8.0, "jitter.frequency": 0.053}))
+    freq = [("frequency x0.5 (0.0265) amp 4", {"jitter.frequency": 0.0265, "jitter.amplitude": 4.0}),
+            ("frequency x1 (0.053) amp 4", {"jitter.frequency": 0.053, "jitter.amplitude": 4.0}),
+            ("frequency x2 (0.106) amp 2", {"jitter.frequency": 0.106, "jitter.amplitude": 2.0})]
+    hold = [(f"hold {h} x drift {d:g}", {"jitter.hold_frames": h, "jitter.temporal_drift": d}) for h in (1, 2, 3) for d in (0.15, 0.35, 1.0)]
+    ind = [(f"stroke_independence {s:g}", {"jitter.stroke_independence": s, "jitter.frequency": 0.037}) for s in (0.0, 0.25, 0.5, 1.0)]
+    return {"amplitudo": amp, "frequency": freq, "hold_drift": hold, "independence": ind}
+
+
+def slug(text: str) -> str:
+    return "".join(c if c.isalnum() else "_" for c in text.replace(".", "p")).strip("_")[:60]
+
+
+def cmd_videos402() -> None:
+    """Video papan: tiap video = [T-401 tanpa jitter | varian] ukuran penuh, jendela statis otomatis + gerak cepat 73-92 / 183-202.
+    Plus panel `temporal_seed_mode: fixed` pada jendela cepat (memisahkan efek GERAK dari efek WAKTU)."""
+    static = find_static_window(BOARD_CLIP)
+    windows = {"statis": static, "cepat1": WINDOWS[0], "cepat2": WINDOWS[1]}
+    OUT402.mkdir(parents=True, exist_ok=True)
+    (OUT402 / "windows.json").write_text(json.dumps(windows, indent=1), encoding="utf-8")
+    print(f"  jendela: {windows}")
+    base = style402(**BASELINE402)
+    for wname, (a, b) in windows.items():
+        fr = list(range(a, b + 1))
+        for group, items in video_sets402().items():
+            for title, ov in items:
+                st = style402(**ov)
+                make_video402(BOARD_CLIP, fr, f"v402_{group}_{slug(title)}_{wname}.mp4",
+                              [("T-401", base), (title, st)], mark_ids=(group == "independence"))
+        if wname != "statis":
+            make_video402(BOARD_CLIP, fr, f"v402_fixed_vs_frame_{wname}.mp4",
+                          [("T-401", base), ("mode frame (hold 2)", style402()), ("mode FIXED (efek gerak saja)", style402(**{"jitter.temporal_seed_mode": "fixed"}))])
+
+
+def overlay3(covs: list[np.ndarray]) -> np.ndarray:
+    """Tiga cakupan tinta (0–1) ditumpuk subtraktif: frame 1 = cyan, 2 = magenta, 3 = kuning (tumpang tindih = gelap)."""
+    out = np.full(covs[0].shape + (3,), 255.0)
+    for cov, tint in zip(covs, ((0, 255, 255), (255, 0, 255), (255, 255, 0))):
+        out -= cov[..., None] * np.array(tint)
+    return np.clip(out, 0, 255).astype(np.uint8)
+
+
+def cov_of(clip: str, idx: int, style) -> tuple[np.ndarray, sty.Geometry, list[sty.Piece]]:
+    g, pcs = pieces_for(clip, load_doc(clip, idx), style, "B")
+    return cv2.resize(sty.render_mask(pcs, g), (g.out_w, g.out_h), interpolation=cv2.INTER_AREA).astype(np.float32) / 255.0, g, pcs
+
+
+def body_center(clip: str, idx: int) -> tuple[float, float]:
+    g = sty.make_geometry(style402(), int(meta(clip)["working_width"]), int(meta(clip)["working_height"]))
+    pts = np.vstack([np.asarray(s["points"], float) for s in load_doc(clip, idx)["strokes"] if s["type"] == "silhouette"]) * g.scale
+    return float(pts[:, 0].mean()), float(pts[:, 1].mean())
+
+
+def crop_panels(images: list[np.ndarray], titles: list[str], cx: float, cy: float, half: int = ZOOM_HALF402, zoom: int = ZOOM) -> np.ndarray:
+    crops = []
+    for img, t in zip(images, titles):
+        z, _ = crop_zoom(img, cx, cy, half, zoom)
+        crops.append(label(z, [t]))
+    return hstack(crops)
+
+
+def cmd_helpers402() -> None:
+    """Gambar bantu: strip 3 frame ditumpuk (besar getar), zoom 3x sambungan T / seam tertutup / garis sejajar dekat / tepi bawah + kanan /
+    tikungan rapat — masing-masing [T-401 | koheren s = 0 | independen s = 1] atau [T-401 | amplitudo]."""
+    clip = BOARD_CLIP
+    a, b = find_static_window(clip)
+    base = style402(**BASELINE402)
+    # 1. strip 3 frame berurutan (hold 1) per amplitudo: besar getar pada jendela statis
+    cx, cy = body_center(clip, a)
+    strips = []
+    for amp, f in ((2, 0.053), (4, 0.053), (6, 0.035), (8, 0.0265)):
+        st = style402(**{"jitter.amplitude": float(amp), "jitter.frequency": f, "jitter.hold_frames": 1})
+        covs = [cov_of(clip, a + k, st)[0] for k in range(3)]
+        z, _ = crop_zoom(overlay3(covs), cx, cy, 130, 2)
+        strips.append(label(z, [f"{LABEL402} strip 3 frame (f{a}-{a + 2}, jendela statis): cyan / magenta / kuning", param_line(st)]))
+    write_png(OUT402 / "helper_strip_3frame.png", hstack(strips))
+    # 2-7. kasus nyata pada frame 80 / 233: [T-401 | s=0 | s=1]
+    s0 = style402(**{"jitter.amplitude": 6.0, "jitter.frequency": 0.035, "jitter.hold_frames": 1})
+    s1 = style402(**{"jitter.amplitude": 6.0, "jitter.frequency": 0.035, "jitter.hold_frames": 1, "jitter.stroke_independence": 1.0})
+    trio = [("T-401", base), ("koheren s = 0", s0), ("INDEPENDEN s = 1", s1)]
+
+    def trio_png(name: str, idx: int, cx: float, cy: float, note: str, half: int = ZOOM_HALF402) -> None:
+        imgs = [rgb_of(pieces_for(clip, load_doc(clip, idx), st, "B")[1], pieces_for(clip, load_doc(clip, idx), st, "B")[0]) for _, st in trio]
+        write_png(OUT402 / f"helper_{name}_f{idx:03d}.png", crop_panels(imgs, [f"{t} | {note} f{idx}" for t, _ in trio], cx, cy, half))
+    g = sty.make_geometry(s0, int(meta(clip)["working_width"]), int(meta(clip)["working_height"]))
+    for idx in (80, 183):
+        base_p, _ = sty.base_pieces(load_doc(clip, idx), g)
+        ends = jm.joint_ends(base_p, g)
+        if ends:
+            i, e = ends[len(ends) // 2]
+            q = base_p[i].points[0 if e == 0 else -1]
+            trio_png("sambungan_T", idx, q[0], q[1], "sambungan T (silhouette - batas grup)")
+        closed = [p for p in base_p if p.closed]            # siluet terpotong tepi menjadi terbuka (hide): lubang / batas grup tertutup
+        if closed:
+            pc = max(closed, key=lambda p: len(p.points))
+            trio_png("seam_tertutup", idx, pc.points[0][0], pc.points[0][1], "seam strok tertutup (points[0])")
+        # tikungan rapat: radius lokal terkecil
+        best = None
+        for pc in base_p:
+            if len(pc.points) < 12:
+                continue
+            p = pc.points
+            t = np.arctan2(*np.diff(p, axis=0).T[::-1])
+            dth = np.abs(np.angle(np.exp(1j * np.diff(t))))
+            ds = np.hypot(*np.diff(p, axis=0).T)[1:]
+            rad = ds / np.maximum(dth, 1e-6)
+            k = int(np.argmin(rad))
+            if best is None or rad[k] < best[0]:
+                best = (float(rad[k]), p[k + 1])
+        if best:
+            trio_png("tikungan_rapat", idx, best[1][0], best[1][1], f"tikungan rapat (radius {best[0]:.1f} px)")
+        # garis sejajar dekat: dua strok berbeda berjarak < 2 x amplitudo (menjauhi ujung)
+        pts, own = [], []
+        for pc in base_p:
+            q = pc.points
+            far = np.ones(len(q), bool)
+            if not pc.closed:
+                far = np.minimum(np.hypot(*(q - q[0]).T), np.hypot(*(q - q[-1]).T)) > 12.0
+            pts.append(q[far])
+            own.append(np.full(int(far.sum()), pc.stroke_idx))
+        pts, own = np.vstack(pts), np.concatenate(own)
+        pairs = sm.cKDTree(pts).query_pairs(2 * s0.jitter.amplitude * g.unit, output_type="ndarray")
+        pairs = pairs[own[pairs[:, 0]] != own[pairs[:, 1]]] if len(pairs) else pairs
+        if len(pairs):
+            dd = np.hypot(*(pts[pairs[:, 0]] - pts[pairs[:, 1]]).T)
+            c = (pts[pairs[int(np.argmin(dd))][0]] + pts[pairs[int(np.argmin(dd))][1]]) / 2
+            trio_png("garis_sejajar_dekat", idx, c[0], c[1], f"garis berdekatan (min {dd.min():.1f} px)")
+    # tepi bawah (frame 233) + tepi kanan (frame dengan ujung ekstensi kanan terbanyak): [T-401 | amplitudo 8 | amplitudo 8 tanpa pelunakan tepi dihitung = T-401 vs jitter]
+    st8 = style402(**{"jitter.amplitude": 8.0, "jitter.frequency": 0.0265, "jitter.hold_frames": 1})
+    gg = sty.make_geometry(st8, int(meta(clip)["working_width"]), int(meta(clip)["working_height"]))
+    best_r, right_f = -1, 80
+    for i in range(0, frame_count(clip), 3):
+        bp, _ = sty.base_pieces(load_doc(clip, i), gg)
+        k = sum(1 for p in bp for e in (0, 1) if p.edge[e] and p.points[0 if e == 0 else -1][0] > gg.out_w)
+        if k > best_r:
+            best_r, right_f = k, i
+    for idx, cx, cy, note in ((233, gg.out_w * 0.5, gg.out_h - 150, "tepi bawah"), (right_f, gg.out_w - 120, gg.out_h * 0.45, f"tepi kanan ({best_r} ujung)")):
+        imgs = [rgb_of(pieces_for(clip, load_doc(clip, idx), st, "B")[1], gg) for st in (base, st8)]
+        write_png(OUT402 / f"helper_tepi_{note.split()[0]}_{note.split()[1] if len(note.split()) > 1 else ''}_f{idx:03d}.png".replace("__", "_"),
+                  crop_panels(imgs, [f"T-401 | {note} f{idx}", f"amplitudo 8 @ 0.0265 | {note} f{idx} (ujung tepi tidak berubah)"], cx, cy, 220, 2))
+
+
+def worst402_scan(clip: str, style, every: int = 3) -> dict:
+    """Kasus terburuk (informasi, dikirim SEBELUM Rio menilai): perubahan sambungan terbesar, min det Jacobian, ujung tepi terdekat, persilangan."""
+    n = frame_count(clip)
+    m = meta(clip)
+    g = sty.make_geometry(style, int(m["working_width"]), int(m["working_height"]))
+    worst = {"joint_change": (0.0, None, None), "min_det": (9.0, None, None), "intrusion": (-9e9, None, None), "new_cross": (0, None, None)}
+    for i in range(0, n, every):
+        doc = load_doc(clip, i)
+        base, _ = sty.base_pieces(doc, g)
+        jit = sty.jitter_pieces(base, g, int(doc["frame_index"]))
+        for ii, e in jm.joint_ends(base, g):
+            d = abs(jm.end_gap(jit, ii, e) - jm.end_gap(base, ii, e))
+            if d > worst["joint_change"][0]:
+                worst["joint_change"] = (d, i, base[ii].points[0 if e == 0 else -1])
+        for pc in jit:
+            dets = jm.jacobian_dets(g, int(doc["frame_index"]), pc.points, pc.track_id)
+            k = int(np.argmin(dets))
+            if dets[k] < worst["min_det"][0]:
+                worst["min_det"] = (float(dets[k]), i, pc.points[k])
+        for pc in jit:
+            for e in (0, 1):
+                if pc.edge[e] and not pc.closed and pc.widths is not None:
+                    q = pc.points[0 if e == 0 else -1]
+                    v = float(pc.widths[0 if e == 0 else -1]) / 2 - jm.rect_distance(q, g)
+                    if v > worst["intrusion"][0]:
+                        worst["intrusion"] = (v, i, q)
+        nc = jm.new_crossings(base, jit)
+        if nc > worst["new_cross"][0]:
+            cr = [p for a, b, p in jm.crossings(jit)]
+            worst["new_cross"] = (nc, i, cr[0] if cr else None)
+    return worst
+
+
+def cmd_worst402() -> None:
+    clip = BOARD_CLIP
+    base = style402(**BASELINE402)
+    summary = {}
+    for tag, ov in (("koheren_amp4", {"jitter.amplitude": 4.0, "jitter.hold_frames": 1}),
+                    ("independen_amp4", {"jitter.amplitude": 4.0, "jitter.hold_frames": 1, "jitter.stroke_independence": 1.0}),
+                    ("koheren_amp8_f0.0265", {"jitter.amplitude": 8.0, "jitter.frequency": 0.0265, "jitter.hold_frames": 1})):
+        st = style402(**ov)
+        w = worst402_scan(clip, st)
+        summary[tag] = {k: {"value": float(v[0]), "frame": v[1], "point": None if v[2] is None else [float(v[2][0]), float(v[2][1])]}
+                        for k, v in w.items()}
+        for k, (val, idx, pt) in w.items():
+            if idx is None or pt is None:
+                continue
+            imgs = [rgb_of(pieces_for(clip, load_doc(clip, idx), s, "B")[1], sty.make_geometry(s, 480, 854)) for s in (base, st)]
+            write_png(OUT402 / f"worst402_{tag}_{k}_f{idx:03d}.png",
+                      crop_panels(imgs, [f"T-401 | {tag} {k} = {val:.3f} f{idx}", f"{param_line(st)}"], pt[0], pt[1]))
+    (OUT402 / "worst402_summary.json").write_text(json.dumps(summary, indent=1, default=str), encoding="utf-8")
+    print(f"  {(OUT402 / 'worst402_summary.json').relative_to(ROOT)}")
+
+
+T402_COMMANDS = ("videos402", "helpers402", "worst402")
+
+
 COMMANDS = {"final": cmd_final, "videos": cmd_videos, "edge": cmd_edge, "widths": cmd_widths, "epsilon": cmd_epsilon, "worst": cmd_worst,
             "zoom": cmd_zoom, "boards": cmd_boards, "variants": cmd_variants, "videos401": cmd_videos401, "changemap": cmd_changemap,
-            "worst401": cmd_worst401, "svgsample": cmd_svgsample}
+            "worst401": cmd_worst401, "svgsample": cmd_svgsample, "videos402": cmd_videos402, "helpers402": cmd_helpers402,
+            "worst402": cmd_worst402}
 T203_ONLY = ("final", "videos", "edge", "widths", "epsilon", "worst", "zoom")          # alat T-203a (strokes/ klip, work/t203a/)
 T401_COMMANDS = ("boards", "variants", "videos401", "changemap", "worst401", "svgsample")
 
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("what", choices=[*COMMANDS, "all", "all401"])
+    p.add_argument("what", choices=[*COMMANDS, "all", "all401", "all402"])
+    p.add_argument("--clips-root", type=Path, default=None,
+                   help="folder berisi <klip>/{meta.json,contours/} (default work/clips); T-402: SALINAN scratchpad")
     args = p.parse_args(argv)
-    OUT.mkdir(parents=True, exist_ok=True)
-    OUT401.mkdir(parents=True, exist_ok=True)
-    names = (list(COMMANDS) if args.what == "all" else list(T401_COMMANDS) if args.what == "all401" else [args.what])
+    if args.clips_root is not None:
+        global CLIPS
+        CLIPS = args.clips_root
+    if args.what in T402_COMMANDS or args.what == "all402":
+        OUT402.mkdir(parents=True, exist_ok=True)
+    else:
+        OUT.mkdir(parents=True, exist_ok=True)
+        OUT401.mkdir(parents=True, exist_ok=True)
+    names = (list(COMMANDS) if args.what == "all" else list(T401_COMMANDS) if args.what == "all401"
+             else list(T402_COMMANDS) if args.what == "all402" else [args.what])
     for name in names:
         print(f"== {name}")
         COMMANDS[name]()

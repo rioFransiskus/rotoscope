@@ -1,4 +1,4 @@
-"""Noise deterministik tanpa dependensi (T-401): value noise 2D dari hash bilangan bulat 64-bit, numpy murni.
+"""Noise deterministik tanpa dependensi (T-401, T-402): value noise 2D / 3D dari hash bilangan bulat 64-bit, numpy murni.
 
 Hasil identik antar run / proses / mesin (hanya aritmetika uint64 + float64). Keluaran DINORMALISASI [-1, 1] oleh konstruksi:
 nilai lattice seragam di [-1, 1) lalu kombinasi konveks (fade kuintik + interpolasi bilinear), jadi tidak bisa keluar rentang.
@@ -18,6 +18,7 @@ SHIFT_A, SHIFT_B, SHIFT_C = 30, 27, 31
 MANTISSA_SHIFT = 11                   # 64 − 53 bit
 MANTISSA_SCALE = float(1 << 53)
 FADE_A, FADE_B, FADE_C = 6.0, 15.0, 10.0   # 6t⁵ − 15t⁴ + 10t³
+TIME_BLEND_ANGLE = float(np.pi / 2)        # sudut campuran equal-power pada f = 1 (T-402, docs/04: linear > smoothstep)
 
 
 def _mix_int(x: int) -> int:
@@ -56,6 +57,43 @@ def lattice(seed: np.uint64, ix: np.ndarray, iy: np.ndarray) -> np.ndarray:
 
 def fade(t: np.ndarray) -> np.ndarray:
     return t * t * t * (t * (t * FADE_A - FADE_B) + FADE_C)
+
+
+def lattice3(seed: np.uint64, ix: np.ndarray, iy: np.ndarray, iz: np.ndarray) -> np.ndarray:
+    """Nilai acak seragam [-1, 1) pada titik lattice 3D bilangan bulat (ix, iy, iz = indeks gambar). T-402."""
+    with np.errstate(over="ignore"):
+        a = np.asarray(ix, dtype=np.int64).astype(U64) * U64(GOLDEN)
+        b = np.asarray(iy, dtype=np.int64).astype(U64) * U64(MIX_C1)
+        c = np.asarray(iz, dtype=np.int64).astype(U64) * U64(MIX_C2)
+        h = _mix(_mix(_mix(a + seed) ^ b) ^ c)
+    return (h >> U64(MANTISSA_SHIFT)).astype(np.float64) / MANTISSA_SCALE * 2.0 - 1.0
+
+
+def _slab_2d(seed: np.uint64, ix, iy, tx, ty, iz: int) -> np.ndarray:
+    z = np.full(ix.shape, iz, dtype=np.int64)
+    n00, n10 = lattice3(seed, ix, iy, z), lattice3(seed, ix + 1, iy, z)
+    n01, n11 = lattice3(seed, ix, iy + 1, z), lattice3(seed, ix + 1, iy + 1, z)
+    return (n00 * (1 - tx) + n10 * tx) * (1 - ty) + (n01 * (1 - tx) + n11 * tx) * ty
+
+
+def value_noise_3d(seed: np.uint64, x: np.ndarray, y: np.ndarray, t: float) -> np.ndarray:
+    """Value noise 3D di [-1, 1]; (x, y) dalam satuan sel lattice, t = koordinat waktu dalam satuan sel lattice waktu.
+
+    Spasial: bilinear + fade kuintik per irisan waktu (lattice bilangan bulat). Waktu: dua irisan bertetangga dicampur
+    EQUAL-POWER (cos θ, sin θ; θ = f · π/2, f = bagian pecahan t, linear: kecepatan sudut tetap) lalu di-clamp ke [-1, 1] —
+    varians tetap (trilinear membuat RMS turun ±30% di tengah sel waktu) dan rentang dijamin oleh clamp. Pada t bilangan
+    bulat hasilnya = irisan itu sendiri (tanpa campuran)."""
+    x0, y0 = np.floor(x), np.floor(y)
+    tx, ty = fade(x - x0), fade(y - y0)
+    ix, iy = x0.astype(np.int64), y0.astype(np.int64)
+    z0 = int(np.floor(t))
+    f = float(t) - z0
+    a = _slab_2d(seed, ix, iy, tx, ty, z0)
+    if f == 0.0:
+        return a
+    b = _slab_2d(seed, ix, iy, tx, ty, z0 + 1)
+    theta = f * TIME_BLEND_ANGLE
+    return np.clip(a * np.cos(theta) + b * np.sin(theta), -1.0, 1.0)
 
 
 def value_noise_2d(seed: np.uint64, x: np.ndarray, y: np.ndarray) -> np.ndarray:

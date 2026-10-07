@@ -56,7 +56,7 @@ def make_strokes(work: Path, cfg, *, n: int = te.N, w: int = te.W, h: int = te.H
           "frame_size": {"width": w, "height": h}, "vectorize_hash": "c" * 64, "created_utc": created_utc}
     (cdir / "manifest.json").write_text(json.dumps(cm), encoding="utf-8")
     ow, oh = w * SCALE, h * SCALE
-    sm = {"stage": "stylize", "contract": "T-401", "algo_rev": 1, "style": "t", "style_hash": "d" * 64,
+    sm = {"stage": "stylize", "contract": "T-402", "algo_rev": 1, "style": "t", "style_hash": "d" * 64,
           "contours": {k: cm[k] for k in ("contract", "vectorize_hash", "algo_rev", "created_utc")},
           "frame_size": {"width": w, "height": h}, "clip": ident, "output_width": ow,
           "output_size": {"width": ow, "height": oh}, "created_utc": "2026-10-03T01:00:00+00:00"}
@@ -97,7 +97,7 @@ def test_strokes_end_to_end(tmp_path):
                           "color_range": "tv"}
     m = read_json(out / "meme_clip.export.json")
     assert m["source"] == "strokes" and "stable" not in m
-    assert m["strokes"] == {"contract": "T-401", "style_hash": "d" * 64, "created_utc": "2026-10-03T01:00:00+00:00",
+    assert m["strokes"] == {"contract": "T-402", "style_hash": "d" * 64, "created_utc": "2026-10-03T01:00:00+00:00",
                             "output_size": {"width": te.W * SCALE, "height": te.H * SCALE}}
     assert m["encoded_size"] == m["strokes"]["output_size"] and m["frame_size"] == {"width": te.W, "height": te.H}
     assert m["color_tags"] == ex.COLOR_TAGS
@@ -363,16 +363,17 @@ def test_changed_strokes_unedited_svgs_are_recopied(tmp_path):
 
 
 def test_old_contract_strokes_rejected_then_new_svgs_recopied_as_stale_not_as_user_edit(tmp_path):
-    """T-401: strokes T-203a ditolak ("jalankan stylize"); setelah dihitung ulang (contract T-401, SVG berubah) salinan SVG lama di
+    """T-402: strokes T-203a / T-401 ditolak ("jalankan stylize"); setelah dihitung ulang (contract T-402, SVG berubah) salinan SVG lama di
     out/svg/<nama>/ disalin ulang sebagai BASI — bukan dianggap suntingan pengguna (tidak ada StageError, tanpa --restart)."""
     cfg, work, out = clip_strokes(tmp_path)
     ex.run_export(cfg, log=quiet)
     old_copy = {p.name: p.read_bytes() for p in svg_dir(out).glob("frame_*.svg")}
-    edit_json(work / "strokes" / "manifest.json", contract="T-203a")
-    with pytest.raises(StageError, match=r"contract 'T-203a'.*T-401.*stylize"):
-        ex.run_export(cfg, log=quiet)
-    assert {p.name: p.read_bytes() for p in svg_dir(out).glob("frame_*.svg")} == old_copy       # ditolak sebelum menyentuh SVG
-    make_strokes(work, cfg, tag="<path d='M0 0 1 1 Z'/>", created_utc="2026-10-06T00:00:00+00:00")   # = stylize T-401 baru
+    for old in ("T-203a", "T-401"):
+        edit_json(work / "strokes" / "manifest.json", contract=old)
+        with pytest.raises(StageError, match=rf"contract '{old}'.*T-402.*stylize"):
+            ex.run_export(cfg, log=quiet)
+        assert {p.name: p.read_bytes() for p in svg_dir(out).glob("frame_*.svg")} == old_copy       # ditolak sebelum menyentuh SVG
+    make_strokes(work, cfg, tag="<path d='M0 0 1 1 Z'/>", created_utc="2026-10-06T00:00:00+00:00")   # = stylize T-402 baru
     run = ex.run_export(cfg, log=quiet)
     assert run["svg"]["stale"] == te.N and run["svg"]["copied"] == te.N
     for i in range(te.N):

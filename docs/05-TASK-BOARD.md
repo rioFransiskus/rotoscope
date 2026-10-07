@@ -1389,6 +1389,7 @@ Tiga langkah, jadikan refleks:
 - **Done when:** ada nilai default yang kamu setujui secara artistik
 - **Catatan:** ini penilaian mata, bukan metrik. Tidak bisa didelegasikan ke Claude Code
 - **Update log:**
+  - [2026-10-07] Dari T-402 (keputusan Rio): jitter default MATI (terasa acak-acakan), sehingga boil yang tampil hanya dari segmentasi + tebal / taper T-401 → T-304 ditinjau ulang setelah multipass / tekstur (T-403 / T-404) dan peninjauan ulang jitter; "merayap" (garis melewati medan jitter) = bahan stabilisasi.
   - [2026-10-06] Dari T-302 / T-303 (keputusan Rio): bukti T-302 = perbandingan b 0 vs 0,3 "tidak jelas". Pembandingan yang bermakna butuh rentang lebar {0; 0,3; 0,6; 1,0} dan DITUNDA sampai
     jitter / variasi tebal (Phase 4) terlihat, karena boil yang diinginkan datang dari jitter (T-402), bukan dari derau segmentasi
   - [2026-10-05] Dari T-302: default b = 0,3. Penilaian Rio `after_a0.7_b0` vs `after_a0.7_b0.3`: "b0 terlihat lebih bersih" — TIDAK jelas. Pembanding terukur (α 0,7,
@@ -1460,11 +1461,66 @@ Tiga langkah, jadikan refleks:
     max(`shape.resample_points`, ceil(panjang / jarak maks))) untuk tebal per titik; loop dikenali dari titik akhir = titik awal
     (taper tidak menipiskan sambungan); satuan = px ref × `unit` (docs/02)
 
-### T-402 · Jitter deterministic · `TODO`
+### T-402 · Jitter deterministic · `DONE` (default MATI)
 - **Kerjakan:** Perlin noise per titik, seed = `hash(frame_index, param_seed, track_id)`,
   `temporal_drift` untuk perubahan antar frame
 - **⚠️ Pitfall P-007:** random murni = tidak reproducible, tidak bisa di-debug
+- **Rencana final (Tahap 1 disetujui Rio 2026-10-06; keputusan lengkap: docs/04 "Keputusan T-402"):** medan perpindahan KOHEREN vektor 2D (bukan per strok, bukan
+  sepanjang normal) + komponen independen `jitter.stroke_independence`; noise 3D (x, y, indeks gambar × `temporal_drift`), equal-power + clamp pada sumbu waktu;
+  `hold_frames`; pelunakan tepi; penjaga lipatan. Seed lama `hash(frame_index, param_seed, track_id)` DIGANTI (D-010 / P-007; alasan di docs/04). Spesifikasi: docs/01 [5] "Jitter".
 - **Update log:**
+  - [2026-10-07] **Tahap 4 — DONE, jitter default MATI (keputusan Rio atas penilaian visual; docs/04 "Hasil T-402").** Penilaian: semua varian (hold / drift / amplitudo / frequency) terasa acak-acakan, bentuk tubuh lebih jelas tanpa jitter,
+    "merayap" sedikit, pola loncat s > 0 mengganggu → default final: `jitter.amplitude` 0; frequency 0,053; mode "frame"; drift 0,35; `hold_frames` 2 (config.py + `rough-sketch.yaml` + docs/02 satu langkah); `stroke_independence` 0; `param_seed` 0.
+    `JITTER_FOLD_R_WARN` 0,25 → 0,19 (+ test, docs/01, 02, 04). Kesan hidup datang dari tebal + taper T-401. Fitur tetap tersedia lewat style (amplitudo > 0).
+    **Run default** (`run samples/test_short.mp4`, `samples/test.mp4`; tanpa GPU; exit 0): strokes dihitung ulang (contract T-401 → T-402), export di-encode ulang; BUKTI: 238 + 566 berkas `strokes/frame_*.svg|png` IDENTIK dengan T-401, `out/*.mp4` sha256 = `before_t401_*`
+    (`test_short` 1580cbec…, `test` 13c6b2a9…), `out/svg` identik (0 disalin, 0 basi diperbarui: byte sama); `frames` / `seg` / `depth` / `stable` / `contours` tidak berubah. Waktu: `test_short` 48,2 s (stage [5] 18,2 s), `test` 91,6 s ([5] 48,3 s); MP4 1138,0 / 3060,6 KiB.
+    Suite penuh: **1046 lolos, 2 skip** (GPU; 3 test data nyata kini berjalan). Test disesuaikan: peringatan lipatan 0,19, default hold 2 / amplitudo 0, hash style (hold 3).
+    **Catatan lanjutan:** (1) tinjau ulang jitter SETELAH multipass (T-403) / tekstur (T-404); (2) T-304 (`boil_preserve`) ditinjau ulang; (3) taper oklusi (pop 0,39–0,41 × width_base) tetap TIDAK dikerjakan;
+    (4) "merayap" dicatat sebagai bahan T-304 / stabilisasi. Papan: Phase 4 = 2/6, total 25/38. Salinan scratch `work/t402_scratch/` dibersihkan setelah hash klip asli terbukti identik; `T402-prompt.md` dihapus.
+  - [2026-10-06] **Tahap 1 (LAPORAN LENGKAP; hanya baca; satu-satunya perubahan repo = status WIP).** Pengukuran prototipe atas `contours/` kedua klip (`test_short` tiap 4 frame, `test`
+    tiap 8; satuan px ref = px output): **(a) sambungan** (488 / 564 sambungan nyata, hampir semua `group_boundary`; celah awal p50 1,4–1,5, p95 4,5, maks 6,1–7,6), amplitudo 4, perubahan
+    |jarak ujung ke strok lain| p95 / maks (`test`): koheren vektor 0,74 / 2,4; koheren skalar-normal 3,3 / 6,7; independen 2D 3,6 / 5,7; independen 1D arc-length 4,8 / 9,2; campuran s = 0,25 2,1 / 4,9; amplitudo 8:
+    koheren 1,5 / 4,8, independen 1D 8,7 / 18,4; sambungan terbuka > 3 px (amplitudo 4): 0 vs 38 / 56 / 91; seam 1D retak p50 1,6–2,0 px (amplitudo 4) sampai 4,4–5,0 (amplitudo 8) vs interior p95 0,7–1,6;
+    persilangan baru koheren 0 (amplitudo ≤ 6; pengecualian 2 kasus sub-px di ujung batas grup ↔ siluet, frame 216 / 248) vs 46–173 independen; amplitudo 8 koheren 18–20 (lipatan). → data MENDUKUNG koheren + vektor
+    (catatan: sambungan koheren tidak persis diam, p95 ≈ 0,2 × amplitudo, maks ≈ 0,6 × amplitudo karena celah data ≤ 8 px × gradien). **(b) Jacobian** (3 seed × 4 waktu × 64² sel, skala-invarian pada r = amplitudo / λ):
+    min det 2×19: 0,50; 4×19: 0,17; 6×19: −0,24 (0,1% area < 0); 8×19: −0,76 (1,5%); 8×38: 0,17; 4×9: −0,90; tidak ada lipatan dijamin bila r < 0,20 (gradien maks 4,94 / sel); campuran s = 0,5 gradien ×1,15;
+    ambang 0,3 contoh ditolak (nilai awal 4×19 min det 0,17) → ambang `JACOBIAN_MIN_DET` 0,05 pada titik strok. **(c) waktu / korelasi:** RMS per kanal 0,40–0,47 × amplitudo; panjang korelasi ρ 0,5 = 0,64 sel
+    (12 px pada frequency 0,053); korelasi gambar berurutan (trilinear) 0,96 / 0,81 / 0,46 / 0,00 untuk drift 0,15 / 0,35 / 0,7 / 1,0 (lag 2: 0,85 / 0,46 / 0,01 / 0); trilinear membuat RMS bernapas 0,32–0,46 (−30%) vs
+    equal-power 0,44–0,47 (±1% terpotong clamp); energi perubahan per gambar / RMS ≈ 0,23 / 0,54 / 1,0 / 1,4 (hold 1), ½ (hold 2), ⅓ (hold 3). **(d) tepi:** ujung ekstensi per frame `test_short` p50 2 / maks 4 (336 ujung),
+    `test` p50 4 / p95 8,9 / maks 13 (1153 ujung); margin sekarang 7,75 px: tertarik masuk (> 0,25 px) pada `test` 4 / 18 / 39 dari 198 ujung (amplitudo 4 / 6 / 8; 10 > 2 px pada 8; maks 4,1 px); margin + amplitudo → 0 tertarik TETAPI
+    tinta 3 baris / kolom terluar tetap berubah (34 / 80 piksel pada amplitudo 2; 113 / 180 pada 8); pelunakan φ (zona mati ≥ 7,75, ramp 40) → 0 piksel berubah dan 0 ujung tertarik pada amplitudo 2–8 (7 frame); hanya 2–5% titik berada di zona φ < 0,5;
+    Jacobian pita tepi tidak memburuk. **(e) biaya:** stage [5] CLI nyata 3 run bersih per klip: rata-rata 170,7–171,8 (`test_short`) / 172,1–177,0 ms (`test`), p95 192–203, maks 202–309, 0 frame > 400, 0–3 > 250;
+    rincian rata-rata: geometri (`stroke_pieces`) 34, `render_mask` 29, compose + encode PNG 80, SVG 13, `free_ends` 3,3, tebal 2,3, resample 1,0, baca JSON 2,0; noise 3D vektor 1,8 / 2,5 / 4,2 ms untuk 2500 / 5000 / 7000 titik (s = 0), 3,6–7,4 ms (s = 0,5);
+    MP4 prototipe `test_short` crf 18: T-401 1138 KiB → hold 1 1376 (+21%), hold 2 1335 (+17%), amplitudo 8 1615 (+42%); selisih 153–157 vs 198 / 235 ms: hasil bersih 171–177 berada di antaranya (dugaan: angka lama tanpa baca JSON + tulis ±8 ms; 198 / 235 diambil dalam rantai
+    `run` penuh dengan beban mesin); tidak bisa dipastikan. **(f) kode:** urutan `stroke_pieces → resample_piece → free_ends → width_profile → render`; titik jitter = setelah `width_profile`, sebelum render.
+    **Keputusan Rio atas rencana:** lihat docs/04 "Keputusan T-402" (equal-power + clamp; B(s); `JACOBIAN_MIN_DET` 0,05; pelunakan tepi; penjaga lipatan r > 0,25; papan r ≤ 0,21; efek gerak vs waktu; risiko s > 0).
+    `git status --short` akhir Tahap 1 (mentah): ` M docs/05-TASK-BOARD.md` dan `?? T402-prompt.md`. Berkas Tahap 1 (scratchpad, di luar repo, kemudian tidak tersedia): skrip + JSON pengukuran (90 MB).
+  - [2026-10-06] **Tahap 2–3 (implementasi + pengukuran; status tetap WIP, menunggu penilaian visual Rio).** Dibuat / diubah: `noise.py` (`lattice3`, `value_noise_3d`), `config.py` (`jitter.hold_frames`, `jitter.stroke_independence` + validasi),
+    `stylize.py` (contract `"T-402"`, `jitter_pieces` / `jitter_displacement` / `edge_fade` / `jitter_image_index`, `base_pieces` vs `frame_pieces`, penjaga lipatan `fold_warning`, manifest `jitter`, parameter aktif), `export.py`
+    (`SUPPORTED_STROKES_CONTRACTS` = {"T-402"}), `configs/styles/rough-sketch.yaml` (parameter baru; nilai default amplitudo dst. TIDAK diubah sampai Tahap 4), docs/01, 02, 04, `tests/jitter_metrics.py`, `tests/test_stylize_jitter.py`,
+    `scripts/t402_mutations.py`, `scripts/t402_measure.py`, `scripts/strokes_preview.py` (perintah `videos402`, `helpers402`, `worst402`). Hasil Tahap 3: lihat entri berikutnya.
+  - [2026-10-06] **Tahap 3 — angka (status tetap WIP; TIDAK ada klaim kualitas visual; menunggu review angka + penilaian Rio).** Semua pada SALINAN klip (`work/t402_scratch/`, ter-ignore git; scratchpad sesi menjadi tidak tersedia
+    di tengah Tahap 3 → salinan dipindah ke dalam `work/` = penyimpangan F2, dilaporkan); klip asli diverifikasi tidak berubah (hash `frames` / `seg` / `depth` / `stable` / `contours` / `strokes` / `out`, 13 kelompok, sebelum = sesudah).
+    **Regresi amplitudo 0:** CLI nyata, 804 berkas (`test_short` 238, `test` 566) BYTE-IDENTIK dengan `strokes/` klip asli T-401 (`before_strokes_*.sha256`) untuk style amplitudo 0 DAN amplitudo 0 + `hold` 3 / `stroke_independence` 0,7 / `frequency` 0,2 /
+    mode fixed / drift 0,9; MP4 hasil export amplitudo 0 `test_short` sha256 = `before_t401_test_short.mp4` (1580cbec…). **Determinisme / resume** (nilai evaluasi): dua run dari nol identik, `--limit 20` = awalan run penuh, resume (5 frame dihapus) identik,
+    `--from 100 --limit 10` = frame yang sama dari run penuh, `run --preview 10 --from 100` (frame dihitung ulang) = hash run penuh, basi (hold 3) dihitung ulang lalu kembali ke setelan awal identik; kedua klip. Salinan SVG `out/svg/test_short/` dari strokes T-401-identik → setelah
+    strokes T-402: `119 disalin, 119 basi diperbarui` (bukan suntingan pengguna; exit 0). **Biaya** (nilai evaluasi amplitudo 4 / 0,053 / drift 0,35 / hold 2 / s 0; 3 run bersih CLI per klip; pembanding A/B amplitudo 0 pada mesin yang sama):
+    `test_short` rata-rata 180,0 ms (jitter mati 176,3), p95 212,2, maks 263,1, 1 dari 357 frame > 250, 0 > 400; `test` rata-rata 182,3 (jitter mati 182,0), p95 214,1, maks 254,1, 1 dari 849 > 250, 0 > 400; jitter sendiri 2,4 ms per frame; anggaran 400 ms terpenuhi.
+    Catatan pengukuran: run pertama saat mesin dibebani proses lain (±208 ms) tidak dipakai; selisih 153–157 vs 198 / 235 ms (T-401) tetap tidak terpecahkan, hasil bersih konsisten 171–183 ms. Ukuran per frame: PNG 73,6 / 74,6 KiB (T-401 70,0 / 71,6; +5%), SVG 89,9 / 91,9 KiB (tidak berubah) →
+    PNG 8,6 / 20,6 MiB, SVG 10,4 / 25,4 MiB per klip; memori puncak 130,5–132,7 MiB (working set); MP4 crf 18: `test_short` 1362,8 KiB vs 1138,0 (+19,8%), `test` 3599,5 vs 3061 (+17,6%) pada hold 2 (prototipe Tahap 1: hold 1 +21%, amplitudo 8 +42%).
+    **Invarian keselamatan** (seluruh frame kedua klip: 119 + 283; s = 0; `tests/jitter_metrics.py`): |D| ≤ batas: lulus di semua konfigurasi (maks tepat = batas); sambungan |Δ celah| ≤ toleransi (3,2 × r × join_dist): 0 pelanggaran (1919 / 4190 sambungan; p95 0,95–2,25, maks 1,48–4,0 px);
+    persilangan baru 0 pada semua r ≤ 0,212; tinta 3 baris / kolom terluar berubah 0 piksel; ujung ekstensi tertarik 0 frame; RMS / amplitudo 0,438–0,444. **Jacobian (min det pada titik strok; ambang > 0,05):** r 0,106 (2 × 0,053): 0,44–0,48 lulus; r 0,159 (3 × 0,053): 0,24–0,27 lulus; r 0,18 (3,4 × 0,053): 0,14–0,15 lulus;
+    r 0,21–0,212 (4 × 0,053; 6 × 0,035; 8 × 0,0265): min det −0,031…+0,015, **GAGAL ambang pada 2–17 frame** (4 × 0,053: 7 dari 119 dan 17 dari 283 frame; −0,028 / −0,031 = lipatan kecil di ekor distribusi; tanpa persilangan baru); r 0,424 (LIPATAN 8 × 0,053): min det −1,40 / −1,38 di semua frame, persilangan baru 22 / 55 (13 / 24 frame).
+    → Temuan untuk keputusan Rio: nilai evaluasi awal r ≈ 0,21 berada TEPAT di batas ambang Jacobian 0,05 (aman pada r ≤ 0,18); `JITTER_FOLD_R_WARN` 0,25 (keputusan Rio) lebih longgar dari batas terukur ±0,19–0,20.
+    **Revisi metrik dari rencana (dicatat docs/04):** toleransi sambungan 0,7 × amplitudo (subset Tahap 1) DIGANTI 3,2 × r × join_dist (seluruh klip maks 1,0 × amplitudo pada 0,053 tetapi 0,4–0,6 pada frequency rendah; Δ ∝ r × celah); persilangan baru = pasangan yang tidak bersilang sebelum jitter
+    (versi awal "sesudah − sebelum" menghitung 1 → 2 pada pasangan batas grup ↔ siluet yang sudah bertumpuk, dan melewati radius 8 px). **Gerak vs waktu (informasi; |ΔD| / amplitudo antar frame berurutan, titik berpadanan per `track_id` + tipe ≤ 3 px):** titik DIAM (akibat WAKTU), hold 1: p50 0,24–0,28, p95 0,49–0,59, maks 0,70–0,97;
+    hold 2: p50 0,04–0,14, p95 0,49–0,56 (setengah frame persis nol); titik BERGERAK ≥ 2 px (waktu + gerak), hold 1: p50 0,28–0,32, p95 0,59–0,62, maks 0,78–1,03; mode `fixed` (GERAK saja): titik diam 0,009–0,014 (≈ 0), titik bergerak p50 0,09–0,11, p95 0,31–0,34, maks 0,52–0,64 (≈ 0,4 / 1,3 / 2,5 px pada amplitudo 4);
+    per tipe hampir sama. **Loncatan id (item 8):** `track_id` baru per strok-frame: silhouette 0–0,6%, lubang 12,7–15,0%, batas grup 5,3–8,1%, oklusi 35,4–44,0%; loncatan komponen G saat id berganti, |ΔD| / amplitudo (posisi sama, id lama vs baru): s 0,25 p50 0,36–0,38 p95 0,77–0,80; s 0,5 p50 0,51–0,54 p95 1,08–1,14; s 1,0 p50 0,72–0,76 p95 1,53–1,61, maks 2,36 (≈ 1,4 / 2,1 / 2,9 px p50 pada amplitudo 4).
+    **Mutation check** (`scripts/t402_mutations.py`, `work/t402/mutations.json`): 14 dari 14 mutasi menggagalkan test (independen per strok menggantikan medan; perpindahan sepanjang normal; indeks gambar relatif jendela; hold diabaikan; `frame_index` bocor ke seed; stream jitter = stream tebal; amplitudo tanpa unit;
+    bobot campuran tidak menjaga varians; pelunakan tepi mati; zona mati tepi nol; amplitudo 0 tidak identik; sumbu waktu trilinear; penjaga lipatan mati; noise tidak dibatasi). **Suite penuh:** 1043 lolos, 5 skip (62 test baru di `tests/test_stylize_jitter.py`; skip: 2 GPU + 3 data nyata yang
+    mensyaratkan `strokes/` klip asli contract T-402, belum dihitung ulang sampai Tahap 4). **Keluaran visual** (`work/t402/`, dari salinan; tidak dibuka oleh model): 65 video papan `v402_*.mp4` ([T-401 | varian], 2168×1922, jendela statis otomatis `statis` = frame 25–36 (aturan T-302, 12 frame) + `cepat1` 73–92 + `cepat2` 183–202;
+    set amplitudo {2 @ 0,053; 4 @ 0,053; 6 @ 0,035; 8 @ 0,0265} + LIPATAN (informasi) r = 0,424, frequency {×0,5; ×1; ×2}, hold {1; 2; 3} × drift {0,15; 0,35; 1,0}, `stroke_independence` {0; 0,25; 0,5; 1,0} @ frequency 0,037 dengan strok `track_id` baru berwarna merah, plus `v402_fixed_vs_frame_cepat1|2.mp4` 3 panel), `helper_*.png`
+    (strip 3 frame ditumpuk, sambungan T, seam tertutup, garis sejajar dekat, tikungan rapat, tepi bawah f233, tepi kanan), `worst402_*.png` + `worst402_summary.json`. Status git akhir Tahap 3 (mentah): lihat laporan.
   - [2026-10-06] Catatan dari T-401 (keputusan Rio, tidak dikerjakan di T-401): (a) taper dapat distabilkan dengan memperhalus panjang strok lewat `track_id` pada ±2 frame (fungsi input, bukan rantai
     keluaran); (b) noise tebal T-401 (medan 2D terkunci posisi, statis) dipakai ulang dengan koordinat waktu untuk boil; (c) boil "on twos" (ganti pola tiap 2 frame)
   - [2026-10-03] Jitter terkunci posisi ditunda ke sini (keputusan Rio, T-203a): `points[0]` garis terbuka melompat 60–127 px,
@@ -1549,11 +1605,12 @@ Tiga langkah, jadikan refleks:
 | 1 Skeleton | T-101 … T-108 (T-102 → a/b/c, T-104 → a/b) — ✅ **Phase 1 selesai** (🎯 milestone T-104b, T-107 DONE) | 11/11 |
 | 2 Vectorize | T-201 … T-204 (T-201 → a/b, T-203 → a/b) — T-201a ✅, T-201b ✅ DONE (dengan batas kaki), T-202 ✅ DONE, T-203a ✅ DONE, T-203b ✅ DONE, T-204 ✅ DONE — 🎯 **Milestone Phase 2 tercapai** | 6/6 |
 | 3 Stabilize | T-301 … T-305 (T-301 SKIP, T-303 SKIP) — T-302 ✅ DONE (temporal tanpa flow); T-303 SKIP (optical flow ditolak berdasarkan data, docs/04) | 1/5 |
-| 4 Style | T-401 … T-406 — T-401 ✅ DONE (tebal variabel + taper + resample, contract "T-401") | 1/6 |
+| 4 Style | T-401 … T-406 — T-401 ✅ DONE (tebal variabel + taper + resample, contract "T-401"), T-402 ✅ DONE (jitter koheren, contract "T-402", default MATI) | 2/6 |
 | 5 Fallback | T-501 … T-502 (BLOCKED) | 0/2 |
 | 6 Opsional | T-601 … T-603 | 0/3 |
 
-**Total: 38 task** (5 + 11 + 6 + 5 + 6 + 2 + 3) · Selesai: 24/38 (5 + 11 + 6 + 1 + 1; SKIP — T-301, T-303, T-601 — tidak dihitung selesai).
+**Total: 38 task** (5 + 11 + 6 + 5 + 6 + 2 + 3) · Selesai: 25/38 (5 + 11 + 6 + 1 + 2; SKIP — T-301, T-303, T-601 — tidak dihitung selesai).
+Rekonsiliasi 2026-10-07: T-402 DONE → Phase 4 = 2/6, total 25/38 (5 + 11 + 6 + 1 + 2 = 25; jumlah per Phase = total). T-304 (`boil_preserve`) ditinjau ulang setelah multipass / tekstur.
 Rekonsiliasi 2026-10-06: T-401 DONE → Phase 4 = 1/6, total 24/38 (5 + 11 + 6 + 1 + 1 = 24; jumlah per Phase = total).
 Catatan Phase 3 (2026-10-06): tuas stabilisasi grup tuntas (T-302); pop garis akhir tidak membaik oleh tuas yang diukur (flow, α adaptif, ambang lubang / oklusi; docs/04 "Hasil T-303 (ditolak)");
 evaluasi ulang di Phase 4 (jitter / variasi tebal); T-305 menunggu klip kedua.

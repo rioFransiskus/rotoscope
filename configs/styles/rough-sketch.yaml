@@ -33,11 +33,13 @@ stroke:
 
 # ── JITTER (hand-drawn feel) ───────────────────────
 jitter:
-  amplitude: 4.0             # pergeseran titik (px ref). 0 = garis mekanis
-  frequency: 0.053           # skala noise (per px ref). Kecil = gelombang panjang
-  temporal_seed_mode: "frame"  # "frame" = getar tiap frame | "fixed" = diam
-  temporal_drift: 0.35       # seberapa cepat pola jitter berubah antar frame
-  param_seed: 0              # seed = hash(frame_index, param_seed, track_id) — P-007
+  amplitude: 0.0             # PUNCAK pergeseran per kanal (px ref); |D| ≤ amplitude × √2. 0 = jitter MATI (default; byte-identik T-401). Penilaian visual T-402: semua varian terasa acak-acakan
+  frequency: 0.053           # skala noise (per px ref; sel = 1 / frequency). Kecil = gelombang panjang. 0 = jitter mati. r = amplitude × frequency > 0,19 → peringatan lipatan
+  temporal_seed_mode: "frame"  # "frame" = getar tiap gambar | "fixed" = diam (indeks gambar 0)
+  temporal_drift: 0.35       # sel waktu per gambar: 0 = beku, 1 = tiap gambar independen
+  param_seed: 0              # seed noise tebal (T-401) dan dasar seed jitter (stream terpisah, salt berbeda) — P-007
+  hold_frames: 2             # "gambar" jitter diperbarui tiap N frame (indeks gambar = floor(frame_index / N)); 1 = tiap frame, 2 = "on twos"
+  stroke_independence: 0.0   # 0 = medan koheren saja (sambungan tetap menyambung), 1 = getar independen per track_id; menjaga RMS
 
 # ── MULTI-PASS (kesan sketsa ditimpa) ──────────────
 multipass:

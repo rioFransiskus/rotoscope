@@ -24,7 +24,7 @@ S = 10.8                              # px output per px kerja (1080 / 100)
 def mk(**ov):
     """Style 1080: tebal konstan, taper hidup (taper_min 0,2), resample minimum 4 — override per test."""
     base = {"render.output_width": 1080, "stroke.width_base": BASE, "stroke.width_variation": 0.0, "stroke.taper_ends": True,
-            "stroke.taper_px": 45.0, "stroke.taper_min": 0.2, "shape.resample_points": 4}
+            "stroke.taper_px": 45.0, "stroke.taper_min": 0.2, "shape.resample_points": 4, "jitter.amplitude": 0.0}
     return load_style(None, overrides={**base, **ov})
 
 
@@ -359,7 +359,10 @@ def test_new_active_params_change_style_hash():
                {"stroke.taper_ends": False}, {"shape.resample_points": 16}, {"jitter.param_seed": 3},
                {"stroke.by_type.occlusion.taper_ends": False}):
         assert sty.params_hash(sty.style_params(load_style(None, overrides=ov))[0]) != h0, ov
-    assert sty.params_hash(sty.style_params(load_style(None, overrides={"jitter.amplitude": 9.0}))[0]) == h0     # tak aktif
+    for ov in ({"jitter.amplitude": 9.0}, {"jitter.frequency": 0.1}, {"jitter.temporal_seed_mode": "fixed"}, {"jitter.temporal_drift": 0.5},
+               {"jitter.hold_frames": 3}, {"jitter.stroke_independence": 0.5}):
+        assert sty.params_hash(sty.style_params(load_style(None, overrides=ov))[0]) != h0, ov          # aktif sejak T-402
+    assert sty.params_hash(sty.style_params(load_style(None, overrides={"multipass.passes": 5}))[0]) == h0     # tak aktif
 
 
 def test_old_contract_strokes_are_stale_and_recomputed(tmp_path):
@@ -372,8 +375,8 @@ def test_old_contract_strokes_are_stale_and_recomputed(tmp_path):
     p.write_text(json.dumps(m), encoding="utf-8")
     logs: list[str] = []
     run = sty.run_stylize(cfg_for(work), style_for(), "t", log=logs.append)
-    assert run["processed"] == 4 and any("contract" in x and "T-401" in x for x in logs)
-    assert json.loads(p.read_text(encoding="utf-8"))["contract"] == "T-401"
+    assert run["processed"] == 4 and any("contract" in x and "T-402" in x for x in logs)
+    assert json.loads(p.read_text(encoding="utf-8"))["contract"] == "T-402"
 
 
 def test_by_type_taper_ends_is_validated_as_optional_bool():
@@ -423,7 +426,7 @@ def test_real_constant_width_regression_vs_t203a_and_fidelity(clip):
     """Tebal konstan (variasi 0, taper mati): renderer baru ≈ T-203a pada strok TANPA resample (IoU, L1, massa) dan deviasi centerline
     tidak bertambah (batas dari ukuran Tahap 1: ≤ +0,1 px)."""
     docs = real_docs(clip, 60)
-    st = load_style(None, overrides={"stroke.width_variation": 0.0, "stroke.taper_ends": False})
+    st = load_style(None, overrides={"stroke.width_variation": 0.0, "stroke.taper_ends": False, "jitter.amplitude": 0.0})
     g = sty.make_geometry(st, 480, 854)
     for d in docs:
         raw = []
@@ -449,7 +452,7 @@ def test_real_end_rules_and_pop_bounds(clip):
     """Aturan ujung pada data nyata + 'pop tebal' B (taper mati): diam p95 ≤ 0,03, bergerak p95 ≤ 0,10 × width_base (ukur Tahap 1:
     0,019 / 0,065) untuk silhouette, lubang, batas grup; juga dilaporkan relatif terhadap tebal tipe sendiri."""
     docs = real_docs(clip, 1)[60:100]
-    st = load_style(None, overrides={"stroke.taper_ends": False})
+    st = load_style(None, overrides={"stroke.taper_ends": False, "jitter.amplitude": 0.0})
     g = sty.make_geometry(st, 480, 854)
     base = st.stroke.width_base * g.unit
     acc = None
@@ -465,7 +468,7 @@ def test_real_end_rules_and_pop_bounds(clip):
         assert res[t]["base_still"]["p95"] <= 0.03 and res[t]["base_move"]["p95"] <= 0.10, (clip, t, res[t])
         assert res[t]["own_move"]["p95"] <= 0.10 + 1e-9
     # aturan ujung bebas dengan taper hidup (semua tipe)
-    st2 = load_style(None)
+    st2 = load_style(None, overrides={"jitter.amplitude": 0.0})
     g2 = sty.make_geometry(st2, 480, 854)
     for d in docs[::8]:
         pieces, _ = sty.frame_pieces(d, g2)

@@ -52,7 +52,7 @@ data antara ±1–5 GB per klip (lihat anggaran disk).
      daripada parameter beda — lihat "Identitas klip".
 5. **Semua parameter di YAML** (`configs/default.yaml` untuk pipeline, `configs/styles/*.yaml`
    untuk style), default = hasil T-102c. Daftar + range: `02-STYLE-PARAMS.md`.
-6. **Deterministic:** seed jitter = `hash(frame_index, param_seed, track_id)` (P-007).
+6. **Deterministic:** jitter = fungsi dari (`frame_index` mutlak lewat indeks gambar, parameter, posisi); seed = hash(`param_seed`, salt, kanal [, `track_id` hanya untuk komponen independen]) — T-402 mengganti `hash(frame_index, param_seed, track_id)` per strok (P-007; docs/04 "Keputusan T-402").
 
 ### Identitas klip (T-108, D-010)
 
@@ -737,7 +737,7 @@ dengan aturan tetap)*:
   **tanpa memandang jarak** (padanan lain yang melibatkan keduanya dilepas). Alasan: lengan yang sebentar terlepas (klip `test`,
   frame 213–266) membuat Chamfer silhouette utama 13–16 px; tanpa Y id utama berganti 10 kali (ambang 12) dan anchor kembali
   ke puncak rambut (lompatan 65 px). Bukan parameter YAML; mengubahnya = perubahan perilaku (`algo_rev` naik).
-- `track_id` dipakai [5] untuk seed jitter. Resample ke N titik tetap dilakukan di [5], mulai dari `points[0]`.
+- `track_id` dipakai [5] hanya untuk komponen independen jitter (`stroke_independence` > 0; T-402). Resample ke N titik tetap dilakukan di [5], mulai dari `points[0]`.
 - ⚠️ **Titik awal garis terbuka tidak stabil secara posisi:** terukur (Y@16, track ≥ 5 frame) titik awal melompat sampai
   60–127 px antar frame saat strok memanjang / memendek (aturan statis juga: 60,9 / 127 px), median 3–4,5 px, p95 18–23 px;
   aturan statis memilih ujung berbeda dari kesinambungan di 7–13% strok-frame. Jitter 1D berbasis panjang busur dari
@@ -749,10 +749,10 @@ dengan aturan tetap)*:
 
 ### [5] `stylize.py` (CPU)
 
-**Status:** **T-203a `DONE`** (garis polos, 2026-10-03) + **T-401 `DONE`** (tebal variabel + taper + resample, 2026-10-06; `contract`
-`"T-401"`): subperintah `python -m rotoscope stylize <video>`; bagian urutan `run`, tabel restart DAG, dan sumber
-`export.source: "strokes"` sejak **T-203b**. Jitter / boil (T-402), multipass, tekstur, opasitas **belum aktif** (Phase 4;
-`ignored_params` di manifest). Preview `--preview N` = T-204. Tanpa GPU: `torch` tidak pernah di-import (diuji di subprocess).
+**Status:** **T-203a `DONE`** (garis polos, 2026-10-03) + **T-401 `DONE`** (tebal variabel + taper + resample, 2026-10-06) + **T-402 `WIP`**
+(jitter koheren + boil, Tahap 2–3 selesai 2026-10-06, menunggu penilaian Rio; `contract` `"T-402"`): subperintah
+`python -m rotoscope stylize <video>`; bagian urutan `run`, tabel restart DAG, dan sumber
+`export.source: "strokes"` sejak **T-203b**. Multipass, tekstur, opasitas **belum aktif** (Phase 4; `ignored_params` di manifest). Preview `--preview N` = T-204. Tanpa GPU: `torch` tidak pernah di-import (diuji di subprocess).
 
 - **In:** `contours/frame_*.json`, `contours/manifest.json`, `meta.json`, style YAML (`--style`, default
   `configs/styles/rough-sketch.yaml`, selain itu default kode); config pipeline (`--config`) hanya untuk `paths.work_dir`.
@@ -772,7 +772,8 @@ dengan aturan tetap)*:
 - **Pipeline geometri per strok (satu geometri untuk SVG dan raster):** skala → penanganan tepi (mode hide) → **penghalusan
   Gaussian arc-length** (`shape.smooth_px`) → `approxPolyDP` (`shape.simplify_epsilon`) → spline Catmull-Rom seragam
   (`shape.smooth_tension`; `shape.spline_steps` = minimum titik per segmen, digandakan sampai galat akor ≤ 0,03 px ref) →
-  ekstensi ujung di tepi → pembulatan 2 desimal (galat ≤ 0,007 px) → **resample arc-length (T-401)** → tebal per titik.
+  ekstensi ujung di tepi → pembulatan 2 desimal (galat ≤ 0,007 px) → **resample arc-length (T-401)** → tebal per titik →
+  **jitter (T-402; lihat "Jitter" di bawah)** → render.
   - **Resample (T-401):** seragam menurut panjang busur dari `points[0]`; `N = max(shape.resample_points, ceil(L / (RESAMPLE_MAX_GAP_REF ×
     unit)) [+1 bila terbuka])`, `RESAMPLE_MAX_GAP_REF` = 2 px ref (jarak titik ≤ 2 px ref, kesetiaan bentuk tidak memburuk: deviasi
     centerline p50 / p95 / maks per tipe sama dengan jalur spline T-203a ±0,01 px). `shape.resample_points` = batas bawah N (default 4).
@@ -816,7 +817,7 @@ dengan aturan tetap)*:
 - **Satu renderer untuk semua `type`**; parameter dasar + override per tipe (`stroke.by_type.*.width_scale`). Loop (`closed: false`
   dengan titik akhir = titik awal) diperlakukan sebagai tertutup. Garis oklusi berkedip digambar apa adanya (tanpa interpolasi antar
   frame; frame tanpa strok = hanya kertas, valid).
-- **Manifest** `strokes/manifest.json` (prinsip #4): `stage`, `contract` `"T-401"` (T-203a → T-401: strokes lama basi otomatis), `algo_rev` (`stylize.ALGO_REV`, mulai 1; naik hanya
+- **Manifest** `strokes/manifest.json` (prinsip #4): `stage`, `contract` `"T-402"` (T-203a / T-401 → T-402: strokes lama basi otomatis), `jitter` (T-402: `on`, `fold_r`, `fold_warn`, `edge_dead_px`, `edge_fade_px`; tidak ikut pencocokan basi), `algo_rev` (`stylize.ALGO_REV`, mulai 1; naik hanya
   untuk perbaikan perilaku; fitur baru menaikkan `contract`), `style` (nama), `style_hash` + `style_params` (HANYA parameter aktif),
   `ignored_params`, `contours` (`contract`, `vectorize_hash`, `algo_rev`, `created_utc`), `clip`, `frame_size` (kerja), `output_width`,
   `output_size`, `scale`, `unit`, `edge_mode`, `coords`, `created_utc`. **Basi** (CPU murah): field berubah → `strokes/` dihapus + dihitung
@@ -829,15 +830,42 @@ dengan aturan tetap)*:
   setelan awal. `manifest.json` / `frames.jsonl` memuat waktu → jangan di-hash.
 - **Parameter style aktif / belum aktif:** docs/02 "Satuan dan parameter aktif (T-203a + T-401)". Aktif tambahan di T-401:
   `shape.resample_points`, `stroke.width_variation`, `stroke.width_noise_scale`, `stroke.taper_ends|px|min`,
-  `stroke.by_type.*.taper_ends`, `jitter.param_seed`.
+  `stroke.by_type.*.taper_ends`, `jitter.param_seed`. Aktif tambahan di T-402: `jitter.amplitude`, `jitter.frequency`,
+  `jitter.temporal_seed_mode`, `jitter.temporal_drift`, `jitter.hold_frames`, `jitter.stroke_independence`.
 - **Metrik + toleransi test (docs/05 T-203):** kesetiaan = jarak titik kontur asli terskala (titik tepi dikecualikan pada hide) ke
   polyline akhir; toleransi sintetis = 0,35 × tebal garis (BUKAN epsilon), data nyata = ambang regresi dari angka terukur. Fungsi:
   `tests/stylize_metrics.py`.
-- ⚠️ **Jitter** (T-402, Phase 4), dengan catatan dari [4]: `points[0]` garis terbuka melompat sampai 60–127 px saat strok memanjang
-  / memendek ([4] "Aturan anchor"); noise berbasis panjang busur dari titik awal akan "pop". **Status setelah T-401:** terukur
-  (docs/04): busur dari `points[0]` pop p95 0,36–0,52 × `width_base`, terkunci posisi 0,055–0,066 → tebal T-401 TERKUNCI POSISI
-  (medan 2D global); jitter T-402 sebaiknya sama (noise yang sama + koordinat waktu; seed `hash(frame_index, param_seed, track_id)`
-  untuk jitter). [5] membaca `points[0]` (bukan `anchor`) dan mengabaikan `prev_sha256`.
+- **Jitter (T-402, Tahap 2–3; keputusan Rio, docs/04 "Keputusan T-402")** — langkah `jitter_pieces` SETELAH resample + tebal per titik, SEBELUM render
+  (arc-length taper, ujung bebas, "bertemu" memakai geometri TANPA jitter; SVG dan raster memakai titik yang SAMA, dibulatkan 2 desimal lagi).
+  - **Model:** medan perpindahan KOHEREN vektor 2D `D(x, y, k) = amplitude × unit × [√(1 − s) F + √s G_track] × φ(d)`, s = `jitter.stroke_independence`.
+    F = dua kanal value noise 3D independen (x dan y; fungsi POSISI + waktu saja: titik di lokasi sama → D sama, jadi sambungan siluet / batas grup /
+    oklusi tetap menyambung, seam strok tertutup tidak retak, garis berdekatan tidak bersilang); G_track = medan sama dengan seed per `track_id`
+    (hanya s > 0; menjaga varians, bukan puncak; batas |D| ≤ amplitude × unit × √2 × (√(1 − s) + √s)). BUKAN sepanjang normal strok (normal
+    siluet dan batas grup berbeda arah di sambungan) dan BUKAN independen per strok (rencana lama D-010: sambungan terbuka sampai 2 × amplitudo, seam retak,
+    garis bersilang). Terukur (amplitudo 4, 488 / 564 sambungan nyata): perubahan |jarak ujung ke strok lain| p95 koheren vektor 0,74–0,86 px vs normal
+    3,3–4,0, independen 2D 3,6–4,0, independen 1D arc-length 4,7–4,8; seam 1D retak p50 1,6–2,0 px.
+  - **Noise 3D** (`noise.value_noise_3d`): hash splitmix64 pada lattice (ix, iy, iz), bilinear + fade kuintik per irisan waktu, irisan bertetangga dicampur
+    EQUAL-POWER (cos θ, sin θ; θ = f · π/2 linear; smoothstep ditolak: berhenti-jalan, kecepatan nol di simpul) lalu clamp [-1, 1] (trilinear: RMS "bernapas"
+    −30%). Value noise (docs/05 menulis "Perlin"). Seed: `seed_of(param_seed, JITTER_SALT_FIELD, kanal)` dan `seed_of(param_seed, JITTER_SALT_TRACK, track_id, kanal)`;
+    stream tebal = `seed_of(param_seed)` tanpa salt (tidak berubah).
+  - **Waktu:** t = k × `temporal_drift`; k = floor(`frame_index` / `hold_frames`) dengan `frame_index` ABSOLUT (`doc["frame_index"]`; bukan relatif jendela
+    `--from` / `--preview`), 0 pada `temporal_seed_mode` "fixed". Tanpa rantai: `--limit`, `--from`, `--preview`, resume = identik dengan run penuh.
+  - **Tepi:** φ(d) = 0 untuk d ≤ `edge_dead` (jarak ke tepi bawah / kiri / kanan; di luar kanvas d < 0), smoothstep sampai 1 pada `edge_dead` +
+    `EDGE_FADE_PX` (40 px ref); `edge_dead` = tebal maks / 2 + `EDGE_MARGIN_PX` dihitung dari style (7,75 px pada default). Tinta di 3 baris / kolom
+    terluar tidak berubah; ekstensi mode hide tidak tertarik masuk. Tepi atas tidak dilunakkan (tidak dipotong [5]).
+  - **Amplitudo 0 (atau frequency 0)** → jitter mati: SVG + PNG byte-identik dengan T-401 untuk nilai parameter jitter lain apa pun.
+  - **Penjaga lipatan:** r = amplitude × frequency × (√(1 − s) + √s); r > `JITTER_FOLD_R_WARN` (0,19) → peringatan satu kali per run (stderr) + `strokes/manifest.json`
+    → `jitter` (`fold_r`, `fold_warn`, `on`, `edge_dead_px`, `edge_fade_px`); tanpa clamp, tanpa error.
+  - **Keselamatan (tests/jitter_metrics.py):** |D| ≤ batas; min det(I + ∇D) > `JACOBIAN_MIN_DET` (0,05) pada titik strok; sambungan (s = 0) |Δ celah| ≤
+    `JITTER_JOINT_TOL_GRAD` (3,2) × r × `join_dist`; persilangan baru (pasangan strok yang tidak bersilang sebelum jitter) = 0 (di luar 8 px dari ujung strok);
+    tinta tepi tidak berubah; ujung ekstensi tertarik 0.
+    Besar getar (amplitudo, frequency, hold, drift, independence) = keputusan MATA Rio, bukan angka.
+  - **Batas yang diketahui (docs/04):** garis yang bergerak melewati medan terkunci posisi berubah perpindahannya (efek GERAK, terpisah dari efek WAKTU);
+    s > 0: pola G loncat saat `track_id` berganti (oklusi ±0,35 per strok-frame); taper / pop oklusi tidak dikerjakan; r > 0,19 diperingatkan (r 0,21 gagal Jacobian 0,05 di 2–17 frame).
+  - **DEFAULT MATI (keputusan Rio, 2026-10-07):** `jitter.amplitude` 0 → stage [5] = T-401 byte-identik; sisa default: frequency 0,053, mode "frame", drift 0,35,
+    `hold_frames` 2, `stroke_independence` 0. Fitur diaktifkan lewat style (docs/02, docs/04 "Hasil T-402").
+  - ✅ **"Jitter terkunci posisi"** (terjawab, T-402): medan koheren fungsi posisi + waktu; `points[0]` / `anchor` tidak dipakai. [5] membaca `points[0]`
+    (bukan `anchor`) dan mengabaikan `prev_sha256`.
 - ✅ **`output_width`** (terjawab, T-203a): 1080, satuan px ref × `unit`.
 - ✅ **Run titik di tepi frame** (terjawab, T-203a): **hide** (lihat "Tepi frame").
 - ✅ **`group_boundary` loop** (terjawab, T-401) = `closed: false` dengan titik akhir = titik awal (57 loop di `test`, 25 di `test_short`;
@@ -867,7 +895,7 @@ dengan aturan tetap)*:
   `foreground_color` / `background_color` tidak dipakai dan tidak ikut hash); `"silhouette"` (Phase 1) = `stable/groups/*.png`,
   grup ≠ 0 → `foreground_color` di atas `background_color`, resolusi kerja.
 - **Masukan source `strokes`** (divalidasi sebelum encode; semua kegagalan = exit 1 dengan perintah yang benar):
-  `strokes/manifest.json` ada, `contract` ∈ `SUPPORTED_STROKES_CONTRACTS` (`{"T-401"}` sejak T-401; strokes `T-203a` → "jalankan stylize"; salinan SVG lama di `out/svg/<nama>/` disalin ulang sebagai basi, bukan suntingan), `clip` = `meta.json`, `frame_size`,
+  `strokes/manifest.json` ada, `contract` ∈ `SUPPORTED_STROKES_CONTRACTS` (`{"T-402"}` sejak T-402, sebelumnya `{"T-401"}`; strokes `T-203a` / `T-401` → "jalankan stylize"; salinan SVG lama di `out/svg/<nama>/` disalin ulang sebagai basi, bukan suntingan), `clip` = `meta.json`, `frame_size`,
   `output_size` bilangan genap; referensi `contours` di dalamnya (contract, vectorize_hash, created_utc) = `contours/manifest.json`
   sekarang (rantai diperiksa satu tingkat; [5] sendiri memeriksa contours → stable) → jalankan `stylize`; setiap `frame_*.png`
   ada, utuh (IHDR + IEND) dan berukuran `output_size`.

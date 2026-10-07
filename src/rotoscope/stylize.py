@@ -1,4 +1,4 @@
-"""Stage [5] stylize (T-401, CPU): contours/*.json → strokes/frame_%05d.svg + .png + manifest.json.
+"""Stage [5] stylize (T-402, CPU): contours/*.json → strokes/frame_%05d.svg + .png + manifest.json.
 
     python -m rotoscope stylize <video> [--config PATH] [--style PATH] [--restart] [--limit N]
 
@@ -54,7 +54,7 @@ MANIFEST_FILENAME = "manifest.json"
 FRAMES_LOG_FILENAME = "frames.jsonl"
 SVG_SUFFIX = ".svg"
 PNG_SUFFIX = ".png"
-CONTRACT = "T-401"
+CONTRACT = "T-402"
 # Naik 1 HANYA untuk perbaikan PERILAKU pada kode yang sudah dikontrak, tanpa perubahan parameter (docs/01). Fitur baru
 # (jitter, taper, ...) menaikkan CONTRACT, bukan ALGO_REV.
 ALGO_REV = 1
@@ -110,10 +110,21 @@ JOIN_SAMPLE_STEP = 0.5            # jarak sampel (px output) polyline strok lain
 OUTLINE_CAP_STEPS = 8             # segmen setengah lingkaran ujung bulat pada poligon kontur SVG
 SVG_FILL_RULE = "nonzero"
 
+# ── T-402: jitter (konstanta struktural; keputusan Rio, docs/04 "Keputusan T-402") ─
+JITTER_SALT_FIELD = 0x4A17        # salt stream medan koheren F (seed_of(param_seed, salt, kanal)); stream tebal T-401 = seed_of(param_seed) tanpa salt
+JITTER_SALT_TRACK = 0x7C0F        # salt stream komponen independen G (seed_of(param_seed, salt, track_id, kanal))
+JITTER_CHANNELS = 2               # kanal noise independen: perpindahan x dan y (vektor 2D, bukan sepanjang normal)
+EDGE_FADE_PX = 40.0               # panjang pelunakan jitter dari zona mati tepi sampai penuh (px ref)
+JITTER_FOLD_R_WARN = 0.19         # r = amplitude × frequency × (√(1−s) + √s) > ini → peringatan lipatan (terukur: r ≤ 0,18 lulus Jacobian 0,05, r 0,21 gagal di 2–17 frame, 0,32 melipat)
+JACOBIAN_MIN_DET = 0.05           # ambang keselamatan min det(I + ∇D) pada titik strok (tests/jitter_metrics.py)
+JITTER_JOINT_TOL_GRAD = 3.2       # toleransi perubahan celah sambungan (s = 0) = ini × r × join_dist (p99 norma ∇D = 3,24 r × celah maks); terukur maks 2,4 r × join_dist
+
 # Parameter style AKTIF (masuk hash); sisanya = ignored_params.
 ACTIVE_SCALARS = ("shape.simplify_epsilon", "shape.smooth_px", "shape.smooth_tension", "shape.spline_steps", "shape.edge_mode",
                   "shape.resample_points", "stroke.width_base", "stroke.width_variation", "stroke.width_noise_scale",
                   "stroke.taper_ends", "stroke.taper_px", "stroke.taper_min", "stroke.color", "stroke.cap", "jitter.param_seed",
+                  "jitter.amplitude", "jitter.frequency", "jitter.temporal_seed_mode", "jitter.temporal_drift",
+                  "jitter.hold_frames", "jitter.stroke_independence",
                   "paper.color", "render.ss", "render.output_width")
 ACTIVE_BY_TYPE_PREFIX = "stroke.by_type."
 ACTIVE_BY_TYPE_SUFFIXES = (".width_scale", ".taper_ends")
@@ -200,6 +211,26 @@ class Geometry:
     join_dist: float = 0.0        # px output
     join_dist_occ: float = 0.0
     floor: float = 0.0            # lantai tebal (px output)
+    # ── T-402 jitter (medan perpindahan koheren) ──
+    jitter_amp: float = 0.0       # amplitudo puncak per kanal (px output) = amplitude × unit; 0 = jitter mati
+    jitter_cell: float = 0.0      # panjang sel noise (px output) = unit / frequency; 0 = jitter mati
+    jitter_param_seed: int = 0
+    jitter_seeds: tuple = ()      # seed kanal medan koheren F (x, y)
+    jitter_drift: float = 0.0
+    jitter_hold: int = 1
+    jitter_fixed: bool = False    # temporal_seed_mode "fixed": indeks gambar selalu 0
+    jitter_s: float = 0.0         # stroke_independence
+    edge_dead: float = 0.0        # zona mati pelunakan tepi (px output): tebal maks / 2 + EDGE_MARGIN_PX
+    edge_fade_len: float = 0.0    # panjang pelunakan (px output) = EDGE_FADE_PX × unit
+
+    @property
+    def jitter_on(self) -> bool:
+        return self.jitter_amp > 0 and self.jitter_cell > 0
+
+
+def jitter_fold_r(amplitude: float, frequency: float, s: float) -> float:
+    """r = amplitudo × frekuensi × (√(1 − s) + √s): gradien medan relatif (lipatan bila r besar, docs/04 T-402)."""
+    return amplitude * frequency * (math.sqrt(1.0 - s) + math.sqrt(s))
 
 
 def make_geometry(style: StyleConfig, width: int, height: int) -> Geometry:
@@ -222,7 +253,15 @@ def make_geometry(style: StyleConfig, width: int, height: int) -> Geometry:
                     noise_seed=int(noise.seed_of(style.jitter.param_seed)),
                     taper_len=st.taper_px * unit, taper_min=st.taper_min, taper_on=taper_on,
                     resample_n=style.shape.resample_points, join_dist=JOIN_DIST_PX * unit,
-                    join_dist_occ=JOIN_DIST_OCC_PX * unit, floor=WIDTH_FLOOR_PX)
+                    join_dist_occ=JOIN_DIST_OCC_PX * unit, floor=WIDTH_FLOOR_PX,
+                    jitter_amp=style.jitter.amplitude * unit,
+                    jitter_cell=unit / style.jitter.frequency if style.jitter.frequency > 0 else 0.0,
+                    jitter_param_seed=int(style.jitter.param_seed),
+                    jitter_seeds=tuple(noise.seed_of(style.jitter.param_seed, JITTER_SALT_FIELD, c) for c in range(JITTER_CHANNELS)),
+                    jitter_drift=style.jitter.temporal_drift, jitter_hold=style.jitter.hold_frames,
+                    jitter_fixed=style.jitter.temporal_seed_mode == "fixed", jitter_s=style.jitter.stroke_independence,
+                    edge_dead=max(widths.values()) * (1.0 + (st.width_variation if st.width_noise_scale > 0 else 0.0)) / 2
+                    + EDGE_MARGIN_PX, edge_fade_len=EDGE_FADE_PX * unit)
 
 
 @dataclass(frozen=True)
@@ -520,6 +559,18 @@ def draw_width_warning(g: Geometry) -> str | None:
               "width_scale atau pakai edge_mode 'hide'.")
 
 
+def fold_warning(style: StyleConfig) -> str | None:
+    """Peringatan (bukan error, tanpa clamp) bila jitter aktif dan r > JITTER_FOLD_R_WARN: garis dapat melipat / bersilang."""
+    j = style.jitter
+    r = jitter_fold_r(j.amplitude, j.frequency, j.stroke_independence)
+    if j.amplitude <= 0 or j.frequency <= 0 or r <= JITTER_FOLD_R_WARN:
+        return None
+    return (f"PERINGATAN: jitter r = amplitude × frequency × (√(1−s) + √s) = {r:.3f} > {JITTER_FOLD_R_WARN} "
+            f"(jitter.amplitude {j.amplitude:g}, jitter.frequency {j.frequency:g}, jitter.stroke_independence {j.stroke_independence:g}): "
+            f"medan perpindahan terlalu curam, garis dapat melipat atau bersilang. Turunkan amplitude atau frequency "
+            f"(terukur: r 0,21 aman, 0,32 melipat). Tidak ada clamp; render tetap jalan.")
+
+
 def new_stats() -> dict:
     return {"dropped_all_edge": 0, "edge_cuts": 0, "edge_ends": 0, "shallow_ends": 0, "corner_ends": 0,
             "min_contact_deg": 90.0, "free_ends": 0}
@@ -601,7 +652,57 @@ def free_ends(pieces: list[Piece], g: Geometry) -> list[tuple[bool, bool]]:
     return [(f[0], f[1]) for f in flags]
 
 
-def frame_pieces(doc: dict, g: Geometry) -> tuple[list[Piece], dict]:
+# ── Jitter (T-402) ─────────────────────────────────
+def jitter_image_index(frame_index: int, g: Geometry) -> int:
+    """Indeks "gambar" k: 0 pada mode fixed; selain itu floor(frame_index / hold_frames) dengan frame_index ABSOLUT."""
+    return 0 if g.jitter_fixed else int(frame_index) // g.jitter_hold
+
+
+def edge_fade(p: np.ndarray, g: Geometry) -> np.ndarray:
+    """φ(d) pelunakan di tepi bawah / kiri / kanan: 0 untuk d ≤ edge_dead (termasuk di luar kanvas), smoothstep sampai 1 pada
+    edge_dead + edge_fade_len. d = jarak (px output) ke tepi terdekat dari ketiganya."""
+    d = np.minimum(np.minimum(p[:, 0], g.out_w - p[:, 0]), g.out_h - p[:, 1])
+    u = np.clip((d - g.edge_dead) / max(g.edge_fade_len, 1e-9), 0.0, 1.0)
+    return u * u * (3.0 - 2.0 * u)
+
+
+def jitter_displacement(points: np.ndarray, piece_ends: list[tuple[int, int]], track_ids: list[int], g: Geometry,
+                        frame_index: int) -> np.ndarray:
+    """D (N, 2) px output untuk titik-titik (semua jalur frame digabung; piece_ends = (awal, akhir) per jalur).
+
+    D = amplitude × unit × [√(1 − s) F + √s G_track] × φ(d). F = medan koheren (dua kanal noise 3D independen, fungsi posisi +
+    waktu SAJA: titik di lokasi sama → D sama); G_track = medan sama dengan seed per track_id (hanya bila s > 0)."""
+    t = jitter_image_index(frame_index, g) * g.jitter_drift
+    x, y = points[:, 0] / g.jitter_cell, points[:, 1] / g.jitter_cell
+    d = np.column_stack([noise.value_noise_3d(sd, x, y, t) for sd in g.jitter_seeds])
+    s = g.jitter_s
+    if s > 0:
+        d *= math.sqrt(1.0 - s)
+        wg = math.sqrt(s)
+        for (a, b), tid in zip(piece_ends, track_ids):
+            seeds = [noise.seed_of(g.jitter_param_seed, JITTER_SALT_TRACK, tid, c) for c in range(JITTER_CHANNELS)]
+            d[a:b] += wg * np.column_stack([noise.value_noise_3d(sd, x[a:b], y[a:b], t) for sd in seeds])
+    return d * g.jitter_amp * edge_fade(points, g)[:, None]
+
+
+def jitter_pieces(pieces: list[Piece], g: Geometry, frame_index: int) -> list[Piece]:
+    """Terapkan jitter ke titik tiap jalur (setelah resample + tebal; arc-length taper, ujung bebas, "bertemu" memakai geometri
+    TANPA jitter). Titik dibulatkan SVG_DECIMALS lagi (titik SVG = titik raster). Mati (amplitude 0 / frequency 0) → pieces apa
+    adanya (byte-identik T-401)."""
+    if not g.jitter_on or not pieces:
+        return pieces
+    ends, off = [], 0
+    for pc in pieces:
+        ends.append((off, off + len(pc.points)))
+        off += len(pc.points)
+    pts = np.vstack([pc.points for pc in pieces])
+    d = jitter_displacement(pts, ends, [pc.track_id for pc in pieces], g, frame_index)
+    return [dataclasses.replace(pc, points=np.round(pc.points + d[a:b], SVG_DECIMALS) + 0.0)
+            for pc, (a, b) in zip(pieces, ends)]
+
+
+def base_pieces(doc: dict, g: Geometry) -> tuple[list[Piece], dict]:
+    """Jalur T-401 (tanpa jitter): geometri → resample → ujung bebas → tebal per titik."""
     stats = new_stats()
     raw: list[Piece] = []
     for i, s in enumerate(doc["strokes"]):
@@ -612,6 +713,15 @@ def frame_pieces(doc: dict, g: Geometry) -> tuple[list[Piece], dict]:
     for pc, fl in zip(res, flags):
         stats["free_ends"] += int(fl[0]) + int(fl[1])
         pieces.append(dataclasses.replace(pc, widths=width_profile(pc.points, pc.closed, pc.type, fl, g)))
+    return pieces, stats
+
+
+def frame_pieces(doc: dict, g: Geometry) -> tuple[list[Piece], dict]:
+    """Jalur yang digambar: jalur T-401 + jitter (indeks gambar dari doc["frame_index"] ABSOLUT, tanpa rantai antar frame)."""
+    pieces, stats = base_pieces(doc, g)
+    t0 = time.perf_counter()
+    pieces = jitter_pieces(pieces, g, int(doc["frame_index"]))
+    stats["jitter_s"] = round(time.perf_counter() - t0, 4)
     return pieces, stats
 
 
@@ -836,7 +946,12 @@ def build_manifest(style: StyleConfig, style_name: str, g: Geometry, clip: Clip,
                          "algo_rev": cm["algo_rev"], "created_utc": cm["created_utc"]},
             "frame_size": {"width": clip.width, "height": clip.height}, CLIP_KEY: clip_identity(clip.work_dir),
             "output_width": g.out_w, "output_size": {"width": g.out_w, "height": g.out_h}, "scale": g.scale,
-            "unit": g.unit, "edge_mode": g.edge_mode, "coords": dict(COORDS_INFO), "created_utc": utc_now()}
+            "unit": g.unit, "edge_mode": g.edge_mode, "coords": dict(COORDS_INFO),
+            "jitter": {"on": g.jitter_on, "fold_r": round(jitter_fold_r(style.jitter.amplitude, style.jitter.frequency,
+                                                                       style.jitter.stroke_independence), 4),
+                       "fold_warn": fold_warning(style) is not None, "edge_dead_px": g.edge_dead,
+                       "edge_fade_px": g.edge_fade_len},
+            "created_utc": utc_now()}
 
 
 def _short(v) -> str:
@@ -904,7 +1019,7 @@ def frame_valid(clip: Clip, name: str, size: tuple[int, int]) -> bool:
 def run_stylize(cfg, style: StyleConfig, style_name: str = "default", *, restart: bool = False,
                 limit: int | None = None, start: int | None = None,
                 log: Callable[[str], None] = print) -> dict:
-    """Jalankan stage [5] (T-401). `start` (--from, T-204) = jendela [start, start+limit): wajib bersama `limit`."""
+    """Jalankan stage [5] (T-402). `start` (--from, T-204) = jendela [start, start+limit): wajib bersama `limit`."""
     if limit is not None and limit < 1:
         raise StageError(f"--limit harus ≥ 1, dapat {limit}")
     clip = load_clip(cfg.paths.work_dir)
@@ -917,9 +1032,11 @@ def run_stylize(cfg, style: StyleConfig, style_name: str = "default", *, restart
     manifest = build_manifest(style, style_name, g, clip, cm)
     if (warning := draw_width_warning(g)) is not None:
         print(warning, file=sys.stderr, flush=True)
+    if (warning := fold_warning(style)) is not None:
+        print(warning, file=sys.stderr, flush=True)
     _, _, ignored_nondefault = style_params(style)
     if ignored_nondefault:
-        log("catatan: parameter style belum aktif di T-401 (diabaikan): "
+        log("catatan: parameter style belum aktif di T-402 (diabaikan): "
             + ", ".join(f"{k}={v!r}" for k, v in ignored_nondefault.items()))
 
     stale: list[str] = []
@@ -949,7 +1066,8 @@ def run_stylize(cfg, style: StyleConfig, style_name: str = "default", *, restart
 
     size = (g.out_w, g.out_h)
     todo = [(n, i) for n, i in zip(selected, indices) if not frame_valid(clip, n, size)]
-    log(f"[5] stylize ({CONTRACT}: tebal variabel + taper, edge_mode {g.edge_mode}): {len(selected)} frame dipilih, "
+    log(f"[5] stylize ({CONTRACT}: tebal variabel + taper + jitter {'aktif' if g.jitter_on else 'mati'}, "
+        f"edge_mode {g.edge_mode}): {len(selected)} frame dipilih, "
         f"{len(selected) - len(todo)} valid dilewati, {len(todo)} diproses; output {g.out_w}x{g.out_h} "
         f"(s {g.scale:.4f}, unit {g.unit:.4f})")
     run = {"selected": len(selected), "skipped": len(selected) - len(todo), "processed": 0, "stale": stale,

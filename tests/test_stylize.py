@@ -27,7 +27,8 @@ WIDTH_REF = 25.3             # px ref → 25.3 × (256 / 1080) = 6.0 px output
 FIDELITY_TOL_WIDTH_FRACTION = 0.35   # toleransi kesetiaan geometri sintetis = bagian dari tebal garis (bukan epsilon)
 
 
-CONST = {"stroke.width_variation": 0.0, "stroke.taper_ends": False}     # tebal konstan = setara T-203a (regresi T-401)
+NO_JITTER = {"jitter.amplitude": 0.0}        # jitter T-402 mati: test geometri T-203a / T-401 tetap berlaku (byte-identik T-401)
+CONST = {"stroke.width_variation": 0.0, "stroke.taper_ends": False, **NO_JITTER}     # tebal konstan = setara T-203a (regresi T-401)
 
 
 def style_for(**ov):
@@ -38,7 +39,7 @@ def style_for(**ov):
 
 def style_var(**ov):
     """Style uji dengan variasi tebal + taper (default kode)."""
-    return load_style(None, overrides={"render.output_width": OW, "stroke.width_base": WIDTH_REF, **ov})
+    return load_style(None, overrides={"render.output_width": OW, "stroke.width_base": WIDTH_REF, **NO_JITTER, **ov})
 
 
 def geom_for(**ov):
@@ -431,7 +432,8 @@ def cv2_resize(mask, g):
 
 # ── Stage ──────────────────────────────────────────
 N_FRAMES = 4
-STYLE_YAML = (f"render:\n  output_width: {OW}\nstroke:\n  width_base: {WIDTH_REF}\n  width_variation: 0.0\n  taper_ends: false\n")
+STYLE_YAML = (f"render:\n  output_width: {OW}\nstroke:\n  width_base: {WIDTH_REF}\n  width_variation: 0.0\n  taper_ends: false\n"
+              f"jitter:\n  amplitude: 0.0\n")
 
 
 def frame_strokes(i: int) -> list[dict]:
@@ -480,10 +482,11 @@ def test_run_writes_outputs_manifest_and_log(tmp_path, style_file, capsys):
     h = out_hashes(work)
     assert len(h) == 2 * N_FRAMES
     m = manifest(work)
-    assert m["contract"] == "T-401" and m["algo_rev"] == sty.ALGO_REV and m["style"] == "test-style"
+    assert m["contract"] == "T-402" and m["algo_rev"] == sty.ALGO_REV and m["style"] == "test-style"
     assert m["output_size"] == {"width": OW, "height": OW} and m["scale"] == OW / W and m["edge_mode"] == "hide"
     assert m["contours"]["contract"] == "T-202" and m["contours"]["vectorize_hash"] == "h" * 8
-    assert "jitter.amplitude" in m["ignored_params"] and "shape.resample_points" not in m["ignored_params"]
+    assert "multipass.passes" in m["ignored_params"] and "jitter.amplitude" not in m["ignored_params"]
+    assert "shape.resample_points" not in m["ignored_params"] and "jitter.hold_frames" in m["style_params"]
     assert "stroke.width_variation" in m["style_params"] and "jitter.param_seed" in m["style_params"]
     assert set(m["style_params"]) == set(sty.active_param_names()) and m["style_hash"]
     recs = [json.loads(x) for x in (work / "strokes" / "frames.jsonl").read_text(encoding="utf-8").splitlines()]
@@ -538,8 +541,8 @@ def test_inactive_param_change_does_not_recompute(tmp_path):
     work = make_stage_work(tmp_path)
     sty.run_stylize(cfg_for(work), style_for(), "t", log=quiet)
     logs: list[str] = []
-    run = sty.run_stylize(cfg_for(work), style_for(**{"jitter.amplitude": 9.0}), "t", log=logs.append)
-    assert run["processed"] == 0 and run["stale"] == [] and any("jitter.amplitude" in m for m in logs)
+    run = sty.run_stylize(cfg_for(work), style_for(**{"multipass.passes": 5}), "t", log=logs.append)
+    assert run["processed"] == 0 and run["stale"] == [] and any("multipass.passes" in m for m in logs)
 
 
 def test_stale_when_contours_manifest_changes(tmp_path):

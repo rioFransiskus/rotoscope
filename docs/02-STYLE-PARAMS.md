@@ -200,11 +200,13 @@ stroke:
 
 # ── JITTER (hand-drawn feel) ───────────────────────
 jitter:
-  amplitude: 4.0             # pergeseran titik (px ref). 0 = garis mekanis
-  frequency: 0.053           # skala noise (per px ref). Kecil = gelombang panjang
-  temporal_seed_mode: "frame"  # "frame" = getar tiap frame | "fixed" = diam
-  temporal_drift: 0.35       # seberapa cepat pola jitter berubah antar frame
-  param_seed: 0              # seed = hash(frame_index, param_seed, track_id) — P-007
+  amplitude: 0.0             # PUNCAK pergeseran per kanal (px ref); |D| ≤ amplitude × √2. 0 = jitter MATI (default; byte-identik T-401). Penilaian visual T-402: semua varian terasa acak-acakan
+  frequency: 0.053           # skala noise (per px ref; sel = 1 / frequency). Kecil = gelombang panjang. 0 = jitter mati. r = amplitude × frequency > 0,19 → peringatan lipatan
+  temporal_seed_mode: "frame"  # "frame" = getar tiap gambar | "fixed" = diam (indeks gambar 0)
+  temporal_drift: 0.35       # sel waktu per gambar: 0 = beku, 1 = tiap gambar independen
+  param_seed: 0              # seed noise tebal (T-401) dan dasar seed jitter (stream terpisah, salt berbeda) — P-007
+  hold_frames: 2             # "gambar" jitter diperbarui tiap N frame (indeks gambar = floor(frame_index / N)); 1 = tiap frame, 2 = "on twos"
+  stroke_independence: 0.0   # 0 = medan koheren saja (sambungan tetap menyambung), 1 = getar independen per track_id; menjaga RMS
 
 # ── MULTI-PASS (kesan sketsa ditimpa) ──────────────
 multipass:
@@ -260,6 +262,8 @@ itu) DIHAPUS di T-303: optical flow ditolak berdasarkan data (docs/04 "Hasil T-3
 | `jitter.temporal_seed_mode` | `"frame"` \| `"fixed"` |
 | `jitter.temporal_drift` | 0–1 |
 | `jitter.param_seed` | int |
+| `jitter.hold_frames` | int ≥ 1 (T-402) |
+| `jitter.stroke_independence` | 0–1 (T-402) |
 | `multipass.passes` | int ≥ 1 |
 | `multipass.offset` | ≥ 0 |
 | `multipass.opacity_falloff` | 0–1 |
@@ -289,11 +293,29 @@ itu) DIHAPUS di T-303: optical flow ditolak berdasarkan data (docs/04 "Hasil T-3
 - **Aktif (T-203a + T-401):** `shape.simplify_epsilon`, `shape.smooth_px`, `shape.smooth_tension`, `shape.spline_steps`, `shape.edge_mode`,
   `shape.resample_points`, `stroke.width_base`, `stroke.width_variation`, `stroke.width_noise_scale`, `stroke.taper_ends`,
   `stroke.taper_px`, `stroke.taper_min`, `stroke.color`, `stroke.cap` (hanya `"round"`; nilai lain → error stage),
-  `stroke.by_type.*.width_scale`, `stroke.by_type.*.taper_ends`, `jitter.param_seed` (seed noise tebal), `paper.color`,
-  `render.ss`, `render.output_width`. Hanya parameter ini yang masuk hash style stage [5].
+  `stroke.by_type.*.width_scale`, `stroke.by_type.*.taper_ends`, `jitter.param_seed` (seed noise tebal + dasar seed jitter), `paper.color`,
+  `render.ss`, `render.output_width`; **T-402:** `jitter.amplitude`, `jitter.frequency`, `jitter.temporal_seed_mode`,
+  `jitter.temporal_drift`, `jitter.hold_frames`, `jitter.stroke_independence`. Hanya parameter ini yang masuk hash style stage [5].
 - **Divalidasi tetapi BELUM aktif (dicatat di `strokes/manifest.json` → `ignored_params`; aktif di task Phase 4 berikutnya):**
-  `stroke.opacity`, `stroke.by_type.*.opacity_scale`, `jitter.*` selain `param_seed` (T-402), `multipass.*`, `texture.*`,
-  `paper.enabled`, `paper.texture_*`, `paper.vignette`.
+  `stroke.opacity`, `stroke.by_type.*.opacity_scale`, `multipass.*`, `texture.*`, `paper.enabled`, `paper.texture_*`, `paper.vignette`.
+- **Jitter (T-402; keputusan Rio, docs/04 "Keputusan T-402"):** medan perpindahan KOHEREN vektor 2D, `D = amplitude × unit × [√(1 − s) F + √s G_track] × φ`
+  (s = `stroke_independence`). `amplitude` = PUNCAK per kanal (px ref; |D| ≤ amplitude × √2 pada s = 0; batas umum amplitude × √2 × (√(1 − s) + √s)),
+  RMS per kanal ≈ 0,40–0,47 × amplitude (terukur). `frequency` (per px ref; sel noise = 1 / frequency; 0 = jitter mati); panjang korelasi
+  (ρ = 0,5) = 0,64 sel. `temporal_drift` = sel waktu lattice per gambar: 0 = beku, 1 = tiap gambar independen (korelasi gambar berurutan terukur
+  0,96 / 0,81 / 0,46 / 0,00 untuk drift 0,15 / 0,35 / 0,7 / 1,0). `hold_frames`: indeks gambar k = floor(frame_index / hold_frames) dengan
+  `frame_index` ABSOLUT (1 = tiap frame, 2 = "on twos"); `temporal_seed_mode` `"fixed"` = k selalu 0. `stroke_independence` s: 0 = hanya medan koheren
+  (sambungan menyambung, seam tidak retak); s > 0 mencampur getar per `track_id` dengan varians (RMS) terjaga — sambungan terbuka, persilangan
+  baru mungkin (invarian hanya untuk s = 0); id oklusi berganti ±0,35 per strok-frame, jadi pola komponen independen loncat saat id berganti.
+  **Amplitudo 0 = SVG + PNG byte-identik dengan T-401** (untuk nilai `hold_frames` / `stroke_independence` / `frequency` / `temporal_*` apa pun).
+  **Pelunakan tepi:** φ = 0 untuk jarak ke tepi bawah / kiri / kanan ≤ tebal maks / 2 + 1 px (7,75 pada default; dihitung dari style), smoothstep
+  sampai 1 pada +40 px ref; tinta di 3 baris / kolom terluar tidak berubah dan ujung ekstensi tidak tertarik masuk.
+  **Penjaga lipatan:** r = amplitude × frequency × (√(1 − s) + √s); r > `JITTER_FOLD_R_WARN` = 0,19 → peringatan SATU kali per run (stderr + `strokes/manifest.json` →
+  `jitter.fold_warn`): garis dapat melipat / bersilang (terukur, medan penuh: r ≤ 0,18 lulus Jacobian 0,05; r 0,21 gagal di 2–17 frame; r 0,32 → −0,24;
+  r 0,42 → −0,76; amplitudo 4 dengan frequency ×2 (r 0,42) melipat). Tanpa clamp, tanpa error.
+  **Default final (keputusan Rio, 2026-10-07): `amplitude` 0 = jitter MATI** (penilaian visual: semua varian terasa acak-acakan, bentuk tubuh lebih jelas
+  tanpa jitter); fitur tetap tersedia lewat style. Nilai lain hanya berlaku bila amplitudo > 0: frequency 0,053 / `temporal_seed_mode` "frame" /
+  drift 0,35 / `hold_frames` 2 (≥ 1; 0 ditolak) / `stroke_independence` 0 / `param_seed` 0. Nilai papan evaluasi (amplitude 4,0 / frequency 0,053, r 0,21)
+  BUKAN default; papan memasangkan amplitudo {2; 4; 6; 8} dengan frequency {0,053; 0,053; 0,035; 0,0265}.
 - **Tebal variabel (T-401):** `w = max(1 px output, width_base × unit × by_type.width_scale × (1 + width_variation × n) × taper)`;
   `n` ∈ [−1, 1] = value noise 2D terkunci posisi (sel = `unit / width_noise_scale` px output; seed = hash(`jitter.param_seed`),
   tanpa `frame_index`: tebal statis terhadap waktu); `taper` hanya di ujung bebas (smoothstep dari `taper_min` ke 1 sepanjang
@@ -317,10 +339,11 @@ itu) DIHAPUS di T-303: optical flow ditolak berdasarkan data (docs/04 "Hasil T-3
 
 1. Setiap parameter harus punya **default yang masuk akal** — pipeline jalan tanpa YAML
 2. Validasi range saat load config; error jelas kalau di luar batas
-3. Jitter **wajib deterministic**: seed = `hash(frame_index, param_seed, track_id)` (P-007). Hash
-   stabil antar proses (mis. crc32), bukan `hash()` Python. Kalau random murni, render ulang
-   menghasilkan animasi berbeda dan tidak bisa di-debug. `track_id` (bukan indeks stroke) supaya pola
-   getar tidak melompat saat urutan stroke berubah antar frame
+3. Jitter **wajib deterministic** (P-007): hasil sebuah frame = fungsi dari (`frame_index` ABSOLUT lewat indeks gambar, parameter,
+   posisi titik) — hash bilangan bulat 64-bit stabil antar proses (splitmix64, bukan `hash()` Python), tanpa rantai antar frame. **T-402
+   mengganti** rencana lama `hash(frame_index, param_seed, track_id)` per strok (D-010) dengan medan koheren: seed medan = `hash(param_seed,
+   salt jitter, kanal)`; `track_id` hanya untuk komponen independen (`stroke_independence` > 0); stream jitter dan stream tebal terpisah (salt
+   berbeda). Kalau random murni, render ulang menghasilkan animasi berbeda dan tidak bisa di-debug
 4. Sediakan flag `--preview N` untuk render hanya N frame — iterasi style harus cepat,
    bukan render 300 frame tiap ganti angka. Threshold per klip dibaca dari `contours/clip_stats.json`,
    bukan dihitung dari N frame preview
