@@ -22,7 +22,8 @@ from rotoscope import stylize as sty
 from rotoscope.config import ConfigError, load_style
 
 BASE = {"render.output_width": 1080, "stroke.width_base": 9.0, "shape.resample_points": 4}
-SAFE = {"jitter.amplitude": 4.0, "jitter.frequency": 0.053}         # r = 0,21 (aman)
+SAFE = {"jitter.amplitude": 4.0, "jitter.frequency": 0.053,         # r = 0,21 (aman)
+        "multipass.passes": 1, "stroke.opacity": 1.0}               # test jitter T-402: garis tunggal solid (default T-403 = 2 pass, opacity 0,92)
 ROOT = Path(__file__).resolve().parents[1]
 CLIPS = ROOT / "work" / "clips"
 
@@ -179,7 +180,7 @@ def test_closed_stroke_seam_is_continuous():
     doc = doc_for([stroke(circle(50.5, 50.5, 30), typ="silhouette", tid=1)], 4)
     g, base, jit = base_and_jit(doc, **{"jitter.amplitude": 8.0, "jitter.frequency": 0.026})
     b, j = base[0], jit[0]
-    assert j.closed and jm.seam_jump(b, j) <= jm.interior_change_max(b, j) + 0.05
+    assert j.closed and jm.seam_ok(b, j, g) and jm.seam_ratio(b, j) <= jm.SEAM_REL_TOL
 
 
 def test_two_close_parallel_lines_do_not_cross_under_coherent_field():
@@ -441,7 +442,7 @@ def test_run_with_jitter_deterministic_resume_limit_from_identical(tmp_path, jit
     work = make_stage_work(tmp_path, n=6)
     assert run_main(work, jit_style) == 0
     full = out_hashes(work)
-    assert len(full) == 12 and manifest(work)["contract"] == "T-402" and manifest(work)["style_params"]["jitter.hold_frames"] == 2
+    assert len(full) == 12 and manifest(work)["contract"] == "T-403" and manifest(work)["style_params"]["jitter.hold_frames"] == 2
     assert run_main(work, jit_style, "--restart") == 0 and out_hashes(work) == full                  # dua run dari nol identik
     assert run_main(work, jit_style, "--restart", "--limit", "3") == 0
     assert out_hashes(work) == {k: v for k, v in full.items() if int(k[6:11]) < 3}                      # --limit = awalan run penuh
@@ -496,7 +497,8 @@ def test_real_amplitude_zero_equals_t401_pinned_hashes(clip):
     if not all(pinned.values()):
         pytest.skip("hash T-401 belum disematkan")
     doc = real_doc(clip, 80)
-    st = load_style(sty.DEFAULT_STYLE, overrides={"jitter.amplitude": 0.0, "jitter.hold_frames": 2})
+    st = load_style(sty.DEFAULT_STYLE, overrides={"jitter.amplitude": 0.0, "jitter.hold_frames": 2,
+                                                      "multipass.passes": 1, "stroke.opacity": 1.0})
     g = sty.make_geometry(st, 480, 854)
     svg, png, _ = sty.render_frame(doc, g, st)
     assert hashlib.sha256(svg).hexdigest() == pinned["frame_00080.svg"]
@@ -506,7 +508,7 @@ def test_real_amplitude_zero_equals_t401_pinned_hashes(clip):
 @pytest.mark.parametrize("clip", ["test_short", "test"])
 def test_real_safety_invariants_with_coherent_field(clip):
     doc = real_doc(clip, 80)
-    st = load_style(None, overrides={"jitter.amplitude": 4.0, "jitter.frequency": 0.053})
+    st = load_style(None, overrides={"jitter.amplitude": 4.0, "jitter.frequency": 0.053, "multipass.passes": 1, "stroke.opacity": 1.0})
     g = sty.make_geometry(st, 480, 854)
     base, _ = sty.base_pieces(doc, g)
     jit = sty.jitter_pieces(base, g, 80)

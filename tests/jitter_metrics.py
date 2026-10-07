@@ -87,6 +87,49 @@ def interior_change_max(base: sty.Piece, jit: sty.Piece) -> float:
     return float(np.abs(lj - lb).max())
 
 
+# Seam strok tertutup (revisi metrik T-403, docs/04): medan koheren kontinu → perubahan panjang segmen penutup tidak bisa melebihi
+# Lipschitz(D) × panjang segmen. Ambang absolut "+0,05 px" salah untuk amplitudo besar; diganti dua kriteria (lulus bila SALAH SATU):
+#  (a) relatif: seam_jump ≤ SEAM_REL_TOL × interior_change_max (strok yang sama);
+#  (b) batas teoretis: seam_jump ≤ batas Lipschitz × panjang segmen penutup.
+SEAM_REL_TOL = 1.25
+FIELD_LIPSCHITZ_R = 4.5     # σ_maks(∇F) / r, r = amplitudo / sel: terukur 4,25 (200 000 titik interior, maks), p99 3,55; margin ~6%
+EDGE_PHI_SLOPE = 1.5        # maks |dφ/dd| × panjang pelunakan (smoothstep: 1,5)
+
+
+def seam_ratio(base: sty.Piece, jit: sty.Piece) -> float:
+    """seam_jump / interior_change_max (strok yang sama)."""
+    return seam_jump(base, jit) / max(interior_change_max(base, jit), 1e-9)
+
+
+def field_lipschitz(g: sty.Geometry, pts: np.ndarray) -> float:
+    """Konstanta Lipschitz (tak berdimensi) medan D di sekitar titik `pts`: FIELD_LIPSCHITZ_R × r × (√(1−s)+√s) + |D|maks × maks|∇φ| bila
+    ada titik di zona pelunakan tepi. g = geometri medan (jitter / pass)."""
+    if g.jitter_cell <= 0 or g.jitter_amp <= 0:
+        return 0.0
+    s = g.jitter_s
+    lip = FIELD_LIPSCHITZ_R * (g.jitter_amp / g.jitter_cell) * (math.sqrt(1.0 - s) + math.sqrt(s))
+    if float(sty.edge_fade(pts, g).min()) < 1.0:
+        lip += g.jitter_amp * 2.0 * EDGE_PHI_SLOPE / max(g.edge_fade_len, 1e-9)       # |D| ≤ amp × 2 (dua kanal √2 → ≤ 2): konservatif
+    return lip
+
+
+def seam_bound(base: sty.Piece, g: sty.Geometry) -> float:
+    """Batas teoretis perubahan segmen penutup (px output) = Lipschitz × panjang segmen penutup pada geometri tanpa jitter."""
+    return field_lipschitz(g, base.points[[0, -1]]) * float(np.hypot(*(base.points[0] - base.points[-1])))
+
+
+def interior_bound(base: sty.Piece, g: sty.Geometry) -> float:
+    """Batas teoretis perubahan segmen interior terbesar = Lipschitz × segmen interior terpanjang (menjaga kriteria relatif: retak
+    di tengah strok ikut tertangkap, bukan hanya retak di seam)."""
+    return field_lipschitz(g, base.points) * float(np.hypot(*np.diff(base.points, axis=0).T).max())
+
+
+def seam_ok(base: sty.Piece, jit: sty.Piece, g: sty.Geometry) -> bool:
+    """Lulus bila interior dalam batas Lipschitz DAN (seam ≤ 1,25 × interior ATAU seam ≤ batas Lipschitz seam)."""
+    sj, ic = seam_jump(base, jit), interior_change_max(base, jit)
+    return ic <= interior_bound(base, g) + 1e-9 and (sj <= SEAM_REL_TOL * ic + 1e-9 or sj <= seam_bound(base, g) + 1e-9)
+
+
 # ── Persilangan ────────────────────────────────────
 def crossings(pieces: list[sty.Piece]) -> list[tuple[int, int, np.ndarray]]:
     """Persilangan segmen strok-strok BERBEDA: (pemilik a, pemilik b, titik). Kandidat via KD-tree titik tengah segmen."""

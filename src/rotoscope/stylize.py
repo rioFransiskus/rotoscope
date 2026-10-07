@@ -54,7 +54,7 @@ MANIFEST_FILENAME = "manifest.json"
 FRAMES_LOG_FILENAME = "frames.jsonl"
 SVG_SUFFIX = ".svg"
 PNG_SUFFIX = ".png"
-CONTRACT = "T-402"
+CONTRACT = "T-403"
 # Naik 1 HANYA untuk perbaikan PERILAKU pada kode yang sudah dikontrak, tanpa perubahan parameter (docs/01). Fitur baru
 # (jitter, taper, ...) menaikkan CONTRACT, bukan ALGO_REV.
 ALGO_REV = 1
@@ -119,15 +119,25 @@ JITTER_FOLD_R_WARN = 0.19         # r = amplitude × frequency × (√(1−s) + 
 JACOBIAN_MIN_DET = 0.05           # ambang keselamatan min det(I + ∇D) pada titik strok (tests/jitter_metrics.py)
 JITTER_JOINT_TOL_GRAD = 3.2       # toleransi perubahan celah sambungan (s = 0) = ini × r × join_dist (p99 norma ∇D = 3,24 r × celah maks); terukur maks 2,4 r × join_dist
 
+# ── T-403: multipass (konstanta struktural; keputusan Rio, docs/04 "Keputusan T-403") ─
+MULTIPASS_SALT_FIELD = 0x5D2B     # salt medan koheren pass k >= 1 (seed_of(param_seed, salt, k, kanal)); beda dari salt jitter
+MULTIPASS_FOLD_R = 0.15           # r = amplitudo / panjang gelombang pass tambahan (konstan; terukur min det Jacobian >= 0,39; batas peringatan 0,19)
+MULTIPASS_SEP_MEDIAN = 0.59       # median |D| / A medan pass (terukur kedua klip: 0,590–0,591) -> A = offset / ini; offset = median |D|
+PASS_ID_FMT = "pass_{}"           # id grup pass (1-based); id grup tipe = pass_K_<tipe>
+INK_BOX_MARGIN_PX = 2             # margin jendela tinta (px output) di luar titik ± tebal/2: antialias INTER_AREA + pembulatan sub-piksel
+MULTIPASS_EDGE_EXTRA_PX = 1.0    # tambahan zona mati tepi pass k >= 1 (px output): tinta 3 baris/kolom terluar tidak berubah (T-403, diukur)
+OPACITY_DECIMALS = 4            # atribut opacity SVG (grup) 4 desimal tetap (deterministik)
+
 # Parameter style AKTIF (masuk hash); sisanya = ignored_params.
 ACTIVE_SCALARS = ("shape.simplify_epsilon", "shape.smooth_px", "shape.smooth_tension", "shape.spline_steps", "shape.edge_mode",
                   "shape.resample_points", "stroke.width_base", "stroke.width_variation", "stroke.width_noise_scale",
                   "stroke.taper_ends", "stroke.taper_px", "stroke.taper_min", "stroke.color", "stroke.cap", "jitter.param_seed",
                   "jitter.amplitude", "jitter.frequency", "jitter.temporal_seed_mode", "jitter.temporal_drift",
-                  "jitter.hold_frames", "jitter.stroke_independence",
+                  "jitter.hold_frames", "jitter.stroke_independence", "stroke.opacity", "multipass.enabled", "multipass.passes",
+                  "multipass.offset", "multipass.opacity_falloff", "multipass.temporal_mode",
                   "paper.color", "render.ss", "render.output_width")
 ACTIVE_BY_TYPE_PREFIX = "stroke.by_type."
-ACTIVE_BY_TYPE_SUFFIXES = (".width_scale", ".taper_ends")
+ACTIVE_BY_TYPE_SUFFIXES = (".width_scale", ".taper_ends", ".opacity_scale")
 MANIFEST_MATCH_KEYS = ("contract", "algo_rev", "style_hash", "style_params", "contours", "clip", "frame_size",
                        "output_size", "scale", "unit")
 COORDS_INFO = {"space": "output pixels", "origin": "top-left corner of pixel (0, 0)",
@@ -222,10 +232,31 @@ class Geometry:
     jitter_s: float = 0.0         # stroke_independence
     edge_dead: float = 0.0        # zona mati pelunakan tepi (px output): tebal maks / 2 + EDGE_MARGIN_PX
     edge_fade_len: float = 0.0    # panjang pelunakan (px output) = EDGE_FADE_PX × unit
+    # ── T-403 multipass (pass efektif = passes bila enabled, selain itu 1) ──
+    passes: int = 1               # jumlah pass efektif (pass 0 = garis asli)
+    mp_amp: float = 0.0           # amplitudo puncak medan pass tambahan (px output) = offset / MULTIPASS_SEP_MEDIAN × unit
+    mp_cell: float = 0.0          # panjang sel medan (px output) = mp_amp / MULTIPASS_FOLD_R
+    mp_seeds: tuple = ()          # per pass k >= 1 (indeks k − 1): seed kanal (x, y)
+    mp_fixed: bool = True         # temporal_mode "fixed": indeks gambar selalu 0
+    opacity: float = 1.0          # stroke.opacity
+    falloff: float = 1.0          # multipass.opacity_falloff
+    type_scale: Mapping[str, float] = dataclasses.field(default_factory=dict)   # opacity_scale per tipe (kosong = semua 1,0)
 
     @property
     def jitter_on(self) -> bool:
         return self.jitter_amp > 0 and self.jitter_cell > 0
+
+    def pass_alpha(self, k: int) -> float:
+        """Alpha pass k (0-based) tanpa opacity_scale tipe: stroke.opacity × opacity_falloff^k."""
+        return self.opacity * self.falloff ** k
+
+    def scale_of(self, typ: str) -> float:
+        return float(self.type_scale.get(typ, 1.0))
+
+    @property
+    def legacy(self) -> bool:
+        """Satu pass, opacity 1,0, semua opacity_scale 1,0 → jalur T-402 persis (SVG tanpa pembungkus pass; PNG LUT lama)."""
+        return self.passes == 1 and self.opacity == 1.0 and all(float(v) == 1.0 for v in self.type_scale.values())
 
 
 def jitter_fold_r(amplitude: float, frequency: float, s: float) -> float:
@@ -243,6 +274,9 @@ def make_geometry(style: StyleConfig, width: int, height: int) -> Geometry:
     widths = {t: st.width_base * st.by_type[t].width_scale * unit for t in TYPE_ORDER}
     taper_on = {t: bool(st.taper_ends if st.by_type[t].taper_ends is None else st.by_type[t].taper_ends)
                 and st.taper_px > 0 for t in TYPE_ORDER}
+    mp = style.multipass
+    n_passes = mp.passes if mp.enabled else 1
+    mp_amp = mp.offset / MULTIPASS_SEP_MEDIAN * unit
     return Geometry(width=width, height=height, out_w=out_w, out_h=out_h, scale=ow / width, unit=unit,
                     epsilon=style.shape.simplify_epsilon * unit, smooth=style.shape.smooth_px * unit, tension=style.shape.smooth_tension,
                     steps=style.shape.spline_steps, spline_tol=SPLINE_TOL_REF * unit,
@@ -261,7 +295,12 @@ def make_geometry(style: StyleConfig, width: int, height: int) -> Geometry:
                     jitter_drift=style.jitter.temporal_drift, jitter_hold=style.jitter.hold_frames,
                     jitter_fixed=style.jitter.temporal_seed_mode == "fixed", jitter_s=style.jitter.stroke_independence,
                     edge_dead=max(widths.values()) * (1.0 + (st.width_variation if st.width_noise_scale > 0 else 0.0)) / 2
-                    + EDGE_MARGIN_PX, edge_fade_len=EDGE_FADE_PX * unit)
+                    + EDGE_MARGIN_PX, edge_fade_len=EDGE_FADE_PX * unit,
+                    passes=n_passes, mp_amp=mp_amp, mp_cell=mp_amp / MULTIPASS_FOLD_R if mp_amp > 0 else 0.0,
+                    mp_seeds=tuple(tuple(noise.seed_of(style.jitter.param_seed, MULTIPASS_SALT_FIELD, k, c)
+                                         for c in range(JITTER_CHANNELS)) for k in range(1, n_passes)),
+                    mp_fixed=mp.temporal_mode == "fixed", opacity=st.opacity, falloff=mp.opacity_falloff,
+                    type_scale={t: st.by_type[t].opacity_scale for t in TYPE_ORDER})
 
 
 @dataclass(frozen=True)
@@ -561,9 +600,14 @@ def draw_width_warning(g: Geometry) -> str | None:
 
 def fold_warning(style: StyleConfig) -> str | None:
     """Peringatan (bukan error, tanpa clamp) bila jitter aktif dan r > JITTER_FOLD_R_WARN: garis dapat melipat / bersilang."""
-    j = style.jitter
-    r = jitter_fold_r(j.amplitude, j.frequency, j.stroke_independence)
-    if j.amplitude <= 0 or j.frequency <= 0 or r <= JITTER_FOLD_R_WARN:
+    j, mp = style.jitter, style.multipass
+    r = jitter_fold_r(j.amplitude, j.frequency, j.stroke_independence) if j.amplitude > 0 and j.frequency > 0 else 0.0
+    mp_on = mp.enabled and mp.passes > 1 and mp.offset > 0
+    if mp_on and r > 0 and r + MULTIPASS_FOLD_R > JITTER_FOLD_R_WARN:
+        return (f"PERINGATAN: r jitter {r:.3f} + r multipass {MULTIPASS_FOLD_R} = {r + MULTIPASS_FOLD_R:.3f} > {JITTER_FOLD_R_WARN}: "
+                f"pass tambahan (pass 0 sudah bergetar) dapat melipat atau bersilang. Turunkan jitter.amplitude / jitter.frequency "
+                f"atau matikan multipass. Tidak ada clamp; render tetap jalan.")
+    if r <= JITTER_FOLD_R_WARN:
         return None
     return (f"PERINGATAN: jitter r = amplitude × frequency × (√(1−s) + √s) = {r:.3f} > {JITTER_FOLD_R_WARN} "
             f"(jitter.amplitude {j.amplitude:g}, jitter.frequency {j.frequency:g}, jitter.stroke_independence {j.stroke_independence:g}): "
@@ -725,22 +769,51 @@ def frame_pieces(doc: dict, g: Geometry) -> tuple[list[Piece], dict]:
     return pieces, stats
 
 
+# ── Multipass (T-403) ──────────────────────────────
+def pass_geometry(g: Geometry, k: int) -> Geometry:
+    """Geometri medan pass k >= 1: mesin jitter T-402 (noise 3D koheren, penjaga tepi φ) dengan amplitudo / sel / seed pass, s = 0.
+    Waktu: mode "fixed" → indeks gambar 0 (statis); "frame" → floor(frame_index / jitter.hold_frames) × jitter.temporal_drift.
+    Zona mati tepi = edge_dead pass 0 + MULTIPASS_EDGE_EXTRA_PX (tinta 3 baris / kolom terluar tidak berubah)."""
+    return dataclasses.replace(g, jitter_amp=g.mp_amp, jitter_cell=g.mp_cell, jitter_seeds=g.mp_seeds[k - 1],
+                               jitter_fixed=g.mp_fixed, jitter_s=0.0, edge_dead=g.edge_dead + MULTIPASS_EDGE_EXTRA_PX)
+
+
+def multipass_pieces(pieces: list[Piece], g: Geometry, frame_index: int) -> list[list[Piece]]:
+    """[pass 0 = pieces (setelah jitter T-402)] + pass k >= 1: titik pass 0 + D_k. Tebal / taper / flag tepi disalin. Pass dengan
+    offset 0 = salinan pass 0."""
+    return [pieces] + [jitter_pieces(pieces, pass_geometry(g, k), frame_index) for k in range(1, g.passes)]
+
+
+def frame_passes(doc: dict, g: Geometry) -> tuple[list[list[Piece]], dict]:
+    """Semua pass yang digambar frame ini (indeks 0 = garis asli); frame_index ABSOLUT, tanpa rantai antar frame."""
+    pieces, stats = frame_pieces(doc, g)
+    t0 = time.perf_counter()
+    passes = multipass_pieces(pieces, g, int(doc["frame_index"])) if g.passes > 1 else [pieces]
+    stats["multipass_s"] = round(time.perf_counter() - t0, 4)
+    stats["passes"] = len(passes)
+    return passes, stats
+
+
 # ── Render ─────────────────────────────────────────
 def piece_widths(pc: Piece, g: Geometry) -> np.ndarray:
     return pc.widths if pc.widths is not None else np.full(len(pc.points), g.widths[pc.type])
 
 
-def render_mask(pieces: list[Piece], g: Geometry) -> np.ndarray:
+def render_mask(pieces: list[Piece], g: Geometry, box: tuple[int, int, int, int] | None = None) -> np.ndarray:
     """Satu mask supersampling (union semua strok, tipe dan tebal berbeda). Koordinat cv2 = x' · ss − RASTER_OFFSET (titik
     cv2 integer = pusat piksel supersampling; titik kontinu x' · ss = k + 0,5 adalah pusatnya), sub-piksel 1/16.
-    Tebal per titik: trapesium per segmen (jari-jari kedua titik) + cakram di tiap titik (union = nonzero dari poligon kontur)."""
+    Tebal per titik: trapesium per segmen (jari-jari kedua titik) + cakram di tiap titik (union = nonzero dari poligon kontur).
+    box = (x0, y0, x1, y1) piksel output (bulat): hanya jendela itu yang dirender (T-403, hemat biaya; hasil jendela = potongan mask penuh);
+    None = seluruh kanvas."""
+    x0, y0, x1, y1 = box if box is not None else (0, 0, g.out_w, g.out_h)
     wmax = max([float(piece_widths(pc, g).max()) for pc in pieces] or [0.0])
     pad = int(math.ceil(wmax)) + MASK_PAD_PX          # kanvas diperlebar: poligon tidak terpotong di tepi mask
-    mask = np.zeros(((g.out_h + 2 * pad) * g.ss, (g.out_w + 2 * pad) * g.ss), np.uint8)
+    mask = np.zeros(((y1 - y0 + 2 * pad) * g.ss, (x1 - x0 + 2 * pad) * g.ss), np.uint8)
+    shift = pad if x0 == 0 and y0 == 0 else np.array([pad - x0, pad - y0], np.float64)   # (0, 0) = expresi T-402 persis
     quads: list[np.ndarray] = []
     discs: list[np.ndarray] = []
     for pc in pieces:
-        p = (pc.points + pad) * g.ss - RASTER_OFFSET
+        p = (pc.points + shift) * g.ss - RASTER_OFFSET
         r = np.maximum(piece_widths(pc, g) * g.ss / 2 - FILL_BIAS_SS, 0.0)
         q = np.vstack([p, p[:1]]) if pc.closed else p
         rq = np.r_[r, r[:1]] if pc.closed else r
@@ -758,23 +831,102 @@ def render_mask(pieces: list[Piece], g: Geometry) -> np.ndarray:
         for polys in (np.concatenate(quads), np.concatenate(discs)):
             for poly in np.rint(polys * SHIFT_SCALE).astype(np.int32):
                 cv2.fillConvexPoly(mask, poly, 255, LINE_TYPE, SHIFT_BITS)
-    return np.ascontiguousarray(mask[pad * g.ss:(pad + g.out_h) * g.ss, pad * g.ss:(pad + g.out_w) * g.ss])
+    return np.ascontiguousarray(mask[pad * g.ss:(pad + y1 - y0) * g.ss, pad * g.ss:(pad + x1 - x0) * g.ss])
+
+
+def ink_lut(g: Geometry) -> np.ndarray:
+    a = (np.arange(MASK_LEVELS, dtype=np.float32) / (MASK_LEVELS - 1))[:, None]       # tabel: cakupan uint8 → warna
+    return np.rint(np.array(g.paper, np.float32) * (1 - a) + np.array(g.ink, np.float32) * a).astype(np.uint8)
 
 
 def compose(mask: np.ndarray, g: Geometry) -> np.ndarray:
     """mask → cakupan (INTER_AREA) → ink di atas kertas, RGB uint8 (out_h, out_w, 3)."""
     cov = cv2.resize(mask, (g.out_w, g.out_h), interpolation=cv2.INTER_AREA)
-    a = (np.arange(MASK_LEVELS, dtype=np.float32) / (MASK_LEVELS - 1))[:, None]       # tabel: cakupan uint8 → warna
-    lut = np.rint(np.array(g.paper, np.float32) * (1 - a) + np.array(g.ink, np.float32) * a).astype(np.uint8)
-    return lut[cov]
+    return ink_lut(g)[cov]
 
 
-def render_png(pieces: list[Piece], g: Geometry) -> bytes:
-    ok, buf = cv2.imencode(PNG_SUFFIX, cv2.cvtColor(compose(render_mask(pieces, g), g), cv2.COLOR_RGB2BGR),
-                           [cv2.IMWRITE_PNG_COMPRESSION, PNG_COMPRESSION])
+def pass_layers(pieces: list[Piece], g: Geometry) -> list[tuple[float, list[Piece]]]:
+    """Lapisan satu pass: (opacity_scale, jalur). Tipe ber-scale 1,0 digabung (union, satu lapisan); tiap tipe ber-scale ≠ 1
+    = lapisan sendiri (digabung "over" dengan lapisan lain, sama dengan grup bersarang di SVG). Lapisan kosong dibuang."""
+    base = [p for p in pieces if g.scale_of(p.type) == 1.0]
+    out = [(1.0, base)] if base else []
+    for t in TYPE_ORDER:
+        if g.scale_of(t) != 1.0:
+            sub = [p for p in pieces if p.type == t]
+            if sub:
+                out.append((g.scale_of(t), sub))
+    return out
+
+
+def ink_box(passes: list[list[Piece]], g: Geometry) -> tuple[int, int, int, int] | None:
+    """Jendela piksel (x0, y0, x1, y1; bulat, dalam kanvas) yang memuat SEMUA tinta semua pass: titik ± tebal/2 ± INK_BOX_MARGIN_PX.
+    None = tidak ada jalur. Di luar jendela cakupan = 0 persis."""
+    lo = np.full(2, np.inf)
+    hi = np.full(2, -np.inf)
+    for pcs in passes:
+        for pc in pcs:
+            r = float(piece_widths(pc, g).max()) / 2
+            lo = np.minimum(lo, pc.points.min(axis=0) - r)
+            hi = np.maximum(hi, pc.points.max(axis=0) + r)
+    if not np.isfinite(lo).all():
+        return None
+    x0, y0 = (np.floor(lo) - INK_BOX_MARGIN_PX).astype(int)
+    x1, y1 = (np.ceil(hi) + INK_BOX_MARGIN_PX).astype(int)
+    x0, y0, x1, y1 = max(int(x0), 0), max(int(y0), 0), min(int(x1), g.out_w), min(int(y1), g.out_h)
+    return (x0, y0, x1, y1) if x1 > x0 and y1 > y0 else None
+
+
+def ink_fraction_box(passes: list[list[Piece]], g: Geometry, box: tuple[int, int, int, int]) -> np.ndarray:
+    """f di jendela `box` (float32, 0–1): f = 1 − Π_k (1 − a_k × g_k), a_k = opacity × falloff^k, g_k = "over" lapisan pass k (union
+    dalam lapisan). Komutatif. Tiap lapisan: cakupan uint8 (INTER_AREA) → tabel float32 256 entri (1 − scale × cakupan / 255): nilai
+    per piksel identik dengan aritmetika float32 penuh-frame (operasi elementwise yang sama), tanpa konversi uint8 → float32 per piksel."""
+    x0, y0, x1, y1 = box
+    keep = np.ones((y1 - y0, x1 - x0), np.float32)
+    levels = np.arange(MASK_LEVELS, dtype=np.float32) / (MASK_LEVELS - 1)
+    for k, pcs in enumerate(passes):
+        inner = None
+        for scale, sub in pass_layers(pcs, g):
+            cov = cv2.resize(render_mask(sub, g, box), (x1 - x0, y1 - y0), interpolation=cv2.INTER_AREA)
+            t = (1.0 - scale * levels)[cov]
+            inner = t if inner is None else np.multiply(inner, t, out=inner)
+        if inner is None:
+            continue                                               # pass tanpa jalur: 1 − a × (1 − 1) = 1
+        np.subtract(1.0, inner, out=inner)
+        inner *= np.float32(g.pass_alpha(k))
+        np.subtract(1.0, inner, out=inner)
+        keep *= inner
+    return 1.0 - keep
+
+
+def ink_fraction(passes: list[list[Piece]], g: Geometry) -> np.ndarray:
+    """Fraksi tinta f seluruh kanvas (float32, (out_h, out_w)); nol di luar `ink_box`."""
+    f = np.zeros((g.out_h, g.out_w), np.float32)
+    box = ink_box(passes, g)
+    if box is not None:
+        f[box[1]:box[3], box[0]:box[2]] = ink_fraction_box(passes, g, box)
+    return f
+
+
+def render_png_passes(passes: list[list[Piece]], g: Geometry) -> bytes:
+    """PNG semua pass. g.legacy (1 pass, opacity 1,0, scale 1,0) = jalur T-402 persis; selain itu f dikuantisasi ke 256 level → LUT."""
+    if g.legacy:
+        bgr = cv2.cvtColor(compose(render_mask(passes[0], g), g), cv2.COLOR_RGB2BGR)
+    else:
+        lut = np.ascontiguousarray(ink_lut(g)[:, ::-1])       # tabel langsung BGR (tanpa cvtColor penuh-frame)
+        bgr = np.empty((g.out_h, g.out_w, 3), np.uint8)
+        bgr[:] = lut[0]                                       # di luar jendela tinta: kertas (f = 0)
+        box = ink_box(passes, g)
+        if box is not None:
+            f = ink_fraction_box(passes, g, box)
+            bgr[box[1]:box[3], box[0]:box[2]] = lut[np.rint(f * (MASK_LEVELS - 1)).astype(np.uint8)]
+    ok, buf = cv2.imencode(PNG_SUFFIX, bgr, [cv2.IMWRITE_PNG_COMPRESSION, PNG_COMPRESSION])
     if not ok:
         raise StageError("cv2.imencode PNG gagal")
     return buf.tobytes()
+
+
+def render_png(pieces: list[Piece], g: Geometry) -> bytes:
+    return render_png_passes([pieces], g)
 
 
 def piece_outline(pc: Piece, g: Geometry) -> list[np.ndarray]:
@@ -811,27 +963,52 @@ def _path_data(polys: list[np.ndarray]) -> str:
 def render_svg(pieces: list[Piece], g: Geometry, style: StyleConfig) -> bytes:
     """SVG manual: <g id=tipe> per tipe (urutan tetap), satu <path> terisi (poligon kontur) per jalur; garis tengah + tebal
     SAMA dengan raster."""
-    head = (f'<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="{g.out_w}" '
+    return render_svg_passes([pieces], g, style)
+
+
+def _svg_head(g: Geometry, style: StyleConfig) -> str:
+    return (f'<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="{g.out_w}" '
             f'height="{g.out_h}" viewBox="0 0 {g.out_w} {g.out_h}">\n'
             f'<rect width="{g.out_w}" height="{g.out_h}" fill="{style.paper.color}"/>\n')
-    parts = [head]
+
+
+def _svg_type_groups(pieces: list[Piece], g: Geometry, style: StyleConfig, prefix: str, scaled: bool) -> list[str]:
+    parts = []
     for t in TYPE_ORDER:
-        parts.append(f'<g id="{t}" fill="{style.stroke.color}" fill-rule="{SVG_FILL_RULE}" stroke="none">\n')
+        op = f' opacity="{g.scale_of(t):.{OPACITY_DECIMALS}f}"' if scaled and g.scale_of(t) != 1.0 else ""
+        parts.append(f'<g id="{prefix}{t}" fill="{style.stroke.color}" fill-rule="{SVG_FILL_RULE}" stroke="none"{op}>\n')
         for pc in pieces:
             if pc.type == t:
                 parts.append(f'<path d="{_path_data(piece_outline(pc, g))}"/>\n')
         parts.append("</g>\n")
+    return parts
+
+
+def render_svg_passes(passes: list[list[Piece]], g: Geometry, style: StyleConfig) -> bytes:
+    """g.legacy: <g id=tipe> langsung (byte-identik T-402). Selain itu satu <g id="pass_K" opacity=a_k> per pass (a_k = opacity ×
+    falloff^k, 4 desimal) berisi <g id="pass_K_<tipe>"> (opacity = opacity_scale bila ≠ 1): SVG viewer mengomposisi grup = "over" antar pass,
+    union dalam grup — sama dengan raster."""
+    parts = [_svg_head(g, style)]
+    if g.legacy:
+        parts += _svg_type_groups(passes[0], g, style, "", False)
+    else:
+        for k, pcs in enumerate(passes):
+            pid = PASS_ID_FMT.format(k + 1)
+            parts.append(f'<g id="{pid}" opacity="{g.pass_alpha(k):.{OPACITY_DECIMALS}f}">\n')
+            parts += _svg_type_groups(pcs, g, style, pid + "_", True)
+            parts.append("</g>\n")
     parts.append("</svg>\n")
     return "".join(parts).encode("utf-8")
 
 
 def render_frame(doc: dict, g: Geometry, style: StyleConfig) -> tuple[bytes, bytes, dict]:
     t0 = time.perf_counter()
-    pieces, stats = frame_pieces(doc, g)
+    passes, stats = frame_passes(doc, g)
+    pieces = passes[0]
     t1 = time.perf_counter()
-    png = render_png(pieces, g)
+    png = render_png_passes(passes, g)
     t2 = time.perf_counter()
-    svg = render_svg(pieces, g, style)
+    svg = render_svg_passes(passes, g, style)
     t3 = time.perf_counter()
     stats.update({"n_strokes": len(doc["strokes"]), "n_pieces": len(pieces),
                   "n_points": int(sum(len(p.points) for p in pieces)), "geom_s": round(t1 - t0, 4),
@@ -951,6 +1128,8 @@ def build_manifest(style: StyleConfig, style_name: str, g: Geometry, clip: Clip,
                                                                        style.jitter.stroke_independence), 4),
                        "fold_warn": fold_warning(style) is not None, "edge_dead_px": g.edge_dead,
                        "edge_fade_px": g.edge_fade_len},
+            "multipass": {"passes": g.passes, "amplitude_px": g.mp_amp, "cell_px": g.mp_cell, "fold_r": MULTIPASS_FOLD_R if g.passes > 1 else 0.0,
+                          "alphas": [round(g.pass_alpha(k), 6) for k in range(g.passes)], "temporal_mode": style.multipass.temporal_mode},
             "created_utc": utc_now()}
 
 
@@ -1036,7 +1215,7 @@ def run_stylize(cfg, style: StyleConfig, style_name: str = "default", *, restart
         print(warning, file=sys.stderr, flush=True)
     _, _, ignored_nondefault = style_params(style)
     if ignored_nondefault:
-        log("catatan: parameter style belum aktif di T-402 (diabaikan): "
+        log("catatan: parameter style belum aktif di T-403 (diabaikan): "
             + ", ".join(f"{k}={v!r}" for k, v in ignored_nondefault.items()))
 
     stale: list[str] = []
@@ -1066,7 +1245,7 @@ def run_stylize(cfg, style: StyleConfig, style_name: str = "default", *, restart
 
     size = (g.out_w, g.out_h)
     todo = [(n, i) for n, i in zip(selected, indices) if not frame_valid(clip, n, size)]
-    log(f"[5] stylize ({CONTRACT}: tebal variabel + taper + jitter {'aktif' if g.jitter_on else 'mati'}, "
+    log(f"[5] stylize ({CONTRACT}: tebal variabel + taper + jitter {'aktif' if g.jitter_on else 'mati'}, passes {g.passes}, "
         f"edge_mode {g.edge_mode}): {len(selected)} frame dipilih, "
         f"{len(selected) - len(todo)} valid dilewati, {len(todo)} diproses; output {g.out_w}x{g.out_h} "
         f"(s {g.scale:.4f}, unit {g.unit:.4f})")

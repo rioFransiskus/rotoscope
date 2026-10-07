@@ -20,7 +20,7 @@ stroke:
   width_variation: 0.5       # 0 = seragam, 1 = variasi ekstrem (keputusan Rio, visual, T-401)
   width_noise_scale: 0.036   # frekuensi noise tebal (per px ref), terkunci posisi; x2 tampak "merayap" (T-401)
   color: "#1a1a1a"
-  opacity: 0.92
+  opacity: 0.92              # T-403 (keputusan Rio): tinta sedikit transparan, SEMUA garis; < 1 = komposisi "over" antar pass
   cap: "round"
   taper_ends: true           # ujung BEBAS menipis (smoothstep); termasuk oklusi (keputusan Rio, T-401)
   taper_px: 70               # panjang zona taper di tiap ujung (px ref), maks panjang strok / 2
@@ -44,9 +44,10 @@ jitter:
 # ── MULTI-PASS (kesan sketsa ditimpa) ──────────────
 multipass:
   enabled: true
-  passes: 2                  # jumlah garis tumpang tindih
-  offset: 2.7                # jarak antar pass (px ref)
-  opacity_falloff: 0.55      # pass ke-2 lebih pudar
+  passes: 2                  # jumlah garis tumpang tindih; 1 = tanpa pass tambahan (keputusan Rio, T-403)
+  offset: 5.5                # MEDIAN |D| pass tambahan vs pass 0 (px ref); medan koheren, skala medan mengikuti offset
+  opacity_falloff: 0.35      # alpha pass k = stroke.opacity × opacity_scale × falloff^k
+  temporal_mode: "fixed"     # "fixed" = pass tambahan statis | "frame" = evolusi per gambar (jitter.hold_frames, temporal_drift)
 
 # ── TEXTURE ────────────────────────────────────────
 texture:

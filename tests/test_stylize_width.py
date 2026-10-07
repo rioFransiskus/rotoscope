@@ -24,7 +24,8 @@ S = 10.8                              # px output per px kerja (1080 / 100)
 def mk(**ov):
     """Style 1080: tebal konstan, taper hidup (taper_min 0,2), resample minimum 4 — override per test."""
     base = {"render.output_width": 1080, "stroke.width_base": BASE, "stroke.width_variation": 0.0, "stroke.taper_ends": True,
-            "stroke.taper_px": 45.0, "stroke.taper_min": 0.2, "shape.resample_points": 4, "jitter.amplitude": 0.0}
+            "stroke.taper_px": 45.0, "stroke.taper_min": 0.2, "shape.resample_points": 4, "jitter.amplitude": 0.0,
+            "multipass.passes": 1, "stroke.opacity": 1.0}          # garis tunggal solid (default T-403 = 2 pass, opacity 0,92)
     return load_style(None, overrides={**base, **ov})
 
 
@@ -362,7 +363,10 @@ def test_new_active_params_change_style_hash():
     for ov in ({"jitter.amplitude": 9.0}, {"jitter.frequency": 0.1}, {"jitter.temporal_seed_mode": "fixed"}, {"jitter.temporal_drift": 0.5},
                {"jitter.hold_frames": 3}, {"jitter.stroke_independence": 0.5}):
         assert sty.params_hash(sty.style_params(load_style(None, overrides=ov))[0]) != h0, ov          # aktif sejak T-402
-    assert sty.params_hash(sty.style_params(load_style(None, overrides={"multipass.passes": 5}))[0]) == h0     # tak aktif
+    assert sty.params_hash(sty.style_params(load_style(None, overrides={"texture.mode": "none"}))[0]) == h0     # tak aktif
+    for ov in ({"multipass.passes": 5}, {"multipass.offset": 5.0}, {"multipass.opacity_falloff": 0.3}, {"multipass.temporal_mode": "frame"},
+               {"multipass.enabled": False}, {"stroke.opacity": 0.9}, {"stroke.by_type.occlusion.opacity_scale": 0.5}):
+        assert sty.params_hash(sty.style_params(load_style(None, overrides=ov))[0]) != h0, ov          # aktif sejak T-403
 
 
 def test_old_contract_strokes_are_stale_and_recomputed(tmp_path):
@@ -375,8 +379,8 @@ def test_old_contract_strokes_are_stale_and_recomputed(tmp_path):
     p.write_text(json.dumps(m), encoding="utf-8")
     logs: list[str] = []
     run = sty.run_stylize(cfg_for(work), style_for(), "t", log=logs.append)
-    assert run["processed"] == 4 and any("contract" in x and "T-402" in x for x in logs)
-    assert json.loads(p.read_text(encoding="utf-8"))["contract"] == "T-402"
+    assert run["processed"] == 4 and any("contract" in x and "T-403" in x for x in logs)
+    assert json.loads(p.read_text(encoding="utf-8"))["contract"] == "T-403"
 
 
 def test_by_type_taper_ends_is_validated_as_optional_bool():
@@ -407,7 +411,7 @@ def _cov(mask, g):
 @pytest.mark.parametrize("clip", ["test_short", "test"])
 def test_real_svg_png_equivalence_and_width_bounds(clip):
     docs = real_docs(clip, 60)
-    st = load_style(None)
+    st = load_style(None, overrides={"multipass.passes": 1, "stroke.opacity": 1.0})       # garis tunggal solid (default T-403 = 2 pass)
     g = sty.make_geometry(st, 480, 854)
     for d in docs:
         pieces, _ = sty.frame_pieces(d, g)

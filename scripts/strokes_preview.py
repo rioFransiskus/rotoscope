@@ -25,6 +25,12 @@ T-402 (keluaran ke work/t402/; render LANGSUNG dari contours/ SALINAN klip: --cl
     python scripts/strokes_preview.py worst402 --clips-root R    # PNG kasus terburuk (sambungan, Jacobian, ujung tepi, persilangan) + ringkasan JSON
     python scripts/strokes_preview.py all402 --clips-root R
 
+T-403 (keluaran ke work/t403/; render LANGSUNG dari contours/ klip; strokes/ dan out/ tidak dipakai / tidak diubah; tanpa GPU):
+    python scripts/strokes_preview.py videos403   # 12 video papan [T-402 | varian] ukuran penuh (+ salinan bernomor di work/t403/nilai/)
+    python scripts/strokes_preview.py helpers403  # zoom 3x siluet / sambungan T / seam / garis sejajar / tepi bawah f233 + garis hantu offset 12
+    python scripts/strokes_preview.py worst403    # kasus terburuk per pass (sambungan, Jacobian, tepi, persilangan, seam) + JSON
+    python scripts/strokes_preview.py all403
+
 Membaca contours/ + strokes/ klip (tidak mengubahnya). Label alat T-203a: "garis polos T-203a - belum ada jitter / taper / tekstur".
 Fungsi metrik dipakai ulang dari tests/stylize_metrics.py; encode dipakai ulang dari rotoscope.export.
 """
@@ -1102,33 +1108,231 @@ def cmd_worst402() -> None:
     print(f"  {(OUT402 / 'worst402_summary.json').relative_to(ROOT)}")
 
 
+# ── T-403: multipass (video papan + gambar bantu; keluaran ke work/t403/; klip dari --clips-root, default work/clips) ─────
+# Render LANGSUNG dari contours/ (stage [5] tanpa GPU); strokes/ dan out/ klip tidak dipakai / tidak diubah.
+OUT403 = ROOT / "work" / "t403"
+LABEL403 = "T-403 multipass"
+BASE403 = {"jitter.amplitude": 0.0, "multipass.passes": 1, "stroke.opacity": 1.0}            # = T-402 default (byte-identik)
+MP403 = {"multipass.passes": 2, "multipass.offset": 2.7, "multipass.opacity_falloff": 0.55, "stroke.opacity": 1.0}
+ZOOM_HALF403 = 90
+
+
+def style403(**ov):
+    return style_with(**{**BASE403, **ov})
+
+
+def mp403(**ov):
+    return style403(**{**MP403, **ov})
+
+
+def passes_rgb(clip: str, doc: dict, style) -> tuple[np.ndarray, sty.Geometry, list[list[sty.Piece]]]:
+    m = meta(clip)
+    g = sty.make_geometry(style, int(m["working_width"]), int(m["working_height"]))
+    passes, _ = sty.frame_passes(doc, g)
+    return sm.decode_png(sty.render_png_passes(passes, g)), g, passes
+
+
+def param_line403(style, baseline: bool = False) -> str:
+    if baseline:
+        return "T-402 tanpa multipass (passes 1, opacity 1,0)"
+    mp = style.multipass
+    t = f"frame (hold {style.jitter.hold_frames}, drift {style.jitter.temporal_drift:g})" if mp.temporal_mode == "frame" else "statis"
+    return f"passes {mp.passes} offset {mp.offset:g} falloff {mp.opacity_falloff:g} opacity {style.stroke.opacity:g} waktu {t}"
+
+
+class MultipassSource(ex.FrameSource):
+    """Frame video T-403: panel pertama = T-402 (di-cache), panel berikutnya = varian multipass; berdampingan, ukuran penuh."""
+    kind = "live"
+
+    def __init__(self, clip: str, panels: list[tuple[str, object]]):
+        self.clip, self.panels = clip, panels
+        self.cache: dict = {}
+
+    def check(self, names: list[str]) -> None:
+        return None
+
+    def render(self, name: str) -> np.ndarray:
+        idx = int(Path(name).stem.split("_")[1])
+        doc = load_doc(self.clip, idx)
+        outs = []
+        for k, (title, st) in enumerate(self.panels):
+            if k == 0 and idx in self.cache:
+                img = self.cache[idx]
+            else:
+                img = passes_rgb(self.clip, doc, st)[0]
+                if k == 0:
+                    self.cache[idx] = img
+            outs.append(label(img, [f"{LABEL403} | {self.clip} f{idx:03d} | {title}", param_line403(st, k == 0)]))
+        return hstack(outs, 1.0)
+
+
+def make_video403(clip: str, frames: list[int], name: str, panels, out_dir: Path | None = None) -> Path:
+    out_dir = out_dir or OUT403
+    src = MultipassSource(clip, panels)
+    first = src.render(f"frame_{frames[0]:05d}.png")
+    h, w = first.shape[:2]
+    h, w = h + h % 2, w + w % 2
+    bg = np.array(ex.parse_hex(style_with().paper.color), np.uint8)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    tmp, final = out_dir / (name + ".tmp"), out_dir / name
+    ex.encode(src, [f"frame_{i:05d}.png" for i in frames], (w, h), bg, float(meta(clip)["target_fps"]), VIDEO_CRF, VIDEO_PRESET, None, tmp)
+    os.replace(tmp, final)
+    print(f"  {final.relative_to(ROOT)} ({final.stat().st_size / 1024:.0f} KiB, {len(frames)} frame, {w}x{h})", flush=True)
+    return final
+
+
+def board403() -> list[tuple[str, str, list[tuple[str, object]]]]:
+    """12 video papan Rio (nomor, slug, panel [T-402 | varian...]). Offset {2,7; 5,5; 8; 12} px ref."""
+    t402 = ("T-402", style403())
+    return [
+        ("01", "2pass_off2p7_fall0p55_op1", [t402, ("2 pass offset 2,7", mp403())]),
+        ("02", "3pass_off2p7_fall0p55_op1", [t402, ("3 pass offset 2,7", mp403(**{"multipass.passes": 3}))]),
+        ("03", "2pass_off5p5", [t402, ("2 pass offset 5,5", mp403(**{"multipass.offset": 5.5}))]),
+        ("04", "2pass_off8", [t402, ("2 pass offset 8", mp403(**{"multipass.offset": 8.0}))]),
+        ("05", "2pass_off12", [t402, ("2 pass offset 12", mp403(**{"multipass.offset": 12.0}))]),
+        ("06", "off8_fall0p35", [t402, ("offset 8 falloff 0,35", mp403(**{"multipass.offset": 8.0, "multipass.opacity_falloff": 0.35}))]),
+        ("07", "off8_fall0p8", [t402, ("offset 8 falloff 0,8", mp403(**{"multipass.offset": 8.0, "multipass.opacity_falloff": 0.8}))]),
+        ("08", "off8_statis_vs_hold2", [t402, ("offset 8 STATIS", mp403(**{"multipass.offset": 8.0})),
+                                         ("offset 8 HOLD 2", mp403(**{"multipass.offset": 8.0, "multipass.temporal_mode": "frame",
+                                                                       "jitter.hold_frames": 2}))]),
+        ("09", "off8_op0p92", [t402, ("offset 8 opacity 0,92", mp403(**{"multipass.offset": 8.0, "stroke.opacity": 0.92}))]),
+        ("10", "off8_op0p85", [t402, ("offset 8 opacity 0,85", mp403(**{"multipass.offset": 8.0, "stroke.opacity": 0.85}))]),
+        ("11", "tanpa_multipass_op0p92", [t402, ("1 pass opacity 0,92", style403(**{"stroke.opacity": 0.92}))]),
+        ("12", "kandidat_3pass_off8_op0p92", [t402, ("3 pass offset 8 falloff 0,55 opacity 0,92",
+                                                    mp403(**{"multipass.passes": 3, "multipass.offset": 8.0, "stroke.opacity": 0.92}))]),
+    ]
+
+
+def windows403() -> dict[str, tuple[int, int]]:
+    return {"statis": find_static_window(BOARD_CLIP), "cepat1": WINDOWS[0], "cepat2": WINDOWS[1]}
+
+
+def cmd_videos403() -> None:
+    """12 video papan [T-402 | varian] ukuran penuh; tiap video = jendela statis otomatis (aturan T-302) + 73-92 + 183-202 berurutan.
+    Salinan bernomor urut tonton di work/t403/nilai/ (PANDUAN.md ditulis terpisah)."""
+    import shutil
+    wins = windows403()
+    OUT403.mkdir(parents=True, exist_ok=True)
+    (OUT403 / "nilai").mkdir(exist_ok=True)
+    (OUT403 / "windows.json").write_text(json.dumps(wins, indent=1), encoding="utf-8")
+    print(f"  jendela: {wins}")
+    frames: list[int] = []
+    for a, b in wins.values():
+        frames += [i for i in range(a, b + 1) if i not in frames]
+    for num, slug_, panels in board403():
+        p = make_video403(BOARD_CLIP, frames, f"v403_{num}_{slug_}.mp4", panels)
+        shutil.copyfile(p, OUT403 / "nilai" / f"{num}_{slug_}.mp4")
+
+
+def cmd_helpers403() -> None:
+    """Gambar bantu zoom 3x [T-402 | offset 2,7 | 5,5 | 8 | 12] (2 pass, falloff 0,55, opacity 1,0): siluet, sambungan T, seam tertutup,
+    garis sejajar dekat, tepi bawah f233; plus offset 12 vs 12 @ opacity 0,92 pada siluet dan sambungan (garis hantu)."""
+    clip = BOARD_CLIP
+    offs = (2.7, 5.5, 8.0, 12.0)
+    panels = [("T-402", style403())] + [(f"offset {o:g}", mp403(**{"multipass.offset": o})) for o in offs]
+    ghost = [("T-402", style403()), ("offset 12", mp403(**{"multipass.offset": 12.0})),
+             ("offset 12 opacity 0,92", mp403(**{"multipass.offset": 12.0, "stroke.opacity": 0.92})),
+             ("3 pass offset 12 op 0,92", mp403(**{"multipass.offset": 12.0, "multipass.passes": 3, "stroke.opacity": 0.92}))]
+
+    def png(name: str, idx: int, cx: float, cy: float, note: str, pset=panels, half: int = ZOOM_HALF403, zoom: int = ZOOM) -> None:
+        doc = load_doc(clip, idx)
+        imgs = [passes_rgb(clip, doc, st)[0] for _, st in pset]
+        write_png(OUT403 / f"helper_{name}_f{idx:03d}.png", crop_panels(imgs, [f"{t} | {note} f{idx}" for t, _ in pset], cx, cy, half, zoom))
+    g0 = sty.make_geometry(style403(), int(meta(clip)["working_width"]), int(meta(clip)["working_height"]))
+    for idx in (80, 183):
+        base_p, _ = sty.base_pieces(load_doc(clip, idx), g0)
+        sil = max((p for p in base_p if p.type == "silhouette"), key=lambda p: len(p.points))
+        mid = sil.points[len(sil.points) // 2]
+        png("siluet", idx, mid[0], mid[1], "siluet")
+        png("siluet_hantu_off12", idx, mid[0], mid[1], "siluet (garis hantu)", ghost)
+        ends = jm.joint_ends(base_p, g0)
+        if ends:
+            i, e = ends[len(ends) // 2]
+            q = base_p[i].points[0 if e == 0 else -1]
+            png("sambungan_T", idx, q[0], q[1], "sambungan T")
+            png("sambungan_T_hantu_off12", idx, q[0], q[1], "sambungan T (offset 12)", ghost)
+        closed = [p for p in base_p if p.closed]
+        if closed:
+            pc = max(closed, key=lambda p: len(p.points))
+            png("seam_tertutup", idx, pc.points[0][0], pc.points[0][1], "seam tertutup")
+        pts, own = [], []
+        for pc in base_p:
+            q = pc.points
+            far = np.ones(len(q), bool)
+            if not pc.closed:
+                far = np.minimum(np.hypot(*(q - q[0]).T), np.hypot(*(q - q[-1]).T)) > 12.0
+            pts.append(q[far])
+            own.append(np.full(int(far.sum()), pc.stroke_idx))
+        pts, own = np.vstack(pts), np.concatenate(own)
+        pairs = sm.cKDTree(pts).query_pairs(40 * g0.unit, output_type="ndarray")
+        pairs = pairs[own[pairs[:, 0]] != own[pairs[:, 1]]] if len(pairs) else pairs
+        if len(pairs):
+            dd = np.hypot(*(pts[pairs[:, 0]] - pts[pairs[:, 1]]).T)
+            k = int(np.argmin(dd))
+            c = (pts[pairs[k][0]] + pts[pairs[k][1]]) / 2
+            png("garis_sejajar_dekat", idx, c[0], c[1], f"garis berdekatan (min {dd.min():.1f} px)")
+    png("tepi_bawah", 233, g0.out_w * 0.5, g0.out_h - 150, "tepi bawah", panels, 220, 2)
+
+
+def worst403_scan(clip: str, style, every: int = 3) -> dict:
+    """Kasus terburuk per pass (informasi; dikirim SEBELUM Rio menilai): Δ celah sambungan / toleransi, min det Jacobian, tinta tepi, persilangan."""
+    import multipass_metrics as mm
+    n = frame_count(clip)
+    m = meta(clip)
+    g = sty.make_geometry(style, int(m["working_width"]), int(m["working_height"]))
+    worst = {"joint_ratio": (0.0, None), "min_det": (9.0, None), "edge_ink": (0, None), "new_cross": (0, None), "seam_ratio_max": (-9.0, None)}
+    for i in range(0, n, every):
+        doc = load_doc(clip, i)
+        passes, _ = sty.frame_passes(doc, g)
+        for r in mm.pass_invariants(passes, g, int(doc["frame_index"])):
+            for key, better in (("joint_ratio", max), ("min_det", min), ("edge_ink", max), ("new_cross", max), ("seam_ratio_max", max)):
+                v = r[{"edge_ink": "edge_ink_changed", "new_cross": "new_crossings"}.get(key, key)]
+                if better(v, worst[key][0]) == v and v != worst[key][0]:
+                    worst[key] = (v, i)
+    return worst
+
+
+def cmd_worst403() -> None:
+    clip = BOARD_CLIP
+    summary = {}
+    for off in (2.7, 5.5, 8.0, 12.0):
+        w = worst403_scan(clip, mp403(**{"multipass.offset": off, "multipass.passes": 3}))
+        summary[f"offset_{off:g}"] = {k: {"value": float(v[0]), "frame": v[1]} for k, v in w.items()}
+        print(f"  offset {off:g}: {summary[f'offset_{off:g}']}", flush=True)
+    OUT403.mkdir(parents=True, exist_ok=True)
+    (OUT403 / "worst403_summary.json").write_text(json.dumps(summary, indent=1), encoding="utf-8")
+
+
+T403_COMMANDS = ("videos403", "helpers403", "worst403")
 T402_COMMANDS = ("videos402", "helpers402", "worst402")
 
 
 COMMANDS = {"final": cmd_final, "videos": cmd_videos, "edge": cmd_edge, "widths": cmd_widths, "epsilon": cmd_epsilon, "worst": cmd_worst,
             "zoom": cmd_zoom, "boards": cmd_boards, "variants": cmd_variants, "videos401": cmd_videos401, "changemap": cmd_changemap,
             "worst401": cmd_worst401, "svgsample": cmd_svgsample, "videos402": cmd_videos402, "helpers402": cmd_helpers402,
-            "worst402": cmd_worst402}
+            "worst402": cmd_worst402, "videos403": cmd_videos403, "helpers403": cmd_helpers403, "worst403": cmd_worst403}
 T203_ONLY = ("final", "videos", "edge", "widths", "epsilon", "worst", "zoom")          # alat T-203a (strokes/ klip, work/t203a/)
 T401_COMMANDS = ("boards", "variants", "videos401", "changemap", "worst401", "svgsample")
 
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("what", choices=[*COMMANDS, "all", "all401", "all402"])
+    p.add_argument("what", choices=[*COMMANDS, "all", "all401", "all402", "all403"])
     p.add_argument("--clips-root", type=Path, default=None,
                    help="folder berisi <klip>/{meta.json,contours/} (default work/clips); T-402: SALINAN scratchpad")
     args = p.parse_args(argv)
     if args.clips_root is not None:
         global CLIPS
         CLIPS = args.clips_root
-    if args.what in T402_COMMANDS or args.what == "all402":
+    if args.what in T403_COMMANDS or args.what == "all403":
+        OUT403.mkdir(parents=True, exist_ok=True)
+    elif args.what in T402_COMMANDS or args.what == "all402":
         OUT402.mkdir(parents=True, exist_ok=True)
     else:
         OUT.mkdir(parents=True, exist_ok=True)
         OUT401.mkdir(parents=True, exist_ok=True)
     names = (list(COMMANDS) if args.what == "all" else list(T401_COMMANDS) if args.what == "all401"
-             else list(T402_COMMANDS) if args.what == "all402" else [args.what])
+             else list(T402_COMMANDS) if args.what == "all402" else list(T403_COMMANDS) if args.what == "all403" else [args.what])
     for name in names:
         print(f"== {name}")
         COMMANDS[name]()

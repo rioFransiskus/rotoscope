@@ -56,7 +56,7 @@ def make_strokes(work: Path, cfg, *, n: int = te.N, w: int = te.W, h: int = te.H
           "frame_size": {"width": w, "height": h}, "vectorize_hash": "c" * 64, "created_utc": created_utc}
     (cdir / "manifest.json").write_text(json.dumps(cm), encoding="utf-8")
     ow, oh = w * SCALE, h * SCALE
-    sm = {"stage": "stylize", "contract": "T-402", "algo_rev": 1, "style": "t", "style_hash": "d" * 64,
+    sm = {"stage": "stylize", "contract": "T-403", "algo_rev": 1, "style": "t", "style_hash": "d" * 64,
           "contours": {k: cm[k] for k in ("contract", "vectorize_hash", "algo_rev", "created_utc")},
           "frame_size": {"width": w, "height": h}, "clip": ident, "output_width": ow,
           "output_size": {"width": ow, "height": oh}, "created_utc": "2026-10-03T01:00:00+00:00"}
@@ -97,7 +97,7 @@ def test_strokes_end_to_end(tmp_path):
                           "color_range": "tv"}
     m = read_json(out / "meme_clip.export.json")
     assert m["source"] == "strokes" and "stable" not in m
-    assert m["strokes"] == {"contract": "T-402", "style_hash": "d" * 64, "created_utc": "2026-10-03T01:00:00+00:00",
+    assert m["strokes"] == {"contract": "T-403", "style_hash": "d" * 64, "created_utc": "2026-10-03T01:00:00+00:00",
                             "output_size": {"width": te.W * SCALE, "height": te.H * SCALE}}
     assert m["encoded_size"] == m["strokes"]["output_size"] and m["frame_size"] == {"width": te.W, "height": te.H}
     assert m["color_tags"] == ex.COLOR_TAGS
@@ -368,9 +368,9 @@ def test_old_contract_strokes_rejected_then_new_svgs_recopied_as_stale_not_as_us
     cfg, work, out = clip_strokes(tmp_path)
     ex.run_export(cfg, log=quiet)
     old_copy = {p.name: p.read_bytes() for p in svg_dir(out).glob("frame_*.svg")}
-    for old in ("T-203a", "T-401"):
+    for old in ("T-203a", "T-401", "T-402"):
         edit_json(work / "strokes" / "manifest.json", contract=old)
-        with pytest.raises(StageError, match=rf"contract '{old}'.*T-402.*stylize"):
+        with pytest.raises(StageError, match=rf"contract '{old}'.*T-403.*stylize"):
             ex.run_export(cfg, log=quiet)
         assert {p.name: p.read_bytes() for p in svg_dir(out).glob("frame_*.svg")} == old_copy       # ditolak sebelum menyentuh SVG
     make_strokes(work, cfg, tag="<path d='M0 0 1 1 Z'/>", created_utc="2026-10-06T00:00:00+00:00")   # = stylize T-402 baru

@@ -749,10 +749,10 @@ dengan aturan tetap)*:
 
 ### [5] `stylize.py` (CPU)
 
-**Status:** **T-203a `DONE`** (garis polos, 2026-10-03) + **T-401 `DONE`** (tebal variabel + taper + resample, 2026-10-06) + **T-402 `WIP`**
-(jitter koheren + boil, Tahap 2–3 selesai 2026-10-06, menunggu penilaian Rio; `contract` `"T-402"`): subperintah
+**Status:** **T-203a `DONE`** (garis polos, 2026-10-03) + **T-401 `DONE`** (tebal variabel + taper + resample, 2026-10-06) + **T-402 `DONE`**
+(jitter koheren, DEFAULT MATI) + **T-403 `DONE`** (multipass + opasitas, 2026-10-07; default 2 pass, offset 5,5, falloff 0,35, opacity 0,92, pass tambahan statis; `contract` `"T-403"`): subperintah
 `python -m rotoscope stylize <video>`; bagian urutan `run`, tabel restart DAG, dan sumber
-`export.source: "strokes"` sejak **T-203b**. Multipass, tekstur, opasitas **belum aktif** (Phase 4; `ignored_params` di manifest). Preview `--preview N` = T-204. Tanpa GPU: `torch` tidak pernah di-import (diuji di subprocess).
+`export.source: "strokes"` sejak **T-203b**. Tekstur **belum aktif** (Phase 4; `ignored_params` di manifest). Preview `--preview N` = T-204. Tanpa GPU: `torch` tidak pernah di-import (diuji di subprocess).
 
 - **In:** `contours/frame_*.json`, `contours/manifest.json`, `meta.json`, style YAML (`--style`, default
   `configs/styles/rough-sketch.yaml`, selain itu default kode); config pipeline (`--config`) hanya untuk `paths.work_dir`.
@@ -806,7 +806,7 @@ dengan aturan tetap)*:
   (kertas/tinta) → PNG (kompresi level 3). Garis = gabungan poligon terisi: trapesium per segmen (tebal berbeda di tiap ujung) +
   cakram berjari-jari per titik (sub-piksel 1/16) karena `cv2.polylines` hanya menghasilkan lebar ganjil. Isian even-odd poligon
   kontur DITOLAK (gagal di tikungan rapat; jari-jari < setengah tebal). `FILL_BIAS_SS` = 0,55 (kalibrasi terhadap luas poligon SVG).
-  Koordinat cv2 = x' · ss − 0,5. Tinta solid (opasitas diabaikan).
+  Koordinat cv2 = x' · ss − 0,5. Tinta solid pada jalur legacy (1 pass, `stroke.opacity` 1,0, `opacity_scale` 1,0); selain itu fraksi tinta f (lihat "Multipass (T-403)").
 - **SVG (T-401):** string manual (bukan svgwrite: byte-determinisme penuh, tanpa atribut otomatis, tanpa dependency):
   `<svg width height viewBox>` = ukuran output, `<rect>` latar `paper.color`, satu `<g id=tipe>` per tipe (urutan silhouette,
   silhouette_hole, group_boundary, occlusion), SATU `<path>` terisi per jalur (poligon kontur: sisi kiri + tutup bulat
@@ -817,7 +817,7 @@ dengan aturan tetap)*:
 - **Satu renderer untuk semua `type`**; parameter dasar + override per tipe (`stroke.by_type.*.width_scale`). Loop (`closed: false`
   dengan titik akhir = titik awal) diperlakukan sebagai tertutup. Garis oklusi berkedip digambar apa adanya (tanpa interpolasi antar
   frame; frame tanpa strok = hanya kertas, valid).
-- **Manifest** `strokes/manifest.json` (prinsip #4): `stage`, `contract` `"T-402"` (T-203a / T-401 → T-402: strokes lama basi otomatis), `jitter` (T-402: `on`, `fold_r`, `fold_warn`, `edge_dead_px`, `edge_fade_px`; tidak ikut pencocokan basi), `algo_rev` (`stylize.ALGO_REV`, mulai 1; naik hanya
+- **Manifest** `strokes/manifest.json` (prinsip #4): `stage`, `contract` `"T-403"` (T-203a / T-401 / T-402 → T-403: strokes lama basi otomatis), `multipass` (T-403: `passes`, `amplitude_px`, `cell_px`, `fold_r`, `alphas`, `temporal_mode`; tidak ikut pencocokan basi), `jitter` (T-402: `on`, `fold_r`, `fold_warn`, `edge_dead_px`, `edge_fade_px`; tidak ikut pencocokan basi), `algo_rev` (`stylize.ALGO_REV`, mulai 1; naik hanya
   untuk perbaikan perilaku; fitur baru menaikkan `contract`), `style` (nama), `style_hash` + `style_params` (HANYA parameter aktif),
   `ignored_params`, `contours` (`contract`, `vectorize_hash`, `algo_rev`, `created_utc`), `clip`, `frame_size` (kerja), `output_width`,
   `output_size`, `scale`, `unit`, `edge_mode`, `coords`, `created_utc`. **Basi** (CPU murah): field berubah → `strokes/` dihapus + dihitung
@@ -831,7 +831,8 @@ dengan aturan tetap)*:
 - **Parameter style aktif / belum aktif:** docs/02 "Satuan dan parameter aktif (T-203a + T-401)". Aktif tambahan di T-401:
   `shape.resample_points`, `stroke.width_variation`, `stroke.width_noise_scale`, `stroke.taper_ends|px|min`,
   `stroke.by_type.*.taper_ends`, `jitter.param_seed`. Aktif tambahan di T-402: `jitter.amplitude`, `jitter.frequency`,
-  `jitter.temporal_seed_mode`, `jitter.temporal_drift`, `jitter.hold_frames`, `jitter.stroke_independence`.
+  `jitter.temporal_seed_mode`, `jitter.temporal_drift`, `jitter.hold_frames`, `jitter.stroke_independence`. Aktif tambahan di T-403: `stroke.opacity`,
+  `stroke.by_type.*.opacity_scale`, `multipass.enabled`, `multipass.passes`, `multipass.offset`, `multipass.opacity_falloff`, `multipass.temporal_mode`.
 - **Metrik + toleransi test (docs/05 T-203):** kesetiaan = jarak titik kontur asli terskala (titik tepi dikecualikan pada hide) ke
   polyline akhir; toleransi sintetis = 0,35 × tebal garis (BUKAN epsilon), data nyata = ambang regresi dari angka terukur. Fungsi:
   `tests/stylize_metrics.py`.
@@ -864,7 +865,21 @@ dengan aturan tetap)*:
     s > 0: pola G loncat saat `track_id` berganti (oklusi ±0,35 per strok-frame); taper / pop oklusi tidak dikerjakan; r > 0,19 diperingatkan (r 0,21 gagal Jacobian 0,05 di 2–17 frame).
   - **DEFAULT MATI (keputusan Rio, 2026-10-07):** `jitter.amplitude` 0 → stage [5] = T-401 byte-identik; sisa default: frequency 0,053, mode "frame", drift 0,35,
     `hold_frames` 2, `stroke_independence` 0. Fitur diaktifkan lewat style (docs/02, docs/04 "Hasil T-402").
-  - ✅ **"Jitter terkunci posisi"** (terjawab, T-402): medan koheren fungsi posisi + waktu; `points[0]` / `anchor` tidak dipakai. [5] membaca `points[0]`
+  - **Multipass (T-403 DONE; keputusan Rio, docs/04 "Keputusan T-403" + "Hasil T-403")** — langkah `frame_passes` / `multipass_pieces` SETELAH `jitter_pieces`, SEBELUM raster.
+  - **Pass:** pass 0 = garis asli (setelah jitter T-402). Pass k ≥ 1 = titik pass 0 + D_k, D_k = A × [n_x, n_y](x/λ, y/λ, t) × φ(d): mesin jitter T-402 (`pass_geometry` =
+    `jitter_pieces` dengan amplitudo / sel / seed pass, s = 0), BUKAN sepanjang normal; seed = `seed_of(param_seed, MULTIPASS_SALT_FIELD 0x5D2B, k, kanal)`; φ(d) = penjaga tepi T-402.
+    A = `offset` / `MULTIPASS_SEP_MEDIAN` (0,59) × unit (offset = median |D|), λ = A / `MULTIPASS_FOLD_R` (0,15) → r konstan, skala medan mengikuti offset. Tebal / taper / flag tepi disalin dari pass 0.
+    Zona mati tepi pass k ≥ 1 = `edge_dead` pass 0 + `MULTIPASS_EDGE_EXTRA_PX` (1,0 px output): tinta 3 baris / kolom terluar tidak berubah pada semua frame kedua klip.
+  - **Waktu:** `multipass.temporal_mode` "fixed" (default; t = 0, statis) | "frame" (t = floor(frame_index / `jitter.hold_frames`) × `jitter.temporal_drift`, frame_index ABSOLUT). Tanpa rantai antar frame.
+  - **Alpha:** a_k = `stroke.opacity` × `opacity_falloff`^k (× `opacity_scale` tipe). Dalam pass union; antar pass "over": f = 1 − Π(1 − a_k cov_k) (komutatif). Tipe ber-scale 1,0 = satu lapisan;
+    tipe ber-scale ≠ 1 = lapisan sendiri ("over", seperti grup SVG bersarang). Raster: mask per lapisan → INTER_AREA → f → 256 level → LUT warna.
+  - **SVG:** jalur legacy (1 pass, opacity 1,0, scale 1,0) = byte-identik T-402. Selain itu `<g id="pass_K" opacity="a_k">` (4 desimal) berisi `<g id="pass_K_<tipe>">` (atribut `opacity` = scale bila ≠ 1);
+    poligon tetap per strok; id unik; tanpa id acak / timestamp.
+  - **Pengaman:** `multipass.enabled: false` atau `passes: 1` DAN `stroke.opacity: 1.0` = SVG + PNG byte-identik T-402. **Default (penilaian visual Rio, docs/04 "Hasil T-403"):** `passes` 2, `offset` 5,5, `opacity_falloff` 0,35, `temporal_mode` "fixed", `stroke.opacity` 0,92 (semua garis); jitter mati.
+  - **Penjaga lipatan:** r jitter (bila aktif) + 0,15 > 0,19 → peringatan sekali per run + manifest; tanpa clamp. Batas: `opacity_scale` ≠ 1 membuat sambungan antar tipe bisa lebih gelap.
+  - **Keselamatan (tests/multipass_metrics.py, per pass):** sambungan |Δ celah| ≤ toleransi, persilangan baru 0, seam (relatif 1,25× interior ATAU batas Lipschitz; interior dalam batas Lipschitz — `jitter_metrics.seam_ok`, docs/04 "Revisi T-403"), tinta tepi 0 piksel, ujung ekstensi, min det Jacobian > 0,05; angka: docs/04 "Hasil T-403".
+  - **Raster non-legacy (biaya):** `ink_box` = jendela piksel yang memuat semua tinta semua pass (titik ± tebal/2 ± `INK_BOX_MARGIN_PX` 2); `render_mask(box)` + INTER_AREA + tabel float32 256 entri per lapisan hanya di jendela; hasil identik BIT dengan komposisi penuh-frame (`tests/multipass_metrics.ink_fraction_reference`); PNG ditulis langsung BGR. Jalur legacy tidak berubah.
+- ✅ **"Jitter terkunci posisi"** (terjawab, T-402): medan koheren fungsi posisi + waktu; `points[0]` / `anchor` tidak dipakai. [5] membaca `points[0]`
     (bukan `anchor`) dan mengabaikan `prev_sha256`.
 - ✅ **`output_width`** (terjawab, T-203a): 1080, satuan px ref × `unit`.
 - ✅ **Run titik di tepi frame** (terjawab, T-203a): **hide** (lihat "Tepi frame").
@@ -895,7 +910,7 @@ dengan aturan tetap)*:
   `foreground_color` / `background_color` tidak dipakai dan tidak ikut hash); `"silhouette"` (Phase 1) = `stable/groups/*.png`,
   grup ≠ 0 → `foreground_color` di atas `background_color`, resolusi kerja.
 - **Masukan source `strokes`** (divalidasi sebelum encode; semua kegagalan = exit 1 dengan perintah yang benar):
-  `strokes/manifest.json` ada, `contract` ∈ `SUPPORTED_STROKES_CONTRACTS` (`{"T-402"}` sejak T-402, sebelumnya `{"T-401"}`; strokes `T-203a` / `T-401` → "jalankan stylize"; salinan SVG lama di `out/svg/<nama>/` disalin ulang sebagai basi, bukan suntingan), `clip` = `meta.json`, `frame_size`,
+  `strokes/manifest.json` ada, `contract` ∈ `SUPPORTED_STROKES_CONTRACTS` (`{"T-403"}` sejak T-403, sebelumnya `{"T-402"}`; strokes `T-203a` / `T-401` / `T-402` → "jalankan stylize"; salinan SVG lama di `out/svg/<nama>/` disalin ulang sebagai basi, bukan suntingan), `clip` = `meta.json`, `frame_size`,
   `output_size` bilangan genap; referensi `contours` di dalamnya (contract, vectorize_hash, created_utc) = `contours/manifest.json`
   sekarang (rantai diperiksa satu tingkat; [5] sendiri memeriksa contours → stable) → jalankan `stylize`; setiap `frame_*.png`
   ada, utuh (IHDR + IEND) dan berukuran `output_size`.

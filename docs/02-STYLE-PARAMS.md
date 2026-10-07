@@ -187,7 +187,7 @@ stroke:
   width_variation: 0.5       # 0 = seragam, 1 = variasi ekstrem (keputusan Rio, visual, T-401)
   width_noise_scale: 0.036   # frekuensi noise tebal (per px ref), terkunci posisi; x2 tampak "merayap" (T-401)
   color: "#1a1a1a"
-  opacity: 0.92
+  opacity: 0.92              # T-403 (keputusan Rio): tinta sedikit transparan, SEMUA garis; < 1 = komposisi "over" antar pass
   cap: "round"
   taper_ends: true           # ujung BEBAS menipis (smoothstep); termasuk oklusi (keputusan Rio, T-401)
   taper_px: 70               # panjang zona taper di tiap ujung (px ref), maks panjang strok / 2
@@ -211,9 +211,10 @@ jitter:
 # ── MULTI-PASS (kesan sketsa ditimpa) ──────────────
 multipass:
   enabled: true
-  passes: 2                  # jumlah garis tumpang tindih
-  offset: 2.7                # jarak antar pass (px ref)
-  opacity_falloff: 0.55      # pass ke-2 lebih pudar
+  passes: 2                  # jumlah garis tumpang tindih; 1 = tanpa pass tambahan (keputusan Rio, T-403)
+  offset: 5.5                # MEDIAN |D| pass tambahan vs pass 0 (px ref); medan koheren, skala medan mengikuti offset
+  opacity_falloff: 0.35      # alpha pass k = stroke.opacity × opacity_scale × falloff^k
+  temporal_mode: "fixed"     # "fixed" = pass tambahan statis | "frame" = evolusi per gambar (jitter.hold_frames, temporal_drift)
 
 # ── TEXTURE ────────────────────────────────────────
 texture:
@@ -267,6 +268,7 @@ itu) DIHAPUS di T-303: optical flow ditolak berdasarkan data (docs/04 "Hasil T-3
 | `multipass.passes` | int ≥ 1 |
 | `multipass.offset` | ≥ 0 |
 | `multipass.opacity_falloff` | 0–1 |
+| `multipass.temporal_mode` | `"fixed"` \| `"frame"` (T-403) |
 | `texture.mode` | `"none"` \| `"brush_stamp"` \| `"grain_overlay"` |
 | `stroke.taper_ends`, `multipass.enabled`, `paper.enabled` | bool |
 | `texture.brush_image`, `paper.texture_image` | path relatif → di-resolve terhadap **root project** (folder berisi `pyproject.toml`, dicari dari lokasi paket — editable install), **bukan** cwd; absolut boleh; root tidak ditemukan → error. File wajib ada hanya kalau dipakai (`texture.mode == "brush_stamp"` / `paper.enabled`). Aturan ini khusus aset input — `paths.*` tetap relatif terhadap cwd |
@@ -295,9 +297,15 @@ itu) DIHAPUS di T-303: optical flow ditolak berdasarkan data (docs/04 "Hasil T-3
   `stroke.taper_px`, `stroke.taper_min`, `stroke.color`, `stroke.cap` (hanya `"round"`; nilai lain → error stage),
   `stroke.by_type.*.width_scale`, `stroke.by_type.*.taper_ends`, `jitter.param_seed` (seed noise tebal + dasar seed jitter), `paper.color`,
   `render.ss`, `render.output_width`; **T-402:** `jitter.amplitude`, `jitter.frequency`, `jitter.temporal_seed_mode`,
-  `jitter.temporal_drift`, `jitter.hold_frames`, `jitter.stroke_independence`. Hanya parameter ini yang masuk hash style stage [5].
+  `jitter.temporal_drift`, `jitter.hold_frames`, `jitter.stroke_independence`; **T-403:** `stroke.opacity`, `stroke.by_type.*.opacity_scale`,
+  `multipass.enabled`, `multipass.passes`, `multipass.offset`, `multipass.opacity_falloff`, `multipass.temporal_mode`. Hanya parameter ini yang masuk hash style stage [5].
 - **Divalidasi tetapi BELUM aktif (dicatat di `strokes/manifest.json` → `ignored_params`; aktif di task Phase 4 berikutnya):**
-  `stroke.opacity`, `stroke.by_type.*.opacity_scale`, `multipass.*`, `texture.*`, `paper.enabled`, `paper.texture_*`, `paper.vignette`.
+  `texture.*`, `paper.enabled`, `paper.texture_*`, `paper.vignette`.
+- **Multipass (T-403; keputusan Rio, docs/04 "Keputusan T-403"):** pass 0 = garis asli (setelah jitter); pass k ≥ 1 = titik pass 0 + medan koheren 2D (mesin jitter T-402,
+  salt tersendiri per k, penjaga tepi φ), statis terhadap waktu (`temporal_mode` "fixed"; "frame" = evolusi per gambar lewat `jitter.hold_frames` / `jitter.temporal_drift`).
+  `offset` = MEDIAN |D| (px ref): amplitudo A = offset / 0,59, panjang gelombang = A / 0,15 (r konstan 0,15, skala medan mengikuti offset); offset 2,7 ≈ RMS 3,0, p95 4,7.
+  Alpha pass k = `stroke.opacity` × `opacity_scale` × `opacity_falloff`^k; union dalam pass, "over" antar pass (f = 1 − Π(1 − a_k cov_k)). `enabled: false` atau `passes: 1`
+  DAN `stroke.opacity: 1.0` = SVG + PNG byte-identik T-402 (DEFAULT sejak Tahap 4: `passes` 2, `offset` 5,5, `opacity_falloff` 0,35, `opacity` 0,92, `temporal_mode` "fixed"; jitter tetap mati). Batas: `opacity_scale` ≠ 1 membuat sambungan antar tipe bisa lebih gelap. Peringatan lipatan: r jitter + 0,15 > 0,19.
 - **Jitter (T-402; keputusan Rio, docs/04 "Keputusan T-402"):** medan perpindahan KOHEREN vektor 2D, `D = amplitude × unit × [√(1 − s) F + √s G_track] × φ`
   (s = `stroke_independence`). `amplitude` = PUNCAK per kanal (px ref; |D| ≤ amplitude × √2 pada s = 0; batas umum amplitude × √2 × (√(1 − s) + √s)),
   RMS per kanal ≈ 0,40–0,47 × amplitude (terukur). `frequency` (per px ref; sel noise = 1 / frequency; 0 = jitter mati); panjang korelasi

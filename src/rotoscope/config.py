@@ -268,7 +268,7 @@ class StrokeConfig:
     width_variation: float = 0.5       # keputusan Rio (visual, T-401)
     width_noise_scale: float = 0.036   # panjang gelombang ≈ 28 px ref; x2 tampak "merayap" di garis bergerak (T-401)
     color: str = "#1a1a1a"
-    opacity: float = 0.92
+    opacity: float = 0.92              # T-403: keputusan Rio (visual): tumpang tindih lebih lembut, sambungan tidak lebih gelap; berlaku untuk SEMUA garis
     cap: str = "round"
     taper_ends: bool = True
     taper_px: float = 70.0
@@ -291,9 +291,10 @@ class JitterConfig:
 @dataclass(frozen=True)
 class MultipassConfig:
     enabled: bool = True
-    passes: int = 2
-    offset: float = 2.7
-    opacity_falloff: float = 0.55
+    passes: int = 2                     # T-403: keputusan Rio (visual); 1 = tanpa pass tambahan
+    offset: float = 5.5                 # median |D| pass tambahan terhadap pass 0 (px ref); 2,7 hanya menebalkan, 8 mengganggu bentuk tubuh
+    opacity_falloff: float = 0.35       # keputusan Rio: pass kedua tetap terbaca
+    temporal_mode: str = "fixed"        # T-403: "fixed" = pass tambahan statis | "frame" = evolusi per gambar (jitter.hold_frames / temporal_drift)
 
 
 @dataclass(frozen=True)
@@ -790,6 +791,7 @@ def _validate_style(c: StyleConfig) -> None:
     _at_least("multipass.passes", mp.passes, 1)
     _at_least("multipass.offset", mp.offset, 0)
     _unit("multipass.opacity_falloff", mp.opacity_falloff)
+    _choice("multipass.temporal_mode", mp.temporal_mode, TEMPORAL_SEED_MODES)
 
     tx = c.texture
     _choice("texture.mode", tx.mode, TEXTURE_MODES)
