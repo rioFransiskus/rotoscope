@@ -41,7 +41,9 @@ from rotoscope import segment as segment_stage
 from rotoscope import stabilize as stabilize_stage
 from rotoscope import stylize as stylize_stage
 from rotoscope import vectorize as vectorize_stage
-from rotoscope.config import ConfigError, PipelineConfig, load_pipeline, load_style
+from rotoscope.config import (
+    DEFAULT_STYLE_NAME, ConfigError, PipelineConfig, load_pipeline, load_style, resolve_style, style_name,
+)
 from rotoscope.export import (
     DEFAULT_CONFIG, check_svg_owner, manifest_path_for, read_manifest, resolve_filename,
     sanitize_source_name, svg_dir_for,
@@ -146,12 +148,22 @@ def preflight_video(video: Path, work_dir: Path) -> None:
             f"(Kalau klip lama memang tidak dipakai lagi, folder itu bisa Anda hapus sendiri.)")
 
 
-def preflight_export_target(cfg: PipelineConfig, video: Path, limit: int | None) -> None:
+def pick_style(flag: str | Path | None, cfg: PipelineConfig) -> tuple[Path | None, str]:
+    """(path YAML style, nama) yang dipakai: --style (nama preset / path) mengalahkan kunci `style` di config (T-406). Satu jalur
+    resolver (`config.resolve_style`) dengan stage. Path None = default kode (rough-sketch tanpa berkasnya)."""
+    try:
+        path = resolve_style(flag if flag is not None else cfg.style)
+    except ConfigError as e:
+        raise CliError(str(e)) from None
+    return path, style_name(path)
+
+
+def preflight_export_target(cfg: PipelineConfig, video: Path, limit: int | None, style_label: str = DEFAULT_STYLE_NAME) -> None:
     """(c) target export milik video LAIN → berhenti sekarang, bukan di stage terakhir setelah ±78 mnt GPU.
     Pengaman export tidak bisa dilewati --restart. `--limit` menulis <nama>.limitN.mp4 tanpa pengaman → dilewati."""
     if limit is not None:
         return
-    target = cfg.paths.out_dir / resolve_filename(cfg.export.filename, str(video.resolve()))
+    target = cfg.paths.out_dir / resolve_filename(cfg.export.filename, str(video.resolve()), style=style_label)
     old = read_manifest(manifest_path_for(target))
     old_src = (old or {}).get("clip", {}).get("source_path")
     if old_src and target.is_file() and not _same_path(old_src, video):
@@ -160,10 +172,9 @@ def preflight_export_target(cfg: PipelineConfig, video: Path, limit: int | None)
             f"tidak bisa dilewati dengan restart. Ganti nama salah satu video, atau ubah export.filename di config.")
 
 
-def preflight_style(style: Path | None) -> None:
-    """(d) --style (atau default) ada dan LOLOS validasi — kegagalan di [5] baru terlihat setelah ±78 mnt GPU.
-    `render.output_width` divalidasi genap oleh load_style, jadi ukuran output (yuv420p) tidak perlu cek lain."""
-    path = style if style is not None else (stylize_stage.DEFAULT_STYLE if stylize_stage.DEFAULT_STYLE.is_file() else None)
+def preflight_style(path: Path | None) -> None:
+    """(d) style terpilih (HASIL `pick_style`: path YAML, None = default kode) LOLOS validasi — kegagalan di [5] baru terlihat setelah
+    ±78 mnt GPU. `render.output_width` divalidasi genap oleh load_style, jadi ukuran output (yuv420p) tidak perlu cek lain."""
     try:
         style = load_style(path)
         paper.validate_texture(style)             # T-404a: gambar kertas ada + terdekode bila dipakai (export di akhir run tidak boleh gagal karena ini)
@@ -172,13 +183,13 @@ def preflight_style(style: Path | None) -> None:
 
 
 def preflight_svg_target(cfg: PipelineConfig, video: Path, limit: int | None, work_dir: Path,
-                         restart: bool) -> None:
+                         restart: bool, style_label: str = DEFAULT_STYLE_NAME) -> None:
     """(e) out/svg/<nama>/ milik video LAIN, atau penanda rusak (+ --restart tanpa semua SVG identik dengan strokes/)
     → berhenti sekarang (hanya source strokes menyalin SVG; --limit tidak). `restart` = export ikut ber-restart."""
     if limit is not None or cfg.export.source != "strokes":
         return
     try:
-        check_svg_owner(svg_dir_for(cfg.paths.out_dir, str(video.resolve())), str(video.resolve()),
+        check_svg_owner(svg_dir_for(cfg.paths.out_dir, str(video.resolve()), cfg.export.filename, style_label), str(video.resolve()),
                         work_dir / stylize_stage.STROKES_DIRNAME, restart)
     except StageError as e:
         raise CliError(str(e)) from None
@@ -430,15 +441,16 @@ def cmd_preview(a: argparse.Namespace) -> int:
         raise CliError(f"--preview tidak bisa dipakai bersama {', '.join(bad)}")
     cfg = load_cfg(a.config, a.seg_model)
     video = a.video
-    ctx = Ctx(video=video, cfg=cfg, work_dir=clip_work_dir(cfg, video), config=a.config, style=a.style,
-              seg_model=a.seg_model)
+    ctx = Ctx(video=video, cfg=cfg, work_dir=clip_work_dir(cfg, video), config=a.config, seg_model=a.seg_model)
     preflight_video(video, ctx.work_dir)
-    preflight_style(a.style)
+    spath, label = pick_style(a.style, cfg)
+    ctx.style = spath if a.style is not None else None      # stage memilih sendiri lewat resolver yang sama (kunci `style` di config)
+    preflight_style(spath)
     preflight_tools()
     k, n = preview_window(a, ctx.work_dir)
     if _read_meta(ctx.work_dir) is not None:        # gagal cepat sebelum ingest (diulang sesudahnya)
         check_gpu_inputs(cfg, video, ctx.work_dir, k, k + n)
-    target = cfg.paths.out_dir / resolve_filename(cfg.export.filename, str(video.resolve()), n, k)
+    target = cfg.paths.out_dir / resolve_filename(cfg.export.filename, str(video.resolve()), n, k, label)
 
     print(f"run {video.name} --preview {n} --from {k}: folder kerja {ctx.work_dir}, keluaran {target}", flush=True)
     timings: list[tuple[str, float]] = []
@@ -489,14 +501,16 @@ def cmd_run(a: argparse.Namespace) -> int:
         raise CliError(f"--limit harus ≥ 1, dapat {a.limit}")
     cfg = load_cfg(a.config, a.seg_model)
     video = a.video
-    ctx = Ctx(video=video, cfg=cfg, work_dir=clip_work_dir(cfg, video), config=a.config, style=a.style,
+    ctx = Ctx(video=video, cfg=cfg, work_dir=clip_work_dir(cfg, video), config=a.config,
               seg_model=a.seg_model, limit=a.limit, restart=RESTART_SCOPE.get(a.restart_from, ()))
     # Pre-flight CPU-only — sebelum penghapusan, ingest, atau subprocess apa pun
     preflight_video(video, ctx.work_dir)
-    preflight_style(a.style)
+    spath, label = pick_style(a.style, cfg)
+    ctx.style = spath if a.style is not None else None      # stage memilih sendiri lewat resolver yang sama (kunci `style` di config)
+    preflight_style(spath)
     preflight_tools()
-    preflight_export_target(cfg, video, a.limit)
-    preflight_svg_target(cfg, video, a.limit, ctx.work_dir, "export" in ctx.restart)
+    preflight_export_target(cfg, video, a.limit, label)
+    preflight_svg_target(cfg, video, a.limit, ctx.work_dir, "export" in ctx.restart, label)
     if a.restart_from:
         require_yes(ctx.restart, ctx, a.yes, f"run --restart-from {a.restart_from}")
 
@@ -590,8 +604,9 @@ def build_parser() -> argparse.ArgumentParser:
     r = sub.add_parser("run", help="ingest → segment → depth → stabilize → vectorize → stylize → export untuk satu video")
     r.add_argument("video", type=Path)
     r.add_argument("--config", type=Path, default=None)
-    r.add_argument("--style", type=Path, default=None,
-                   help="YAML style: stage [5] stylize (garis) dan [6] export (kertas bertekstur / vignette, T-404a)")
+    r.add_argument("--style", type=str, default=None,
+                   help="nama preset (rough-sketch, clean-line, heavy-marker, pencil-light = configs/styles/<nama>.yaml) atau path YAML "
+                        "style: stage [5] stylize (garis) dan [6] export (kertas bertekstur / vignette). Default: kunci `style` di config")
     r.add_argument("--seg-model", choices=("0.8b", "0.4b"), default=None,
                    help="model segmentasi untuk SELURUH klip (tidak pernah fallback otomatis)")
     r.add_argument("--limit", type=int, default=None, help="hanya N frame pertama (export → <nama>.limitN.mp4)")

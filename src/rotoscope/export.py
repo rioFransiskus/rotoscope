@@ -59,7 +59,8 @@ from rotoscope import paper as pap
 from rotoscope import stabilize as stab
 from rotoscope import stylize as sty
 from rotoscope.config import (
-    ConfigError, PipelineConfig, StyleConfig, ensure_dir, load_pipeline, load_style, section_hash, to_dict,
+    DEFAULT_STYLE_NAME, EXPORT_FILENAME_STYLE_PLACEHOLDER, ConfigError, PipelineConfig, StyleConfig, ensure_dir, load_pipeline,
+    load_style, resolve_style, section_hash, style_name, to_dict,
 )
 from rotoscope.ingest import META_FILENAME
 from rotoscope.stage_common import (
@@ -73,7 +74,10 @@ MP4_SUFFIX = ".mp4"
 MANIFEST_SUFFIX = ".export.json"
 TMP_SUFFIX = ".tmp"
 SOURCE_PLACEHOLDER = "{source}"
+STYLE_PLACEHOLDER = EXPORT_FILENAME_STYLE_PLACEHOLDER      # T-406
 SOURCE_FALLBACK_NAME = "clip"
+STYLE_FALLBACK_NAME = "style"
+DEFAULT_FILENAME_TEMPLATE = "{source}.mp4"
 SOURCE_UNSAFE_RE = re.compile(r"[^\w.\-]+")
 SOURCE_STRIP_CHARS = "._-"
 
@@ -121,9 +125,17 @@ def sanitize_source_name(source_path: str) -> str:
     return stem or SOURCE_FALLBACK_NAME
 
 
-def resolve_filename(template: str, source_path: str, limit: int | None = None, start: int | None = None) -> str:
-    """`limit` → <nama>.limitN.mp4; `start` + `limit` (jendela, T-204) → <nama>.preview_<K>-<K+N-1>.mp4."""
+def sanitize_style_name(name: str) -> str:
+    """Nama style (preset / stem berkas) yang aman untuk nama file Windows; aturan sama dengan `{source}`."""
+    return SOURCE_UNSAFE_RE.sub("_", name).strip(SOURCE_STRIP_CHARS) or STYLE_FALLBACK_NAME
+
+
+def resolve_filename(template: str, source_path: str, limit: int | None = None, start: int | None = None,
+                     style: str = DEFAULT_STYLE_NAME) -> str:
+    """`limit` → <nama>.limitN.mp4; `start` + `limit` (jendela, T-204) → <nama>.preview_<K>-<K+N-1>.mp4.
+    `{style}` (T-406) = `style` (nama preset / stem berkas), disanitasi."""
     name = template.replace(SOURCE_PLACEHOLDER, sanitize_source_name(source_path))
+    name = name.replace(STYLE_PLACEHOLDER, sanitize_style_name(style))
     if limit is not None and start is not None:
         name = name[: -len(MP4_SUFFIX)] + f".preview_{start}-{start + limit - 1}" + MP4_SUFFIX
     elif limit is not None:
@@ -495,8 +507,11 @@ def _audio_ref(cfg: PipelineConfig, source_path: Path) -> dict:
 
 
 # ── Salinan SVG: strokes/*.svg → out/svg/<nama>/ ──
-def svg_dir_for(out_dir: Path, source_path: str) -> Path:
-    return out_dir / SVG_DIRNAME / sanitize_source_name(source_path)
+def svg_dir_for(out_dir: Path, source_path: str, template: str = DEFAULT_FILENAME_TEMPLATE,
+                style: str = DEFAULT_STYLE_NAME) -> Path:
+    """T-406: folder SVG = stem nama MP4 hasil (tanpa .limitN / .preview_*). Default `{source}.mp4` → nama sumber (tidak berubah);
+    `{source}_{style}.mp4` → folder per preset, jadi merender preset lain tidak menimpa SVG preset lain."""
+    return out_dir / SVG_DIRNAME / Path(resolve_filename(template, source_path, style=style)).stem
 
 
 def _sha256(path: Path) -> str:
@@ -637,10 +652,12 @@ def apply_svg_sync(strokes_dir: Path, svg_dir: Path, identity: dict, plan: dict)
 
 # ── Run ────────────────────────────────────────────
 def run_export(cfg: PipelineConfig, *, restart: bool = False, limit: int | None = None, start: int | None = None,
-               style: StyleConfig | None = None, log: Callable[[str], None] = print) -> dict:
+               style: StyleConfig | None = None, style_label: str = DEFAULT_STYLE_NAME,
+               log: Callable[[str], None] = print) -> dict:
     """Jalankan stage [6] (naif). Return ringkasan run. `start` (--from, T-204) = jendela [start, start+limit),
     wajib bersama `limit`; seperti --limit: tanpa manifest, pengaman, atau salinan SVG.
-    `style` (T-404a, hanya source strokes): parameter kertas `paper.*`; None = kertas datar (PNG [5] apa adanya, perilaku T-403)."""
+    `style` (T-404a, hanya source strokes): parameter kertas `paper.*`; None = kertas datar (PNG [5] apa adanya, perilaku T-403).
+    `style_label` (T-406): nama style untuk `{style}` di export.filename / folder SVG, dan dicatat di manifest (informasi, bukan kunci basi)."""
     if limit is not None and limit < 1:
         raise StageError(f"--limit harus ≥ 1, dapat {limit}")
     ex = cfg.export
@@ -689,7 +706,7 @@ def run_export(cfg: PipelineConfig, *, restart: bool = False, limit: int | None 
                              f"(dibutuhkan untuk mengambil audio)")
 
     out_dir = cfg.paths.out_dir
-    target = out_dir / resolve_filename(ex.filename, source_path, limit, start)
+    target = out_dir / resolve_filename(ex.filename, source_path, limit, start, style_label)
     manifest_path = manifest_path_for(target)
     tmp = target.with_name(target.name + TMP_SUFFIX)
 
@@ -707,6 +724,7 @@ def run_export(cfg: PipelineConfig, *, restart: bool = False, limit: int | None 
     if strokes_ref is not None:
         manifest["strokes"] = strokes_ref
         manifest["color_tags"] = dict(COLOR_TAGS)
+        manifest["style"] = style_label                   # informasi (di luar MANIFEST_MATCH_KEYS): hash / basi default tidak berubah
         manifest["paper"] = pap.paper_ref(style) if style is not None else None
         if style is not None:
             manifest["paper_info"] = pap.paper_info(style, size[0], size[1])
@@ -714,7 +732,7 @@ def run_export(cfg: PipelineConfig, *, restart: bool = False, limit: int | None 
         manifest["stable"] = {k: stable_m.get(k) for k in ("stabilize_hash", "groups_hash", "created_utc")}
 
     svg_plan = None
-    svg_dir = svg_dir_for(out_dir, source_path)
+    svg_dir = svg_dir_for(out_dir, source_path, ex.filename, style_label)
     if strokes_ref is not None and limit is None:     # pengaman SVG dievaluasi SEBELUM encode (gagal cepat)
         svg_plan = plan_svg_sync(work_dir / sty.STROKES_DIRNAME, names, svg_dir, source_path, restart)
 
@@ -747,6 +765,10 @@ def run_export(cfg: PipelineConfig, *, restart: bool = False, limit: int | None 
                     stale = [f"file lama tidak valid: {b}" for b in bad]
                 log(f"PERINGATAN: output [6] basi (setelan / input berubah) — {target.name} di-encode ulang:\n  "
                     + "\n  ".join(stale))
+            old_style = (old or {}).get("style")      # T-406: satu baris, perilaku tidak berubah (bukan error)
+            if ex.source == StrokesSource.kind and old_style not in (None, style_label) and STYLE_PLACEHOLDER not in ex.filename:
+                log(f"PERINGATAN: {target.name} (style '{old_style}') ditimpa hasil style '{style_label}' — export.filename tidak memuat "
+                    f"{STYLE_PLACEHOLDER}; pakai mis. \"{SOURCE_PLACEHOLDER}_{STYLE_PLACEHOLDER}{MP4_SUFFIX}\" agar tiap style punya MP4 + out/svg sendiri")
     ensure_dir(out_dir)
     tmp.unlink(missing_ok=True)
 
@@ -794,9 +816,9 @@ def main(argv: list[str] | None = None) -> int:
                                             "out/<nama>.mp4 (+ out/svg/<nama>/ untuk strokes)")
     p.add_argument("--config", type=Path, default=None,
                    help=f"YAML pipeline (default: {DEFAULT_CONFIG.as_posix()} kalau ada, selain itu default kode)")
-    p.add_argument("--style", type=Path, default=None,
-                   help=f"YAML style (parameter kertas paper.*; default: {sty.DEFAULT_STYLE.as_posix()} kalau ada, selain itu default kode); "
-                        f"harus YAML yang sama dengan stage [5]")
+    p.add_argument("--style", type=str, default=None,
+                   help="nama preset (configs/styles/<nama>.yaml) atau path YAML style (parameter kertas paper.*; default: kunci `style` "
+                        "di config = rough-sketch); harus style yang sama dengan stage [5]")
     add_work_dir_arg(p)
     p.add_argument("--restart", action="store_true", help="encode ulang walau up-to-date (menimpa file tanpa manifest)")
     p.add_argument("--limit", type=int, default=None, help="preview N frame pertama → <nama>.limitN.mp4")
@@ -811,9 +833,10 @@ def main(argv: list[str] | None = None) -> int:
     try:
         path = args.config if args.config is not None else (DEFAULT_CONFIG if DEFAULT_CONFIG.is_file() else None)
         cfg = load_pipeline(path, overrides=work_dir_overrides(args.work_dir))
-        spath = args.style if args.style is not None else (sty.DEFAULT_STYLE if sty.DEFAULT_STYLE.is_file() else None)
+        spath = resolve_style(args.style if args.style is not None else cfg.style)
         style = load_style(spath)
-        run = run_export(cfg, restart=args.restart, limit=args.limit, start=args.start, style=style, log=log)
+        run = run_export(cfg, restart=args.restart, limit=args.limit, start=args.start, style=style,
+                         style_label=style_name(spath), log=log)
         log(f"selesai: {run['output']}")
     except (StageError, ConfigError) as e:
         print(f"ERROR: {e}", file=sys.stderr)

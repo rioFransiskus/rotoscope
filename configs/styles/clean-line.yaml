@@ -1,0 +1,60 @@
+# Preset clean-line (T-406): garis rapi, tebal SERAGAM, satu pass, kertas datar — kesan motion graphic. Set kunci = rough-sketch.yaml
+# (dijaga tests/test_presets.py). Jitter mati. Satuan panjang = px REFERENSI lebar 1080 (lihat rough-sketch.yaml). Nilai FINAL (penilaian Rio 2026-10-08: tebal 9, kertas krem datar).
+
+# ── SHAPE ──────────────────────────────────────────
+shape:
+  simplify_epsilon: 2.0      # lebih halus dari rough-sketch (2.8)
+  smooth_px: 8.0             # penghalusan lebih kuat: kontur mulus
+  resample_points: 4
+  smooth_tension: 0.5
+  spline_steps: 8
+  edge_mode: "hide"
+
+# ── STROKE ─────────────────────────────────────────
+stroke:
+  width_base: 9.0            # final (penilaian Rio: varian "berat")
+  width_variation: 0.0       # seragam
+  width_noise_scale: 0.036   # tidak berpengaruh bila width_variation 0
+  color: "#111111"
+  opacity: 1.0
+  cap: "round"
+  taper_ends: false          # ujung tidak menipis
+  taper_px: 70
+  taper_min: 0.5
+  by_type:
+    silhouette:      {width_scale: 1.0, opacity_scale: 1.0, taper_ends: null}
+    silhouette_hole: {width_scale: 1.0, opacity_scale: 1.0, taper_ends: null}
+    group_boundary:  {width_scale: 1.0, opacity_scale: 1.0, taper_ends: null}
+    occlusion:       {width_scale: 1.0, opacity_scale: 1.0, taper_ends: null}
+
+# ── JITTER ─────────────────────────────────────────
+jitter:
+  amplitude: 0.0             # MATI
+  frequency: 0.053
+  temporal_seed_mode: "frame"
+  temporal_drift: 0.35
+  param_seed: 0
+  hold_frames: 2
+  stroke_independence: 0.0
+
+# ── MULTI-PASS ─────────────────────────────────────
+multipass:
+  enabled: false             # satu pass
+  passes: 1
+  offset: 5.5
+  opacity_falloff: 0.35
+  temporal_mode: "fixed"
+
+# ── PAPER (disusun saat export) ────────────────────
+paper:
+  enabled: true
+  color: "#f4f1ea"
+  texture_image: "assets/paper/rough_01.jpg"
+  texture_opacity: 0.0       # kertas DATAR
+  texture_gain: 3.0
+  vignette: 0.0
+
+# ── RENDER ─────────────────────────────────────────
+render:
+  ss: 3
+  output_width: 1080

@@ -21,7 +21,7 @@ from test_stylize_jitter import REAL_PINNED, edge_doc, junction_doc, real_doc
 
 from rotoscope import noise
 from rotoscope import stylize as sty
-from rotoscope.config import ConfigError, load_style
+from rotoscope.config import ConfigError, load_style, resolve_style
 
 BASE = {"render.output_width": 1080, "stroke.width_base": 9.0, "shape.resample_points": 4}
 MP = {"multipass.passes": 3, "multipass.offset": 2.7, "multipass.opacity_falloff": 0.55, "stroke.opacity": 1.0}   # pin: default Tahap 4 = 0,92
@@ -68,7 +68,7 @@ def test_defaults_are_rio_final_choice_and_neutral_override_is_legacy():
     s = load_style(None)
     assert s.multipass.enabled and s.multipass.passes == 2 and s.multipass.offset == 5.5 and s.multipass.opacity_falloff == 0.35
     assert s.multipass.temporal_mode == "fixed" and s.stroke.opacity == 0.92 and s.jitter.amplitude == 0.0
-    assert load_style(sty.DEFAULT_STYLE).multipass == s.multipass and load_style(sty.DEFAULT_STYLE).stroke.opacity == 0.92
+    assert load_style(resolve_style("rough-sketch")).multipass == s.multipass and load_style(resolve_style("rough-sketch")).stroke.opacity == 0.92
     g = sty.make_geometry(s, W, H)
     assert not g.legacy and g.passes == 2 and [round(g.pass_alpha(k), 4) for k in range(2)] == [0.92, round(0.92 * 0.35, 4)]
     assert sty.make_geometry(load_style(None, overrides={"multipass.passes": 1, "stroke.opacity": 1.0}), W, H).legacy
@@ -148,7 +148,7 @@ def test_one_pass_opacity_one_is_byte_identical_to_t402_for_any_other_multipass_
 def test_real_neutral_style_is_t402_pinned_hashes():
     for clip, pinned in REAL_PINNED.items():
         doc = real_doc(clip, 80)
-        st = load_style(sty.DEFAULT_STYLE, overrides={"multipass.passes": 1, "stroke.opacity": 1.0})
+        st = load_style(resolve_style("rough-sketch"), overrides={"multipass.passes": 1, "stroke.opacity": 1.0})
         g = sty.make_geometry(st, 480, 854)
         svg, png, _ = sty.render_frame(doc, g, st)
         assert hashlib.sha256(svg).hexdigest() == pinned["frame_00080.svg"] and hashlib.sha256(png).hexdigest() == pinned["frame_00080.png"]

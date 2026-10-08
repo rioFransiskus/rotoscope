@@ -85,8 +85,15 @@ EXPORT_SOURCES = ("silhouette", "strokes")      # "strokes" = stage [5] (default
 X264_PRESETS = ("ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow")
 CRF_MAX = 51
 EXPORT_FILENAME_PLACEHOLDER = "{source}"
+EXPORT_FILENAME_STYLE_PLACEHOLDER = "{style}"   # T-406: nama preset (atau stem berkas style)
+EXPORT_FILENAME_PLACEHOLDERS = (EXPORT_FILENAME_PLACEHOLDER, EXPORT_FILENAME_STYLE_PLACEHOLDER)
 EXPORT_FILENAME_SUFFIX = ".mp4"
 EXPORT_FILENAME_BAD_CHARS = '<>:"/\\|?*'
+
+# Preset style (T-406): nama (tanpa pemisah path, tanpa .yaml) → <root project>/configs/styles/<nama>.yaml
+DEFAULT_STYLE_NAME = "rough-sketch"
+STYLES_SUBDIR = ("configs", "styles")
+STYLE_SUFFIXES = (".yaml", ".yml")
 
 CLASSES_DIR = "data"
 CLASSES_FILENAME = "sapiens2_classes.json"
@@ -234,6 +241,7 @@ class ExportConfig:
 @dataclass(frozen=True)
 class PipelineConfig:
     paths: PathsConfig = field(default_factory=PathsConfig)
+    style: str = DEFAULT_STYLE_NAME      # T-406: nama preset atau path YAML style (kalah dari flag --style); dicari lewat resolve_style
     segment: SegmentConfig = field(default_factory=SegmentConfig)
     depth: DepthConfig = field(default_factory=DepthConfig)
     qc: QcConfig = field(default_factory=QcConfig)
@@ -383,6 +391,48 @@ def project_root() -> Path:
             return d
     raise ConfigError(f"root project (folder berisi {PROJECT_MARKER}) tidak ditemukan dari lokasi paket "
                       f"{_PACKAGE_DIR} — install editable (pip install -e .) atau pakai path absolut")
+
+
+def list_presets(root: Path | None = None) -> list[str]:
+    """Nama preset yang ada: configs/styles/*.yaml di root project (terurut)."""
+    d = (root if root is not None else project_root()).joinpath(*STYLES_SUBDIR)
+    return sorted(p.stem for p in d.glob("*" + STYLE_SUFFIXES[0]) if p.is_file()) if d.is_dir() else []
+
+
+def _is_preset_name(ref: str) -> bool:
+    return not any(c in ref for c in ("/", "\\")) and not ref.lower().endswith(STYLE_SUFFIXES) and not Path(ref).drive
+
+
+def resolve_style(ref: str | Path | None, root: Path | None = None) -> Path | None:
+    """SATU-SATUNYA jalur memilih style (stylize, export, run, preview, pre-flight). T-406.
+
+    `ref` None → default. Nama (tanpa pemisah path, tanpa .yaml / .yml, mis. "clean-line") SELALU dicari di
+    <root>/configs/styles/<nama>.yaml dengan root = folder pyproject.toml (BUKAN cwd), peka huruf besar-kecil; nama tak dikenal =
+    ConfigError yang mencantumkan preset yang ada. Selain itu = path (relatif ke cwd, atau absolut), harus ada.
+    Pengecualian (aturan "pipeline jalan tanpa YAML"): nama default tanpa berkasnya → None (= default kode, identik dengan rough-sketch.yaml)."""
+    text = DEFAULT_STYLE_NAME if ref is None else str(ref)
+    if not text.strip():
+        raise ConfigError("style kosong — beri nama preset atau path YAML")
+    if not _is_preset_name(text):
+        p = Path(text)
+        if not p.is_file():
+            raise ConfigError(f"file style tidak ditemukan: {p}")
+        return p
+    base = root if root is not None else project_root()
+    names = list_presets(base)                    # daftar dari direktori = ejaan PERSIS (Windows: is_file() tidak peka huruf)
+    if text in names:
+        return base.joinpath(*STYLES_SUBDIR, text + STYLE_SUFFIXES[0])
+    if text == DEFAULT_STYLE_NAME:
+        return None
+    close = difflib.get_close_matches(text.lower(), [n.lower() for n in names], n=1, cutoff=_SUGGEST_CUTOFF)
+    hint = f" — maksudnya {names[[n.lower() for n in names].index(close[0])]!r}?" if close else ""
+    raise ConfigError(f"style {text!r} bukan preset yang dikenal{hint}. Preset di {Path(*STYLES_SUBDIR).as_posix()}/: "
+                      f"{', '.join(names) or '(tidak ada)'}. Untuk berkas sendiri pakai path (mis. ./{text}.yaml).")
+
+
+def style_name(path: Path | None) -> str:
+    """Nama style untuk `{style}` / manifest: stem berkas (preset atau berkas sendiri); None (default kode) = nama default."""
+    return path.stem if path is not None else DEFAULT_STYLE_NAME
 
 
 # ── Load: default → YAML → overrides → tipe → validasi ─
@@ -724,6 +774,11 @@ def _validate_pipeline(c: PipelineConfig) -> None:
     _at_least("vectorize.depth_lines.min_len_px", dl.min_len_px, 0)
     _at_least("vectorize.track.max_match_dist_px", v.track.max_match_dist_px, 0, strict=True)
 
+    bad_style = [ch for ch in c.style if ord(ch) < 0x20 or ord(ch) == 0x7F]
+    if bad_style:
+        _fail("style", c.style, f"mengandung karakter kontrol {bad_style[0]!r} (di YAML, backslash dalam kutip GANDA adalah escape; "
+                                f"pakai '/' atau kutip tunggal)")
+
     e = c.export
     _choice("export.source", e.source, EXPORT_SOURCES)
     _between("export.crf", e.crf, 0, CRF_MAX)
@@ -739,9 +794,11 @@ def _validate_pipeline(c: PipelineConfig) -> None:
 def _export_filename(key: str, v: str) -> None:
     if not v.lower().endswith(EXPORT_FILENAME_SUFFIX):
         _fail(key, v, f"harus berakhiran {EXPORT_FILENAME_SUFFIX!r}")
-    stem = v[:-len(EXPORT_FILENAME_SUFFIX)].replace(EXPORT_FILENAME_PLACEHOLDER, "x")
+    stem = v[:-len(EXPORT_FILENAME_SUFFIX)]
+    for ph in EXPORT_FILENAME_PLACEHOLDERS:
+        stem = stem.replace(ph, "x")
     if not stem or stem.startswith(".") or "{" in stem or "}" in stem:
-        _fail(key, v, f"nama tidak valid — satu-satunya placeholder: {EXPORT_FILENAME_PLACEHOLDER}")
+        _fail(key, v, f"nama tidak valid — placeholder yang ada: {', '.join(EXPORT_FILENAME_PLACEHOLDERS)}")
     bad = [ch for ch in stem if ch in EXPORT_FILENAME_BAD_CHARS or ord(ch) < 0x20]
     if bad:
         _fail(key, v, f"hanya nama file (bukan path), tanpa karakter {bad[0]!r} — folder = paths.out_dir")

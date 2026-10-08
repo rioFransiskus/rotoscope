@@ -140,7 +140,9 @@ internal yang dipanggil cli, bukan cara pakai utama.
   video lain yang menimpa path yang sama menulis ulang `meta.json` → identitas berubah → [2]/[2c] menolak (exit 1).
   (Melewati ingest kalau `meta.json` cocok akan melebarkan batas (c) "Identitas klip": video apa pun di path yang sama
   tidak terdeteksi.) Ingest hanya detik.
-- **Flag `run`:** `--config`, `--style PATH` (hanya diteruskan ke stylize), `--seg-model 0.8b|0.4b` (hanya segment;
+- **Flag `run`:** `--config`, `--style NAMA|PATH` (T-406: nama preset di `configs/styles/` atau path YAML; diteruskan ke stylize DAN export; flag mengalahkan kunci `style` di
+  `default.yaml`; satu fungsi `config.resolve_style` untuk stylize / export / run / preview / pre-flight, nama tak dikenal = exit 1 + daftar preset sebelum stage mana pun;
+  pre-flight target export dan folder SVG memakai nama style untuk `{style}`; docs/02 "Memilih style"), `--seg-model 0.8b|0.4b` (hanya segment;
   **tidak pernah fallback otomatis**, D-009), `--limit N` (segment, depth, stabilize, vectorize, stylize, export; export →
   `<nama>.limitN.mp4`, tanpa salinan SVG), `--restart-from`, `--yes`. [4] dan [5] **selalu** dijalankan di `run` (up-to-date →
   dilewati dalam ≈ 0,2–1 s; hanya basi yang dihitung ulang), apa pun `export.source`.
@@ -149,7 +151,7 @@ internal yang dipanggil cli, bukan cara pakai utama.
   `export.filename` seperti `.limitN`). Hanya di `run`; hasil terpisah dari MP4 utama.
   - **Flag dan kombinasi:** `--preview N` (int ≥ 1), `--from K` (int ≥ 0, hanya bersama `--preview`), K + N ≤ `frame_count`. Terlarang
     (exit 1): `--preview` bersama `--limit`, `--restart-from`, `--adopt`, `--qc-only`; `--from` tanpa `--preview`; K + N melewati klip.
-    Salah tipe argumen → exit 2 (argparse). `--config`, `--style` (hanya ke stylize), `--seg-model` (hanya untuk cek kunci model) berlaku.
+    Salah tipe argumen → exit 2 (argparse). `--config`, `--style` (nama atau path; target preview memakai nama style untuk `{style}`), `--seg-model` (hanya untuk cek kunci model) berlaku.
   - **Tanpa GPU:** segment / depth TIDAK PERNAH dijalankan (tanpa subprocess; proses induk tidak meng-import torch). Dicek CPU-only
     dengan fungsi validasi stage (`Clip.frame_valid`, `_require_same_clip`): manifest seg/ dan depth/ ada, identitas klip cocok dengan
     `meta.json`, kunci model di `seg/manifest.json` = `segment.model` / `--seg-model` (perbandingan string "0.8b" / "0.4b", tanpa
@@ -880,6 +882,10 @@ dengan aturan tetap)*:
   - **SVG:** jalur legacy (1 pass, opacity 1,0, scale 1,0) = byte-identik T-402. Selain itu `<g id="pass_K" opacity="a_k">` (4 desimal) berisi `<g id="pass_K_<tipe>">` (atribut `opacity` = scale bila ≠ 1);
     poligon tetap per strok; id unik; tanpa id acak / timestamp.
   - **Pengaman:** `multipass.enabled: false` atau `passes: 1` DAN `stroke.opacity: 1.0` = SVG + PNG byte-identik T-402. **Default (penilaian visual Rio, docs/04 "Hasil T-403"):** `passes` 2, `offset` 5,5, `opacity_falloff` 0,35, `temporal_mode` "fixed", `stroke.opacity` 0,92 (semua garis); jitter mati.
+  - **Zona mati tepi pass k ≥ 1 (T-406, `ALGO_REV` 2):** zona mati φ(d) per TITIK = max(`edge_dead`, setengah tebal lokal + `EDGE_INK_GUARD_PX` 3,5 px ref), smoothstep kontinu (bukan potong keras);
+    hanya pass k ≥ 1 (pass 0 dan jitter tidak berubah). Alasan: margin tetap `edge_dead` + 1 px menyisakan ±2 px dari ujung tinta ke tepi, padahal metrik tinta tepi memeriksa 3 baris;
+    pembulatan titik 0,01 px dapat membalik satu subsampel (kebocoran 28/255) → bug laten (terlihat di pencil-light frame 194). Dampak pada rough-sketch hanya di titik zona tepi (docs/04 "Hasil T-406").
+    `strokes/` lama (`algo_rev` 1) basi otomatis.
   - **Penjaga lipatan:** r jitter (bila aktif) + 0,15 > 0,19 → peringatan sekali per run + manifest; tanpa clamp. Batas: `opacity_scale` ≠ 1 membuat sambungan antar tipe bisa lebih gelap.
   - **Keselamatan (tests/multipass_metrics.py, per pass):** sambungan |Δ celah| ≤ toleransi, persilangan baru 0, seam (relatif 1,25× interior ATAU batas Lipschitz; interior dalam batas Lipschitz — `jitter_metrics.seam_ok`, docs/04 "Revisi T-403"), tinta tepi 0 piksel, ujung ekstensi, min det Jacobian > 0,05; angka: docs/04 "Hasil T-403".
   - **Raster non-legacy (biaya):** `ink_box` = jendela piksel yang memuat semua tinta semua pass (titik ± tebal/2 ± `INK_BOX_MARGIN_PX` 2); `render_mask(box)` + INTER_AREA + tabel float32 256 entri per lapisan hanya di jendela; hasil identik BIT dengan komposisi penuh-frame (`tests/multipass_metrics.ink_fraction_reference`); PNG ditulis langsung BGR. Jalur legacy tidak berubah.
@@ -909,7 +915,7 @@ dengan aturan tetap)*:
 ### [6] `export.py` (CPU)
 - **Status:** Phase 1 (T-103, silhouette) + **T-203b `DONE`** (source `strokes`, default sejak T-203b; tag warna; salinan SVG).
 - **MP4** (T-103): `out/<nama>.mp4`, `<nama>` = `export.filename` (default `"{source}.mp4"`; `{source}` =
-  nama video sumber dari `meta.json`, disanitasi). Satu jalur encode untuk semua sumber gambar
+  nama video sumber dari `meta.json`, disanitasi; **T-406:** `{style}` = nama preset / stem berkas style, disanitasi — `{source}_{style}.mp4` memberi MP4 + manifest + folder SVG per style). Satu jalur encode untuk semua sumber gambar
   (`export.source`): `"strokes"` (default) = `strokes/*.png` apa adanya (ukuran output [5], mis. 1080×1922 — bukan resolusi kerja;
   `foreground_color` / `background_color` tidak dipakai dan tidak ikut hash); `"silhouette"` (Phase 1) = `stable/groups/*.png`,
   grup ≠ 0 → `foreground_color` di atas `background_color`, resolusi kerja.
@@ -921,6 +927,7 @@ dengan aturan tetap)*:
 - **SVG** (source `strokes`, tanpa `--limit`): `strokes/*.svg` disalin ke `out/svg/<nama>/frame_%05d.svg` (`<nama>` =
   `sanitize_source_name`, sama dengan nama MP4), di dalam stage [6] (satu pengaman, satu manifest), juga ketika MP4 dilewati.
   SVG telah diverifikasi terbuka dan bisa diedit di Krita (Rio, 2026-10-08; docs/05 T-405).
+  **T-406:** folder SVG = `out/svg/<stem nama hasil>` (stem `export.filename` setelah `{source}` / `{style}` diganti), jadi mengikuti `{style}`.
   Salin atomik (`.tmp` + `os.replace`), diverifikasi jumlah + sha256 = `strokes/*.svg`. Folder memuat penanda
   `.rotoscope-clip.json` (identitas klip + sha256 per berkas SAAT DISALIN; ditulis tanpa BOM, dibaca toleran BOM). Klasifikasi
   per berkas (semua dievaluasi SEBELUM encode dan sebelum ada yang diubah): sama dengan sumber = ok; beda dari sumber tetapi sama
@@ -951,7 +958,9 @@ dengan aturan tetap)*:
   silhouette: `stable` (`stabilize_hash`, `groups_hash`, `created_utc`); source strokes: `strokes` (`contract`, `style_hash`,
   `created_utc`, `output_size`) + `color_tags` — jumlah frame, ukuran, fps, audio (ukuran + mtime file sumber), hasil ffprobe
   (termasuk tag warna), dan `ffmpeg` (baris pertama `ffmpeg -version`; **tidak** ikut kecocokan manifest — hanya menjelaskan
-  perubahan hash MP4 setelah pembaruan ffmpeg). Mengganti `export.source` = basi → di-encode ulang; manifest silhouette lama
+  perubahan hash MP4 setelah pembaruan ffmpeg). **T-406:** `style` (nama style strokes, source strokes saja) dicatat sebagai INFORMASI, di luar `MANIFEST_MATCH_KEYS`;
+  bila target ada, source strokes, manifest lama mencatat style BERBEDA, dan `export.filename` tanpa `{style}` → satu baris `PERINGATAN` (MP4 + folder SVG ditimpa; perilaku tidak berubah;
+  manifest lama tanpa `style` = tanpa peringatan). Mengganti `export.source` = basi → di-encode ulang; manifest silhouette lama
   tidak basi selama source tetap silhouette.
 - **Basi / pengaman** (stage CPU murah + deterministik, prinsip #4):
   - manifest cocok + MP4 lolos ffprobe → **dilewati**; parameter / input berubah (termasuk `meta.json` klip

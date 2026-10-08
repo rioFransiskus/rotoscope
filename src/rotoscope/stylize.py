@@ -41,7 +41,7 @@ from scipy.spatial import cKDTree
 
 from rotoscope import noise
 from rotoscope import vectorize as vz
-from rotoscope.config import ConfigError, StyleConfig, ensure_dir, load_pipeline, load_style
+from rotoscope.config import ConfigError, StyleConfig, ensure_dir, load_pipeline, load_style, resolve_style, style_name
 from rotoscope.stage_common import (
     CLIP_KEY, EXIT_OK, EXIT_PRECONDITION, StageError, add_work_dir_arg, append_jsonl, clean_tmp, cli_cmd,
     clip_identity, describe_identity, reconfigure_stdio, utc_now, window_bounds, work_dir_overrides,
@@ -57,9 +57,8 @@ PNG_SUFFIX = ".png"
 CONTRACT = "T-403"
 # Naik 1 HANYA untuk perbaikan PERILAKU pada kode yang sudah dikontrak, tanpa perubahan parameter (docs/01). Fitur baru
 # (jitter, taper, ...) menaikkan CONTRACT, bukan ALGO_REV.
-ALGO_REV = 1
+ALGO_REV = 2    # 2 (T-406): zona mati tepi pass k >= 1 mengikuti tebal LOKAL (EDGE_INK_GUARD_PX); strokes ALGO_REV 1 basi
 SUPPORTED_CONTOURS_CONTRACTS = frozenset({"T-202"})
-DEFAULT_STYLE = Path("configs") / "styles" / "rough-sketch.yaml"
 DEFAULT_PIPELINE = Path("configs") / "default.yaml"
 
 # ── Konstanta struktural (bukan parameter style) ───
@@ -126,7 +125,8 @@ MULTIPASS_SEP_MEDIAN = 0.59       # median |D| / A medan pass (terukur kedua kli
 PASS_ID_FMT = "pass_{}"           # id grup pass (1-based); id grup tipe = pass_K_<tipe>
 INK_BOX_MARGIN_PX = 2             # margin jendela tinta (px output) di luar titik ± tebal/2: antialias INTER_AREA + pembulatan sub-piksel
 MULTIPASS_EDGE_EXTRA_PX = 1.0    # tambahan zona mati tepi pass k >= 1 (px output): tinta 3 baris/kolom terluar tidak berubah (T-403, diukur)
-OPACITY_DECIMALS = 4            # atribut opacity SVG (grup) 4 desimal tetap (deterministik)
+EDGE_INK_GUARD_PX = 3.5          # T-406: ujung tinta pass k >= 1 (titik ± setengah tebal LOKAL) tak boleh lebih dekat ke tepi dari ini (px output): 3 baris terluar + 0,5 px antialias; zona mati lama (margin tetap 2 px) bocor pada garis lebar
+OPACITY_DECIMALS = 4           # atribut opacity SVG (grup) 4 desimal tetap (deterministik)
 
 # Parameter style AKTIF (masuk hash); sisanya = ignored_params.
 ACTIVE_SCALARS = ("shape.simplify_epsilon", "shape.smooth_px", "shape.smooth_tension", "shape.spline_steps", "shape.edge_mode",
@@ -703,16 +703,19 @@ def jitter_image_index(frame_index: int, g: Geometry) -> int:
     return 0 if g.jitter_fixed else int(frame_index) // g.jitter_hold
 
 
-def edge_fade(p: np.ndarray, g: Geometry) -> np.ndarray:
+def edge_fade(p: np.ndarray, g: Geometry, half_width: np.ndarray | None = None) -> np.ndarray:
     """φ(d) pelunakan di tepi bawah / kiri / kanan: 0 untuk d ≤ edge_dead (termasuk di luar kanvas), smoothstep sampai 1 pada
-    edge_dead + edge_fade_len. d = jarak (px output) ke tepi terdekat dari ketiganya."""
+    edge_dead + edge_fade_len. d = jarak (px output) ke tepi terdekat dari ketiganya. `half_width` (T-406, pass k >= 1): setengah tebal
+    LOKAL per titik; zona mati titik = max(edge_dead, half_width + EDGE_INK_GUARD_PX) — kontinu (tebal berubah mulus sepanjang jalur),
+    dan titik yang zona matinya sudah cukup tidak berubah."""
     d = np.minimum(np.minimum(p[:, 0], g.out_w - p[:, 0]), g.out_h - p[:, 1])
-    u = np.clip((d - g.edge_dead) / max(g.edge_fade_len, 1e-9), 0.0, 1.0)
+    dead = g.edge_dead if half_width is None else np.maximum(g.edge_dead, half_width + EDGE_INK_GUARD_PX)
+    u = np.clip((d - dead) / max(g.edge_fade_len, 1e-9), 0.0, 1.0)
     return u * u * (3.0 - 2.0 * u)
 
 
 def jitter_displacement(points: np.ndarray, piece_ends: list[tuple[int, int]], track_ids: list[int], g: Geometry,
-                        frame_index: int) -> np.ndarray:
+                        frame_index: int, half_width: np.ndarray | None = None) -> np.ndarray:
     """D (N, 2) px output untuk titik-titik (semua jalur frame digabung; piece_ends = (awal, akhir) per jalur).
 
     D = amplitude × unit × [√(1 − s) F + √s G_track] × φ(d). F = medan koheren (dua kanal noise 3D independen, fungsi posisi +
@@ -727,10 +730,10 @@ def jitter_displacement(points: np.ndarray, piece_ends: list[tuple[int, int]], t
         for (a, b), tid in zip(piece_ends, track_ids):
             seeds = [noise.seed_of(g.jitter_param_seed, JITTER_SALT_TRACK, tid, c) for c in range(JITTER_CHANNELS)]
             d[a:b] += wg * np.column_stack([noise.value_noise_3d(sd, x[a:b], y[a:b], t) for sd in seeds])
-    return d * g.jitter_amp * edge_fade(points, g)[:, None]
+    return d * g.jitter_amp * edge_fade(points, g, half_width)[:, None]
 
 
-def jitter_pieces(pieces: list[Piece], g: Geometry, frame_index: int) -> list[Piece]:
+def jitter_pieces(pieces: list[Piece], g: Geometry, frame_index: int, ink_guard: bool = False) -> list[Piece]:
     """Terapkan jitter ke titik tiap jalur (setelah resample + tebal; arc-length taper, ujung bebas, "bertemu" memakai geometri
     TANPA jitter). Titik dibulatkan SVG_DECIMALS lagi (titik SVG = titik raster). Mati (amplitude 0 / frequency 0) → pieces apa
     adanya (byte-identik T-401)."""
@@ -741,7 +744,8 @@ def jitter_pieces(pieces: list[Piece], g: Geometry, frame_index: int) -> list[Pi
         ends.append((off, off + len(pc.points)))
         off += len(pc.points)
     pts = np.vstack([pc.points for pc in pieces])
-    d = jitter_displacement(pts, ends, [pc.track_id for pc in pieces], g, frame_index)
+    half = np.concatenate([piece_widths(pc, g) for pc in pieces]) / 2.0 if ink_guard else None
+    d = jitter_displacement(pts, ends, [pc.track_id for pc in pieces], g, frame_index, half)
     return [dataclasses.replace(pc, points=np.round(pc.points + d[a:b], SVG_DECIMALS) + 0.0)
             for pc, (a, b) in zip(pieces, ends)]
 
@@ -782,7 +786,7 @@ def pass_geometry(g: Geometry, k: int) -> Geometry:
 def multipass_pieces(pieces: list[Piece], g: Geometry, frame_index: int) -> list[list[Piece]]:
     """[pass 0 = pieces (setelah jitter T-402)] + pass k >= 1: titik pass 0 + D_k. Tebal / taper / flag tepi disalin. Pass dengan
     offset 0 = salinan pass 0."""
-    return [pieces] + [jitter_pieces(pieces, pass_geometry(g, k), frame_index) for k in range(1, g.passes)]
+    return [pieces] + [jitter_pieces(pieces, pass_geometry(g, k), frame_index, ink_guard=True) for k in range(1, g.passes)]
 
 
 def frame_passes(doc: dict, g: Geometry) -> tuple[list[list[Piece]], dict]:
@@ -1289,8 +1293,8 @@ def main(argv: list[str] | None = None) -> int:
                                 description="Stage [5]: contours/ → strokes/ (SVG + PNG, tebal variabel + taper)")
     p.add_argument("--config", type=Path, default=None,
                    help=f"YAML pipeline (default: {DEFAULT_PIPELINE.as_posix()} kalau ada, selain itu default kode)")
-    p.add_argument("--style", type=Path, default=None,
-                   help=f"YAML style (default: {DEFAULT_STYLE.as_posix()} kalau ada, selain itu default kode)")
+    p.add_argument("--style", type=str, default=None,
+                   help="nama preset (configs/styles/<nama>.yaml) atau path YAML style (default: kunci `style` di config = rough-sketch)")
     add_work_dir_arg(p)
     p.add_argument("--restart", action="store_true", help="hapus output [5] lama (strokes/) lalu hitung ulang")
     p.add_argument("--limit", type=int, default=None, help="hanya N frame pertama (dengan --from: N frame sejak K)")
@@ -1305,10 +1309,10 @@ def main(argv: list[str] | None = None) -> int:
     try:
         cpath = args.config if args.config is not None else (DEFAULT_PIPELINE if DEFAULT_PIPELINE.is_file() else None)
         cfg = load_pipeline(cpath, overrides=work_dir_overrides(args.work_dir))
-        spath = args.style if args.style is not None else (DEFAULT_STYLE if DEFAULT_STYLE.is_file() else None)
+        spath = resolve_style(args.style if args.style is not None else cfg.style)
         style = load_style(spath)
         t0 = time.perf_counter()
-        run = run_stylize(cfg, style, spath.stem if spath else "default", restart=args.restart, limit=args.limit,
+        run = run_stylize(cfg, style, style_name(spath), restart=args.restart, limit=args.limit,
                           start=args.start, log=log)
         log(f"selesai: {run['processed']} diproses, {run['skipped']} dilewati ({time.perf_counter() - t0:.1f} s)")
     except (StageError, ConfigError) as e:

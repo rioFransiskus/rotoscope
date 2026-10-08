@@ -19,7 +19,7 @@ from test_stylize import (H, N_FRAMES, W, circle, cfg_for, doc_for, lattice, mak
 
 from rotoscope import noise
 from rotoscope import stylize as sty
-from rotoscope.config import ConfigError, load_style
+from rotoscope.config import ConfigError, load_style, resolve_style
 
 BASE = {"render.output_width": 1080, "stroke.width_base": 9.0, "shape.resample_points": 4}
 SAFE = {"jitter.amplitude": 4.0, "jitter.frequency": 0.053,         # r = 0,21 (aman)
@@ -497,7 +497,7 @@ def test_real_amplitude_zero_equals_t401_pinned_hashes(clip):
     if not all(pinned.values()):
         pytest.skip("hash T-401 belum disematkan")
     doc = real_doc(clip, 80)
-    st = load_style(sty.DEFAULT_STYLE, overrides={"jitter.amplitude": 0.0, "jitter.hold_frames": 2,
+    st = load_style(resolve_style("rough-sketch"), overrides={"jitter.amplitude": 0.0, "jitter.hold_frames": 2,
                                                       "multipass.passes": 1, "stroke.opacity": 1.0})
     g = sty.make_geometry(st, 480, 854)
     svg, png, _ = sty.render_frame(doc, g, st)

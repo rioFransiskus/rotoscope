@@ -24,6 +24,11 @@ paths:
   work_dir: "work"           # boleh di drive lain (±1–5 GB per klip)
   out_dir: "out"
 
+# ── STYLE (stage [5] dan kertas di [6]) ────────────
+# Nama preset di configs/styles/<nama>.yaml (rough-sketch, clean-line, heavy-marker, pencil-light) ATAU path YAML (relatif → cwd).
+# Nama dicari relatif ke root project (folder pyproject.toml), peka huruf besar-kecil. Flag --style mengalahkan kunci ini (T-406).
+style: "rough-sketch"
+
 # ── SEGMENT [2] — Sapiens2-seg ─────────────────────
 segment:
   model: "0.8b"              # "0.8b" | "0.4b" — eksplisit, untuk SELURUH klip (D-009)
@@ -110,7 +115,7 @@ export:
   audio: false               # true = audio video sumber (aac, -shortest); error kalau sumber tanpa audio.
                              # Audio meme biasanya milik pihak ketiga → default tanpa audio; tambahkan audio
                              # berlisensi di editor platform (TikTok/CapCut)
-  filename: "{source}.mp4"   # di paths.out_dir; {source} = nama video sumber (disanitasi). Hasil klip lain tidak ditimpa
+  filename: "{source}.mp4"   # di paths.out_dir; {source} = nama video sumber (disanitasi); {style} = nama preset / stem berkas style (T-406). Hasil klip lain tidak ditimpa
 ```
 
 ### Validasi `default.yaml` (saat load, error jelas kalau gagal)
@@ -118,6 +123,7 @@ export:
 | parameter | range / aturan |
 |---|---|
 | `paths.work_dir`, `paths.out_dir` | string tidak kosong, tanpa karakter kontrol; relatif → di-resolve terhadap direktori kerja (cwd) saat load; absolut (mis. `D:/…`) boleh. Loader **tidak** membuat folder (tanpa side effect) — stage memanggil `ensure_dir()` |
+| `style` | string tidak kosong, tanpa karakter kontrol. Nama preset (tanpa pemisah path, tanpa `.yaml`) → `<root project>/configs/styles/<nama>.yaml`, peka huruf besar-kecil; selain itu path YAML (relatif → cwd). Ada tidaknya preset / berkas dicek saat DIPAKAI (`resolve_style`, pre-flight `run`), bukan oleh loader; flag `--style` mengalahkan kunci ini (T-406) |
 | `segment.model` | `"0.8b"` atau `"0.4b"` |
 | `segment.model_ids`, `segment.revision`, `segment.vram_min_free_mib` | key persis {`0.8b`, `0.4b`} |
 | `segment.model_ids.*` | wajib diawali `facebook/sapiens2-seg-` — Sapiens v1 (`facebook/sapiens-seg-…`, CC-BY-NC) ditolak |
@@ -153,7 +159,7 @@ export:
 | `export.preset` | preset x264: `ultrafast`, `superfast`, `veryfast`, `faster`, `fast`, `medium`, `slow`, `slower`, `veryslow` |
 | `export.foreground_color`, `export.background_color` | `#rrggbb`; keduanya harus berbeda (tanpa membedakan huruf besar/kecil) |
 | `export.audio` | bool |
-| `export.filename` | berakhiran `.mp4`; hanya nama file (tanpa `<>:"/\|?*`, tanpa awalan `.`); satu-satunya placeholder `{source}` |
+| `export.filename` | berakhiran `.mp4`; hanya nama file (tanpa `<>:"/\|?*`, tanpa awalan `.`); placeholder: `{source}` (nama video sumber) dan `{style}` (T-406: nama preset / stem berkas style, disanitasi seperti `{source}`). Folder SVG `out/svg/<stem nama MP4>/` mengikuti stem hasil (default `{source}.mp4` → nama sumber, tidak berubah); `{source}_{style}.mp4` memisahkan MP4 + SVG tiap preset. Tanpa `{style}`, merender style lain di klip yang sama menimpa MP4 + SVG (export mencetak satu baris peringatan) |
 
 **Aturan grup:**
 1. Setiap nama kelas ada di daftar 29 kelas Sapiens2 (`src/rotoscope/data/sapiens2_classes.json`)
@@ -339,14 +345,45 @@ itu) DIHAPUS di T-303: optical flow ditolak berdasarkan data (docs/04 "Hasil T-3
 - **`shape.smooth_tension`:** Catmull-Rom seragam (uniform); tangen di titik i = `smooth_tension × (p[i+1] − p[i−1])`
   (0.5 = Catmull-Rom standar; 0 = segmen lurus berkecepatan tidak seragam). Ujung strok terbuka: titik ujung digandakan.
 
-## Preset yang perlu disediakan
+## Preset (T-406 DONE) — `configs/styles/<nama>.yaml`
 
-| Preset | Karakter |
-|---|---|
-| `rough-sketch` | Default — sesuai referensi B. Kasar, jitter sedang |
-| `clean-line` | Jitter rendah, tebal seragam, cocok untuk motion graphic |
-| `heavy-marker` | Garis tebal, multipass tinggi, kesan spidol |
-| `pencil-light` | Tipis, opacity rendah, grain kuat |
+Satu YAML per preset, **lengkap** (set kunci identik `rough-sketch.yaml`, dijaga `tests/test_presets.py`). Nilai final = penilaian visual Rio 2026-10-08
+(`clean-line` varian "berat", `heavy-marker` varian "ringan", `pencil-light` varian "awal"). Jitter MATI di keempatnya (docs/04 "Hasil T-406": tinjauan jitter).
+
+| Parameter | `rough-sketch` (default, tidak berubah) | `clean-line` | `heavy-marker` | `pencil-light` |
+|---|---|---|---|---|
+| Karakter | gesture drawing kasar | rapi, tebal SERAGAM, kesan motion graphic | tebal, ujung tumpul, kesan spidol | tipis, transparan, grain dari kertas |
+| `stroke.width_base` (px ref) | 9 | 9 | 12 | 4,5 |
+| `stroke.width_variation` | 0,5 | 0 | 0,25 | 0,6 |
+| `stroke.opacity` | 0,92 | 1,0 | 0,92 | 0,6 |
+| `stroke.color` | #1a1a1a | #111111 | #141414 | #2b2b2b |
+| taper (`taper_ends` / `taper_px` / `taper_min`) | ya / 70 / 0,5 | tidak | ya / 40 / 0,7 | ya / 90 / 0,3 |
+| oklusi | skala 1,0 / 1,0 | 1,0 / 1,0 | lebar ×0,7 | opacity ×0,8 |
+| `shape.smooth_px` / `simplify_epsilon` | 5,0 / 2,8 | 8,0 / 2,0 | 6,0 / 2,8 | 5,0 / 2,8 |
+| `multipass` passes / offset / falloff | 2 / 5,5 / 0,35 | 1 (mati) | 2 / 5,5 / 0,5 | 3 / 2,7 / 0,6 |
+| offset ÷ `width_base` | 0,61 | – | 0,46 | 0,60 |
+| `paper.color` | #f4f1ea | #f4f1ea (krem) | #f4f1ea | #f1eee6 |
+| `paper.texture_opacity` / `texture_gain` | 0,35 / 3,0 | 0 (datar) | 0,2 / 1,5 | 0,6 / 4,5 |
+| `jitter.amplitude` | 0 | 0 | 0 | 0 |
+| massa tinta relatif rough-sketch (frame 80 / 233) | 1,00 | 0,98 / 0,99 | 1,37 / 1,39 | 0,41 / 0,41 |
+| [5] ms/frame (rata-rata / maks, klip `test`) | 172 / 236 | 142 / 168 | 171 / 202 | 209 / 262 |
+| MP4 `test_short` penuh (119 frame) | 2,28 MB | ±1,0 MB | ±2,0 MB (kertas datar 1,40 MB) | 2,68 MB |
+
+Pegangan desain (bukan validasi): `multipass.offset / stroke.width_base` ≤ 0,6 untuk preset baru (di atas itu dua garis terpisah jadi dua garis, bukan satu garis
+bertumpuk). `rough-sketch` (0,61) dibiarkan: nilainya hasil penilaian T-403 dan tidak diubah.
+
+### Memilih style: nama atau path (T-406)
+
+`--style X` (stylize / export / run / preview; satu fungsi `config.resolve_style` dipakai semuanya) atau kunci `style:` di `default.yaml` (flag menang):
+- **Nama** = tanpa pemisah path dan tanpa `.yaml` / `.yml` → `<root project>/configs/styles/<nama>.yaml` (root = folder `pyproject.toml`, BUKAN cwd), **peka huruf
+  besar-kecil**. Nama tak dikenal = error yang mencantumkan preset yang ada (+ saran "maksudnya …?"). `rough-sketch` tanpa berkasnya = pipeline jalan tanpa YAML.
+- **Path** (ada pemisah atau akhiran `.yaml` / `.yml`) = berkas YAML apa saja, relatif → cwd; harus ada.
+- Tidak ada flag dan tidak ada kunci `style` = `rough-sketch`. Tanpa flag, `--style rough-sketch`, dan `--style <path rough-sketch.yaml>` menghasilkan strokes / SVG / MP4 byte-identik.
+- Strokes satu folder per klip: ganti style = [5] basi lalu dihitung ulang (±20 s per 119 frame) + export (3–10 s).
+- **`{style}` di `export.filename`**: nama preset (atau stem berkas bila path), disanitasi (karakter tak aman → `_`, kosong → `style`). Default tetap `{source}.mp4`.
+  Folder SVG mengikuti stem nama hasil (`out/svg/<stem>`), jadi `{source}_{style}.mp4` memberi MP4, manifest, dan folder SVG terpisah per style.
+  Tanpa `{style}`, style kedua MENIMPA MP4 + folder SVG pertama; export mencetak SATU baris `PERINGATAN` bila manifest lama mencatat style berbeda.
+  Manifest export mencatat `style` sebagai informasi saja (di luar `MANIFEST_MATCH_KEYS`: tidak membuat export basi).
 
 ## Aturan implementasi
 

@@ -10,6 +10,11 @@ paths:
   work_dir: "work"           # boleh di drive lain (±1–5 GB per klip)
   out_dir: "out"
 
+# ── STYLE (stage [5] dan kertas di [6]) ────────────
+# Nama preset di configs/styles/<nama>.yaml (rough-sketch, clean-line, heavy-marker, pencil-light) ATAU path YAML (relatif → cwd).
+# Nama dicari relatif ke root project (folder pyproject.toml), peka huruf besar-kecil. Flag --style mengalahkan kunci ini (T-406).
+style: "rough-sketch"
+
 # ── SEGMENT [2] — Sapiens2-seg ─────────────────────
 segment:
   model: "0.8b"              # "0.8b" | "0.4b" — eksplisit, untuk SELURUH klip (D-009)

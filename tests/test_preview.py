@@ -16,6 +16,7 @@ from test_stylize import N_FRAMES, cfg_for, make_stage_work, out_hashes, quiet, 
 from rotoscope import cli
 from rotoscope import export as ex
 from rotoscope import stylize as sty
+from rotoscope.config import resolve_style
 from rotoscope.stage_common import StageError, window_bounds
 
 
@@ -363,10 +364,14 @@ REAL = Path("work/clips/test")
 
 
 def _real_strokes_current() -> bool:
-    """strokes/ klip nyata ada dan contract-nya = stylize sekarang (belum dihitung ulang oleh `run` → basi → dilewati)."""
+    """strokes/ klip nyata ada dan contract + algo_rev-nya = stylize sekarang (belum dihitung ulang oleh `run` → basi → dilewati;
+    T-406 menaikkan ALGO_REV, jadi dilewati sampai strokes/ klip asli dihitung ulang di Tahap 4)."""
     import json
     m = REAL / "strokes" / "manifest.json"
-    return m.is_file() and json.loads(m.read_text(encoding="utf-8")).get("contract") == sty.CONTRACT
+    if not m.is_file():
+        return False
+    d = json.loads(m.read_text(encoding="utf-8"))
+    return d.get("contract") == sty.CONTRACT and d.get("algo_rev") == sty.ALGO_REV
 
 
 @pytest.mark.skipif(not _real_strokes_current(), reason="klip test tidak ada / strokes basi (contract lama)")
@@ -382,7 +387,7 @@ def test_real_window_matches_existing_strokes(tmp_path):
     cfg = cli.load_cfg(None)
     from rotoscope.config import load_pipeline
     cfg = load_pipeline(None, overrides={"paths.work_dir": str(work), "paths.out_dir": str(tmp_path / "o")})
-    run = sty.run_stylize(cfg, sty.load_style(sty.DEFAULT_STYLE), "default", start=73, limit=3, log=quiet)
+    run = sty.run_stylize(cfg, sty.load_style(resolve_style("rough-sketch")), "default", start=73, limit=3, log=quiet)
     assert run["processed"] == 3 and not run["stale"]
     for i in range(73, 76):
         for ext in ("svg", "png"):
