@@ -363,7 +363,7 @@ def test_new_active_params_change_style_hash():
     for ov in ({"jitter.amplitude": 9.0}, {"jitter.frequency": 0.1}, {"jitter.temporal_seed_mode": "fixed"}, {"jitter.temporal_drift": 0.5},
                {"jitter.hold_frames": 3}, {"jitter.stroke_independence": 0.5}):
         assert sty.params_hash(sty.style_params(load_style(None, overrides=ov))[0]) != h0, ov          # aktif sejak T-402
-    assert sty.params_hash(sty.style_params(load_style(None, overrides={"texture.mode": "none"}))[0]) == h0     # tak aktif
+    assert sty.params_hash(sty.style_params(load_style(None, overrides={"paper.vignette": 0.3}))[0]) == h0     # tak aktif
     for ov in ({"multipass.passes": 5}, {"multipass.offset": 5.0}, {"multipass.opacity_falloff": 0.3}, {"multipass.temporal_mode": "frame"},
                {"multipass.enabled": False}, {"stroke.opacity": 0.9}, {"stroke.by_type.occlusion.opacity_scale": 0.5}):
         assert sty.params_hash(sty.style_params(load_style(None, overrides=ov))[0]) != h0, ov          # aktif sejak T-403

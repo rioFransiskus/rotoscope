@@ -485,7 +485,7 @@ def test_run_writes_outputs_manifest_and_log(tmp_path, style_file, capsys):
     assert m["contract"] == "T-403" and m["algo_rev"] == sty.ALGO_REV and m["style"] == "test-style"
     assert m["output_size"] == {"width": OW, "height": OW} and m["scale"] == OW / W and m["edge_mode"] == "hide"
     assert m["contours"]["contract"] == "T-202" and m["contours"]["vectorize_hash"] == "h" * 8
-    assert "texture.mode" in m["ignored_params"] and "jitter.amplitude" not in m["ignored_params"] and "multipass.passes" in m["style_params"]
+    assert "paper.vignette" in m["ignored_params"] and "jitter.amplitude" not in m["ignored_params"] and "multipass.passes" in m["style_params"]
     assert "shape.resample_points" not in m["ignored_params"] and "jitter.hold_frames" in m["style_params"]
     assert "stroke.width_variation" in m["style_params"] and "jitter.param_seed" in m["style_params"]
     assert set(m["style_params"]) == set(sty.active_param_names()) and m["style_hash"]
@@ -541,8 +541,8 @@ def test_inactive_param_change_does_not_recompute(tmp_path):
     work = make_stage_work(tmp_path)
     sty.run_stylize(cfg_for(work), style_for(), "t", log=quiet)
     logs: list[str] = []
-    run = sty.run_stylize(cfg_for(work), style_for(**{"texture.mode": "none"}), "t", log=logs.append)
-    assert run["processed"] == 0 and run["stale"] == [] and any("texture.mode" in m for m in logs)
+    run = sty.run_stylize(cfg_for(work), style_for(**{"paper.vignette": 0.3}), "t", log=logs.append)
+    assert run["processed"] == 0 and run["stale"] == [] and any("paper.vignette" in m for m in logs)
 
 
 def test_stale_when_contours_manifest_changes(tmp_path):
@@ -642,7 +642,7 @@ def test_default_style_values_converted_from_look_test():
     assert s.stroke.width_base == 9.0 and s.shape.simplify_epsilon == 2.8 and s.shape.smooth_px == 5.0 and s.render.output_width == 1080
     assert s.shape.edge_mode == "hide"
     active, ignored, _ = sty.style_params(s)
-    assert not set(active) & set(ignored) and "texture.mode" in ignored and "multipass.passes" in active and "shape.resample_points" in active
+    assert not set(active) & set(ignored) and "paper.vignette" in ignored and "multipass.passes" in active and "shape.resample_points" in active
 
 
 # ── Data nyata (dilewati bila klip / contours T-202 tidak ada) ──

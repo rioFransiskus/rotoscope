@@ -16,7 +16,7 @@ Aturan:
   Section kosong (mis. `stroke:` tanpa isi) = default section itu.
 - `null` hanya boleh di `segment.revision.<model>` / `depth.revision`.
 - `paths.work_dir` / `paths.out_dir`: relatif → terhadap direktori kerja (cwd) saat load.
-  Aset style (`texture.brush_image`, `paper.texture_image`): relatif → terhadap root project
+  Aset style (`paper.texture_image`): relatif → terhadap root project
   (folder berisi pyproject.toml, dicari dari lokasi paket; editable install). Path absolut boleh.
   Path dengan karakter kontrol = error (di YAML, backslash dalam kutip GANDA adalah escape).
 - Load TANPA side effect: folder tidak dibuat. Stage memanggil ensure_dir().
@@ -76,8 +76,6 @@ IQR_MIN_MIN, IQR_MIN_MAX = 1e-3, 1.0            # stabilize.depth.iqr_min
 STROKE_TYPES = ("silhouette", "silhouette_hole", "group_boundary", "occlusion")
 STROKE_CAPS = ("round", "butt", "square")
 TEMPORAL_SEED_MODES = ("frame", "fixed")
-TEXTURE_MODES = ("none", "brush_stamp", "grain_overlay")
-TEXTURE_MODE_BRUSH = "brush_stamp"
 RESAMPLE_POINTS_MIN = 4
 EDGE_MODES = ("hide", "draw")                   # shape.edge_mode (T-203a): garis di tepi frame
 RENDER_SS_MAX = 8
@@ -98,7 +96,7 @@ _SUGGEST_MAX = 3
 _SUGGEST_CUTOFF = 0.6
 
 # Key yang pindah file / section (D-010) → pesan khusus, bukan sekadar "tidak dikenal".
-_STYLE_SECTIONS = ("shape", "stroke", "jitter", "multipass", "texture", "paper", "render")
+_STYLE_SECTIONS = ("shape", "stroke", "jitter", "multipass", "paper", "render")
 _PIPELINE_SECTIONS = ("paths", "segment", "depth", "qc", "groups", "stabilize", "vectorize", "export")
 _MOVED_IN_PIPELINE = {
     s: "ini parameter style — taruh di configs/styles/*.yaml" for s in _STYLE_SECTIONS
@@ -106,6 +104,7 @@ _MOVED_IN_PIPELINE = {
 _MOVED_IN_STYLE = {
     "temporal": "pindah ke stabilize.temporal di configs/default.yaml (D-010)",
     "shape.min_contour_area": "pindah ke vectorize.min_region_area di configs/default.yaml (D-010)",
+    "texture": "texture.* dihapus di T-404b; tekstur garis ditolak (docs/04 \"Hasil T-404b\") — hapus blok texture dari YAML style",
     **{s: "ini parameter pipeline — taruh di configs/default.yaml" for s in _PIPELINE_SECTIONS},
 }
 
@@ -298,15 +297,6 @@ class MultipassConfig:
 
 
 @dataclass(frozen=True)
-class TextureConfig:
-    mode: str = "brush_stamp"
-    brush_image: Path = Path("assets/brushes/pencil_01.png")
-    stamp_spacing: float = 0.35
-    pressure_noise: float = 0.25
-    grain_strength: float = 0.18
-
-
-@dataclass(frozen=True)
 class PaperConfig:
     enabled: bool = True
     color: str = "#f4f1ea"
@@ -328,7 +318,6 @@ class StyleConfig:
     stroke: StrokeConfig = field(default_factory=StrokeConfig)
     jitter: JitterConfig = field(default_factory=JitterConfig)
     multipass: MultipassConfig = field(default_factory=MultipassConfig)
-    texture: TextureConfig = field(default_factory=TextureConfig)
     paper: PaperConfig = field(default_factory=PaperConfig)
     render: RenderConfig = field(default_factory=RenderConfig)
 
@@ -793,14 +782,6 @@ def _validate_style(c: StyleConfig) -> None:
     _at_least("multipass.offset", mp.offset, 0)
     _unit("multipass.opacity_falloff", mp.opacity_falloff)
     _choice("multipass.temporal_mode", mp.temporal_mode, TEMPORAL_SEED_MODES)
-
-    tx = c.texture
-    _choice("texture.mode", tx.mode, TEXTURE_MODES)
-    _at_least("texture.stamp_spacing", tx.stamp_spacing, 0, strict=True)
-    _unit("texture.pressure_noise", tx.pressure_noise)
-    _unit("texture.grain_strength", tx.grain_strength)
-    if tx.mode == TEXTURE_MODE_BRUSH and not tx.brush_image.is_file():
-        _fail("texture.brush_image", tx.brush_image, f"tidak ada (dipakai karena texture.mode = {tx.mode!r})")
 
     p = c.paper
     _hex("paper.color", p.color)

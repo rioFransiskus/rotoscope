@@ -49,13 +49,7 @@ multipass:
   opacity_falloff: 0.35      # alpha pass k = stroke.opacity × opacity_scale × falloff^k
   temporal_mode: "fixed"     # "fixed" = pass tambahan statis | "frame" = evolusi per gambar (jitter.hold_frames, temporal_drift)
 
-# ── TEXTURE ────────────────────────────────────────
-texture:
-  mode: "brush_stamp"        # "none" | "brush_stamp" | "grain_overlay"
-  brush_image: "assets/brushes/pencil_01.png"
-  stamp_spacing: 0.35        # rasio terhadap lebar brush
-  pressure_noise: 0.25
-  grain_strength: 0.18
+# (blok `texture:` dihapus di T-404b: tekstur garis ditolak, docs/04 "Hasil T-404b"; blok ini sekarang error saat load)
 
 # ── PAPER ──────────────────────────────────────────
 paper:

@@ -58,7 +58,6 @@ def test_defaults_are_rio_final_choice():
     p = s.paper
     assert p.enabled and p.color == "#f4f1ea" and p.texture_opacity == 0.35 and p.texture_gain == 3.0 and p.vignette == 0.0
     assert pap.texture_active(s) and not pap.paper_flat(s)
-    assert s.texture.mode == "brush_stamp"                              # T-404b: belum aktif (ignored_params)
 
 
 def test_flat_conditions():

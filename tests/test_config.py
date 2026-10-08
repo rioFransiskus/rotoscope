@@ -64,7 +64,7 @@ def test_defaults_without_yaml():
     assert s.stroke.width_base == 9.0 and s.stroke.color == "#1a1a1a" and s.render.ss == 3   # keputusan Rio (look test 7.2)
     assert s.render.output_width == 1080 and s.shape.edge_mode == "hide" and s.shape.simplify_epsilon == 2.8
     assert s.shape.smooth_px == 5.0
-    assert s.texture.brush_image == ROOT / "assets" / "brushes" / "pencil_01.png"
+    assert not hasattr(s, "texture")                                       # T-404b: tekstur garis ditolak, texture.* dihapus
 
 
 @pytest.mark.parametrize("cls, heading, path, loader", [
@@ -259,11 +259,10 @@ STYLE_INVALID = [
     ({"multipass.passes": 0}, r"multipass\.passes"),
     ({"multipass.offset": -1}, r"multipass\.offset"),
     ({"multipass.opacity_falloff": 2}, r"multipass\.opacity_falloff"),
-    ({"texture.mode": "pencil"}, r"texture\.mode"),
-    ({"texture.stamp_spacing": 0}, r"texture\.stamp_spacing"),
-    ({"texture.pressure_noise": 2}, r"texture\.pressure_noise"),
-    ({"texture.grain_strength": -1}, r"texture\.grain_strength"),
-    ({"texture.brush_image": "assets/brushes/tidak_ada.png"}, r"texture\.brush_image.*tidak ada"),
+    # T-404b: blok texture dihapus (tekstur garis ditolak) → ditolak dengan pesan jelas, bukan diabaikan diam-diam
+    ({"texture.mode": "pencil"}, r"texture: key tidak dikenal.*dihapus di T-404b.*docs/04"),
+    ({"texture.mode": "none"}, r"texture: key tidak dikenal.*dihapus di T-404b"),
+    ({"texture.brush_image": "assets/brushes/pencil_01.png"}, r"texture: key tidak dikenal.*dihapus di T-404b"),
     ({"paper.enabled": "no"}, r"paper\.enabled.*bool"),
     ({"paper.color": "#fff"}, r"paper\.color"),
     ({"paper.texture_image": "assets/paper/tidak_ada.jpg", "paper.texture_opacity": 0.35}, r"paper\.texture_image.*tidak ada"),
@@ -282,7 +281,6 @@ def test_style_validation_rejects(overrides, match):
 
 
 def test_unused_assets_not_checked():
-    load_style(overrides={"texture.mode": "none", "texture.brush_image": "tidak_ada.png"})
     load_style(overrides={"paper.enabled": False, "paper.texture_image": "tidak_ada.jpg"})
     # T-404a: berkas hanya wajib bila tekstur dipakai (enabled + opacity > 0 + gain > 0)
     load_style(overrides={"paper.texture_image": "tidak_ada.jpg", "paper.texture_opacity": 0.0})
@@ -300,24 +298,31 @@ def test_asset_paths_relative_to_project_root_not_cwd(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     assert project_root() == ROOT
     s = load_style()
-    assert s.texture.brush_image == ROOT / "assets" / "brushes" / "pencil_01.png"
     assert s.paper.texture_image == ROOT / "assets" / "paper" / "rough_01.jpg"
 
 
 def test_absolute_asset_path_allowed(tmp_path):
-    brush = tmp_path / "brush.png"
-    brush.write_bytes(b"")
-    assert load_style(overrides={"texture.brush_image": str(brush)}).texture.brush_image == brush
+    paper = tmp_path / "paper.jpg"
+    paper.write_bytes(b"")
+    assert load_style(overrides={"paper.texture_image": str(paper)}).paper.texture_image == paper
 
 
 def test_project_root_not_found(tmp_path, monkeypatch):
     monkeypatch.setattr(cfg_mod, "_PACKAGE_DIR", tmp_path / "pkg")
-    with pytest.raises(ConfigError, match=r"texture\.brush_image.*root project"):
+    with pytest.raises(ConfigError, match=r"paper\.texture_image.*root project"):
         load_style()
-    brush, paper = tmp_path / "b.png", tmp_path / "p.jpg"
-    brush.write_bytes(b"")
+    paper = tmp_path / "p.jpg"
     paper.write_bytes(b"")
-    load_style(overrides={"texture.brush_image": str(brush), "paper.texture_image": str(paper)})
+    load_style(overrides={"paper.texture_image": str(paper)})
+
+
+def test_old_style_yaml_with_texture_block_is_rejected_with_clear_message(tmp_path):
+    """Style lama dengan blok `texture:` ditolak (bukan diabaikan): pengguna tidak boleh mengira tekstur garis berlaku. Pesan menyebut T-404b + docs/04."""
+    y = tmp_path / "old.yaml"
+    y.write_text('texture:\n  mode: "brush_stamp"\n  pressure_noise: 0.25\n', encoding="utf-8")
+    with pytest.raises(ConfigError, match=r"texture: key tidak dikenal.*texture\.\* dihapus di T-404b.*docs/04"):
+        load_style(y)
+    load_style(Path(__file__).resolve().parents[1] / "configs" / "styles" / "rough-sketch.yaml")      # style default tidak punya blok texture
 
 
 def test_windows_path_single_quotes_ok(tmp_path):
