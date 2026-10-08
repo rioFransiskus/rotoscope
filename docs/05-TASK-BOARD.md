@@ -1609,10 +1609,13 @@ Tiga langkah, jadikan refleks:
     **Bukti:** run `python -m rotoscope run samples/<klip>.mp4` (config + style default, tanpa GPU, exit 0): [2]–[5] dilewati, export dilewati (manifest tidak berubah), jumlah waktu stage 44,4 s / 39,6 s (didominasi validasi frame [2] 33,2 / 23,3 s dan [2c] 7,0 / 7,4 s; 0 frame diproses); sha256 `out/*.mp4` = `before_t404a_*` (F1) kedua klip, 2 277 130 B dan 5 875 441 B; re-encode paksa (`restart=True`) 11,4 / 24,1 s juga byte-identik; 820 hash F1 (hulu, strokes, out/svg) selisih 0. Suite penuh: **1167 lolos, 2 skip** (sebelumnya 1168 / 2: −5 baris validasi texture, +3 baris penolakan, +1 test style lama). `work/t404b_scratch/` (191 380 244 B, di dalam repo, ter-ignore; `m1.json`, `m2.json`, `f1.py` disalin dulu ke `work/t404b/`) dan `T404b-prompt.md` dihapus.
     **Papan:** Phase 4 = 4/7 (T-404b SKIP tidak dihitung selesai, preseden T-301 / T-303), total 27/39 (5 + 11 + 6 + 1 + 4; jumlah per Phase = total). **Catatan lanjutan:** (1) jitter (T-402, default mati) dan T-304 (`boil_preserve`) ditinjau ulang SEKARANG, setelah T-404 tuntas (perbandingan visual b {0; 0,3; 0,6; 1,0} dan jitter dengan garis ganda + kertas bertekstur) — menunggu penilaian Rio, belum ada keputusan; (2) kandidat berikutnya T-405 (SVG export) / T-406 (preset library).
 
-### T-405 · SVG export · `TODO`
-- **Kerjakan:** `svgwrite`, path per frame, ke `out/svg/`
-- **Done when:** SVG bisa dibuka & diedit di Krita/Illustrator
+### T-405 · SVG export · `DONE`
+- **Kerjakan:** satu SVG per frame ke `out/svg/<nama>/` — string manual sejak T-401 (BUKAN `svgwrite`: byte-determinisme, tanpa dependency tambahan); salinan dilakukan oleh export [6]
+- **Done when:** SVG bisa dibuka & diedit di Krita/Illustrator — **terverifikasi di Krita (Rio, 2026-10-08), berkas `out/svg/test_short/frame_00080.svg`:** (1) terbuka tanpa error; (2) tampilan sama dengan PNG; (3) satu garis bisa dipilih setelah Ungroup (struktur bersarang: pass_0 / pass_1 → tipe garis → garis); (4) node satu garis bisa diedit tanpa merusak garis lain
 - **Update log:**
+  - [2026-10-08] **DONE tanpa perubahan kode** (hanya dokumentasi). SVG sudah dihasilkan sejak T-203b (salinan ke `out/svg/<nama>/` oleh export); struktur sekarang bersarang (per pass → per tipe → poligon per strok), jadi memilih satu garis butuh Ungroup beberapa kali. Garis abu-abu = pass 2 (pudar): pindahkan kedua pass bila ingin keduanya ikut.
+    **Batas yang diketahui / opsi (BUKAN dikerjakan):** bila Ungroup berulang dirasa merepotkan, buat task kecil untuk meratakan struktur SVG atau memberi `id` per strok.
+    **Papan:** Phase 4 = 5/7 (T-401, T-402, T-403, T-404a, T-405; T-404b SKIP tidak dihitung), total 28/39 (5 + 11 + 6 + 1 + 5; jumlah per Phase = total).
 
 ### T-406 · Preset library · `TODO`
 - **Kerjakan:** 4 preset — `rough-sketch`, `clean-line`, `heavy-marker`, `pencil-light`
@@ -1677,11 +1680,12 @@ Tiga langkah, jadikan refleks:
 | 1 Skeleton | T-101 … T-108 (T-102 → a/b/c, T-104 → a/b) — ✅ **Phase 1 selesai** (🎯 milestone T-104b, T-107 DONE) | 11/11 |
 | 2 Vectorize | T-201 … T-204 (T-201 → a/b, T-203 → a/b) — T-201a ✅, T-201b ✅ DONE (dengan batas kaki), T-202 ✅ DONE, T-203a ✅ DONE, T-203b ✅ DONE, T-204 ✅ DONE — 🎯 **Milestone Phase 2 tercapai** | 6/6 |
 | 3 Stabilize | T-301 … T-305 (T-301 SKIP, T-303 SKIP) — T-302 ✅ DONE (temporal tanpa flow); T-303 SKIP (optical flow ditolak berdasarkan data, docs/04) | 1/5 |
-| 4 Style | T-401 … T-406 (T-404 → a/b) — T-401 ✅ DONE (tebal variabel + taper + resample, contract "T-401"), T-402 ✅ DONE (jitter koheren, contract "T-402", default MATI), T-403 ✅ DONE (multipass 2 pass offset 5,5 falloff 0,35 opacity 0,92, contract "T-403"), T-404a ✅ DONE (kertas bertekstur disusun di export, Opsi B; [5] tidak berubah); T-404b SKIP (tekstur garis ditolak Rio berdasarkan data / penilaian visual, docs/04 "Hasil T-404b"; alat ukur dipertahankan); T-404 tuntas; berikutnya T-405 / T-406 | 4/7 |
+| 4 Style | T-401 … T-406 (T-404 → a/b) — T-401 ✅ DONE (tebal variabel + taper + resample, contract "T-401"), T-402 ✅ DONE (jitter koheren, contract "T-402", default MATI), T-403 ✅ DONE (multipass 2 pass offset 5,5 falloff 0,35 opacity 0,92, contract "T-403"), T-404a ✅ DONE (kertas bertekstur disusun di export, Opsi B; [5] tidak berubah); T-404b SKIP (tekstur garis ditolak Rio berdasarkan data / penilaian visual, docs/04 "Hasil T-404b"; alat ukur dipertahankan); T-404 tuntas; T-405 ✅ DONE (SVG diverifikasi di Krita, 2026-10-08, tanpa perubahan kode); berikutnya T-406 | 5/7 |
 | 5 Fallback | T-501 … T-502 (BLOCKED) | 0/2 |
 | 6 Opsional | T-601 … T-603 | 0/3 |
 
-**Total: 39 task** (5 + 11 + 6 + 5 + 7 + 2 + 3) · Selesai: 27/39 (5 + 11 + 6 + 1 + 4; SKIP — T-301, T-303, T-404b, T-601 — tidak dihitung selesai).
+**Total: 39 task** (5 + 11 + 6 + 5 + 7 + 2 + 3) · Selesai: 28/39 (5 + 11 + 6 + 1 + 5; SKIP — T-301, T-303, T-404b, T-601 — tidak dihitung selesai).
+Rekonsiliasi 2026-10-08 (T-405 DONE): Phase 4 = 5/7 (T-401, T-402, T-403, T-404a, T-405 selesai; T-404b SKIP tidak dihitung; T-406 TODO), total 28/39 (5 + 11 + 6 + 1 + 5 = 28; 5 + 11 + 6 + 5 + 7 + 2 + 3 = 39; jumlah per Phase = total).
 Rekonsiliasi 2026-10-08 (T-404b SKIP): Phase 4 = 4/7 (T-401, T-402, T-403, T-404a selesai; T-404b SKIP tidak dihitung, preseden T-301 / T-303; T-405, T-406 TODO), total 27/39 (5 + 11 + 6 + 1 + 4 = 27; 5 + 11 + 6 + 5 + 7 + 2 + 3 = 39; jumlah per Phase = total). Jitter (T-402) dan T-304 (`boil_preserve`) ditinjau ulang sekarang (T-404 tuntas).
 Rekonsiliasi 2026-10-08: T-404 dipecah (T-404a + T-404b) → Phase 4 = 7 task; T-404a DONE → Phase 4 = 4/7, total 27/39 (5 + 11 + 6 + 1 + 4 = 27; 5 + 11 + 6 + 5 + 7 + 2 + 3 = 39; jumlah per Phase = total). Jitter dan T-304 ditinjau ulang setelah T-404b.
 Rekonsiliasi 2026-10-07: T-403 DONE → Phase 4 = 3/6, total 26/38 (5 + 11 + 6 + 1 + 3 = 26; jumlah per Phase = total). Jitter dan T-304 ditinjau ulang setelah tekstur (T-404).

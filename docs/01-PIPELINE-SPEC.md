@@ -920,6 +920,7 @@ dengan aturan tetap)*:
   ada, utuh (IHDR + IEND) dan berukuran `output_size`.
 - **SVG** (source `strokes`, tanpa `--limit`): `strokes/*.svg` disalin ke `out/svg/<nama>/frame_%05d.svg` (`<nama>` =
   `sanitize_source_name`, sama dengan nama MP4), di dalam stage [6] (satu pengaman, satu manifest), juga ketika MP4 dilewati.
+  SVG telah diverifikasi terbuka dan bisa diedit di Krita (Rio, 2026-10-08; docs/05 T-405).
   Salin atomik (`.tmp` + `os.replace`), diverifikasi jumlah + sha256 = `strokes/*.svg`. Folder memuat penanda
   `.rotoscope-clip.json` (identitas klip + sha256 per berkas SAAT DISALIN; ditulis tanpa BOM, dibaca toleran BOM). Klasifikasi
   per berkas (semua dievaluasi SEBELUM encode dan sebelum ada yang diubah): sama dengan sumber = ok; beda dari sumber tetapi sama
