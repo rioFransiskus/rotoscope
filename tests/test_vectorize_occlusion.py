@@ -379,7 +379,7 @@ def test_old_t201a_manifest_is_stale_and_gets_occlusion(tmp_path):
     stats_path(work).unlink()
     logs: list[str] = []
     run = vec.run_vectorize(cfg_for(work), log=logs.append)
-    assert run["processed"] == N_FRAMES and "contract: 'T-201a' → 'T-202'" in "".join(run["stale"])
+    assert run["processed"] == N_FRAMES and "contract: 'T-201a' → 'T-305b'" in "".join(run["stale"])
     assert stats_path(work).is_file()
 
 
@@ -416,7 +416,10 @@ CLIPS = ("test_short", "test")
 FRAMES_REAL = {"test_short": (0, 40, 73, 78, 82, 87, 90, 92), "test": (0, 40, 73, 78, 82, 87, 90, 92, 150, 200)}
 REAL_CASES = [(clip, i) for clip in CLIPS for i in FRAMES_REAL[clip]]
 LEG_FRAMES = (73, 78, 82, 87, 92)
-REAL_PARAMS = vec.vectorize_params(load_pipeline())
+DEFAULT_PARAMS = vec.vectorize_params(load_pipeline())                   # default produksi (T-305b: D_low 2, exclude [hair])
+# Jalur dasar (sebelum T-305b): tanpa ekstensi dan tanpa pengecualian grup. Invarian "bayangan ≥ D − toleransi" berlaku untuk jalur
+# ini; ekstensi T-305b sengaja masuk zona D (batas panjangnya diuji di test_vectorize_reach.py).
+REAL_PARAMS = {**DEFAULT_PARAMS, "depth_lines.min_dist_low_px": 0.0, "depth_lines.exclude_groups": []}
 
 
 def real(clip: str) -> Path:
@@ -514,7 +517,7 @@ def test_real_done_when_leg_crossing_has_occlusion_in_lower_clothing(clip):
     ok = []
     for i in LEG_FRAMES:
         g, z = real_frame(clip, i)
-        strokes, _ = vec.occlusion_strokes(g, z, NAMES, REAL_PARAMS, th, tl)
+        strokes, _ = vec.occlusion_strokes(g, z, NAMES, DEFAULT_PARAMS, th, tl)         # default produksi (T-305b)
         if any(lower_clothing_fraction(clip, i, s) >= 0.8 for s in strokes):
             ok.append(i)
     assert len(ok) >= 4, ok

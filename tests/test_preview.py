@@ -371,7 +371,11 @@ def _real_strokes_current() -> bool:
     if not m.is_file():
         return False
     d = json.loads(m.read_text(encoding="utf-8"))
-    return d.get("contract") == sty.CONTRACT and d.get("algo_rev") == sty.ALGO_REV
+    if d.get("contract") != sty.CONTRACT or d.get("algo_rev") != sty.ALGO_REV:
+        return False
+    # T-305b: contours/ klip asli contract lama sampai dihitung ulang di Tahap 4 → [5] menolaknya → dilewati
+    cm = REAL / "contours" / "manifest.json"
+    return cm.is_file() and json.loads(cm.read_text(encoding="utf-8")).get("contract") in sty.SUPPORTED_CONTOURS_CONTRACTS
 
 
 @pytest.mark.skipif(not _real_strokes_current(), reason="klip test tidak ada / strokes basi (contract lama)")

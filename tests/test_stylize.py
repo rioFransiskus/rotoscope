@@ -443,7 +443,7 @@ def frame_strokes(i: int) -> list[dict]:
             stroke([(10.5, 50.5 + d), (30.5, 70.5)], closed=False, typ="group_boundary", tid=3)]
 
 
-def make_stage_work(tmp_path: Path, n: int = N_FRAMES, contract: str = "T-202") -> Path:
+def make_stage_work(tmp_path: Path, n: int = N_FRAMES, contract: str = "T-305b") -> Path:
     work = tmp_path / "work"
     (work / "contours").mkdir(parents=True)
     (work / "meta.json").write_text(json.dumps({"source_path": "C:/clips/a.mp4", "frame_count": n, "working_width": W,
@@ -484,7 +484,7 @@ def test_run_writes_outputs_manifest_and_log(tmp_path, style_file, capsys):
     m = manifest(work)
     assert m["contract"] == "T-403" and m["algo_rev"] == sty.ALGO_REV and m["style"] == "test-style"
     assert m["output_size"] == {"width": OW, "height": OW} and m["scale"] == OW / W and m["edge_mode"] == "hide"
-    assert m["contours"]["contract"] == "T-202" and m["contours"]["vectorize_hash"] == "h" * 8
+    assert m["contours"]["contract"] == "T-305b" and m["contours"]["vectorize_hash"] == "h" * 8
     assert "paper.vignette" in m["ignored_params"] and "jitter.amplitude" not in m["ignored_params"] and "multipass.passes" in m["style_params"]
     assert "shape.resample_points" not in m["ignored_params"] and "jitter.hold_frames" in m["style_params"]
     assert "stroke.width_variation" in m["style_params"] and "jitter.param_seed" in m["style_params"]
@@ -578,7 +578,7 @@ def test_input_validation_exit_codes(tmp_path, style_file, capsys):
     work = make_stage_work(tmp_path / "a", contract="T-201b")                          # contract tidak didukung
     assert run_main(work, style_file) == 1
     err = capsys.readouterr().err
-    assert "T-201b" in err and "T-202" in err and cmd in err
+    assert "T-201b" in err and "T-305b" in err and "T-202" not in err.split("didukung")[1] and cmd in err
     work = make_stage_work(tmp_path / "b")
     edit_contours_manifest(work, pending=["anchor"])
     assert run_main(work, style_file) == 1 and "pending" in capsys.readouterr().err
@@ -653,8 +653,8 @@ REAL_STEP = 12
 def real_docs(clip: str):
     d = CLIPS / clip / "contours"
     man = d / "manifest.json"
-    if not man.is_file() or json.loads(man.read_text(encoding="utf-8")).get("contract") != "T-202":
-        pytest.skip(f"contours T-202 klip {clip} tidak ada")
+    if not man.is_file() or json.loads(man.read_text(encoding="utf-8")).get("contract") != "T-305b":
+        pytest.skip(f"contours T-305b klip {clip} tidak ada")
     return [json.loads(f.read_text(encoding="utf-8")) for f in sorted(d.glob("frame_*.json"))[::REAL_STEP]]
 
 

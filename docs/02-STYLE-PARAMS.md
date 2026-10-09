@@ -102,6 +102,8 @@ vectorize:
     erode_px: 5              # kernel erosi foreground untuk wilayah persentil
     min_dist_px: 7           # D — jarak minimum ke batas grup (termasuk siluet)
     min_len_px: 30           # L — panjang skeleton minimum
+    min_dist_low_px: 2       # T-305b: D_low histeresis jarak (px kerja). 0 = mati; atau 1 ≤ D_low < D. Ujung oklusi boleh memanjang ke D_low (jalur ≤ ceil((D − D_low) / sin 45°) langkah)
+    exclude_groups: [hair]   # T-305b: grup tanpa garis oklusi ([] = semua grup); group_boundary + siluet tidak terpengaruh
   track:
     max_match_dist_px: 16    # jarak Chamfer simetris maks pencocokan track_id (T-202; 12 → 16 disetujui Rio)
 
@@ -153,6 +155,8 @@ export:
 | `vectorize.depth_lines.lo_pct`, `hi_pct` | 0 < lo_pct < hi_pct < 100 |
 | `vectorize.depth_lines.erode_px` | int ganjil ≥ 1 |
 | `vectorize.depth_lines.min_dist_px`, `min_len_px` | ≥ 0 |
+| `vectorize.depth_lines.min_dist_low_px` | 0 (mati) atau 1 ≤ D_low < `min_dist_px`; ≥ D ditolak (T-305b, mengubahnya membuat `contours/` basi) |
+| `vectorize.depth_lines.exclude_groups` | daftar nama grup di `groups`; nama tak dikenal = error + daftar grup; diurutkan + duplikat dibuang (T-305b) |
 | `vectorize.track.max_match_dist_px` | > 0 (default 16 px pada frame 480 px; mengubahnya membuat `contours/` basi) |
 | `export.source` | `"silhouette"` atau `"strokes"` (default `"strokes"` sejak T-203b: MP4 dari `strokes/*.png` apa adanya + salinan SVG ke `out/svg/<nama>/`, tag warna bt709; `"silhouette"` = Phase 1, tanpa SVG) |
 | `export.crf` | int 0–51 |

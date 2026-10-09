@@ -334,7 +334,7 @@ def test_stale_manifest_recomputed_with_warning(tmp_path, change):
     elif change == "groups":
         groups = {name: list(cls) for name, cls in load_pipeline().groups}
         groups["face"] = groups["face"] + groups.pop("hair")
-        overrides = {"groups": groups}
+        overrides = {"groups": groups, "vectorize.depth_lines.exclude_groups": []}      # tanpa hair: default [hair] (T-305b) tidak berlaku
     else:
         p = work / ("seg" if change == "seg_input" else "depth") / "manifest.json"
         m = json.loads(p.read_text(encoding="utf-8"))

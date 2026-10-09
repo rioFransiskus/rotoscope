@@ -69,7 +69,7 @@ def test_final_schema_keys_per_type_and_chain(tmp_path):
             if s["closed"]:
                 assert s["anchor"] == 0
     m = json.loads((work / "contours" / "manifest.json").read_text(encoding="utf-8"))
-    assert m["contract"] == "T-202" and m["algo_rev"] == 2 and m["pending"] == []
+    assert m["contract"] == "T-305b" and m["algo_rev"] == 2 and m["pending"] == []
     assert m["vectorize"]["track.max_match_dist_px"] == 16 and "track.max_match_dist_px" in m["vectorize"]
     recs = list(json.loads(x) for x in (work / "contours" / "frames.jsonl").read_text(encoding="utf-8").splitlines())
     frames = [r for r in recs if r["event"] == "frame"]
@@ -288,13 +288,15 @@ BASELINE = {
         "silhouette": "7354bf507a26f0d526e02e836b30f62f854e0aac221ace6dbba358a530528be5",
         "silhouette_hole": "4450e05c4d64b45fff154add932dc705542c2ba361ed341457192a9368fb2ac8",
         "group_boundary": "4a64c5226ecb869618232c9e06ac291d1880bcc42a2d0a38984e06368060f184",
-        "occlusion": "e512c7280e682151fbe5f7368d35d4fc33a2a3fa56a862633db912ccab4e615c"},
+        "occlusion": "01c18f67adfc7b3946ea87d0d1834f73e632f99ea05ba5a9afec41ca9f02ee98"},     # T-305b Tahap 4: dihitung ulang (lama e512c728…)
     "test": {
         "silhouette": "a41a0411e352c3c090a9d98e6482b5b119da867d33696c49954c2427df99742a",
         "silhouette_hole": "cdb6ed48ff1bd1249c7aaaed6c3d0b5860fab68c952b5c214d2a477ecaa26464",
         "group_boundary": "1a91ddf3fdcf973057c404f4896e9570d2b11388230b6590ff40c9e7c490e105",
-        "occlusion": "c32a9ab8e5b4d717e7e7a3e5dabe25e018d0e3f5b8e680deab90aec8c66a6c9c"},
+        "occlusion": "071695d99261864d0782cd3925074b1ca6b938faff42547af76f8ec1cbe3c8e2"},     # T-305b Tahap 4: dihitung ulang (lama c32a9ab8…)
 }
+# T-305b Tahap 4: HANYA hash `occlusion` yang berubah (D_low 2 + tanpa rambut, disengaja); silhouette / lubang / batas grup tetap sama
+# dengan pin T-201b (diverifikasi di run nyata) → tipe lain tidak tersentuh.
 ANCHOR_MEDIAN_MAX, ANCHOR_P95_MAX, ANCHOR_MAX_MAX = 3.0, 12.0, 24.0       # kriteria lulus (docs/05 T-202, poin 11c)
 CLIPS = ["test_short", "test"]
 
@@ -305,8 +307,8 @@ def real_frames(clip: str) -> list[list[dict]]:
         m = json.loads((d / "manifest.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         pytest.skip(f"contours {clip} tidak ada")
-    if m.get("contract") != "T-202":
-        pytest.skip(f"contours {clip} bukan T-202")
+    if m.get("contract") != "T-305b":
+        pytest.skip(f"contours {clip} bukan T-305b")
     return tm.load_frames(d)
 
 
@@ -338,5 +340,5 @@ def test_real_canonical_hashes_identical_to_t201b(clip):
 
 
 def test_params_module_constants_sane():
-    assert vec.CONTRACT == "T-202" and vec.ALGO_REV == 2 and vec.PENDING == ()
+    assert vec.CONTRACT == "T-305b" and vec.ALGO_REV == 2 and vec.PENDING == ()
     assert vec.INHERIT_MAIN_SILHOUETTE is True and PARAMS["min_stroke_px"] == 6

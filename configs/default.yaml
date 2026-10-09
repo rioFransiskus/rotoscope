@@ -88,6 +88,8 @@ vectorize:
     erode_px: 5              # kernel erosi foreground untuk wilayah persentil
     min_dist_px: 7           # D — jarak minimum ke batas grup (termasuk siluet)
     min_len_px: 30           # L — panjang skeleton minimum
+    min_dist_low_px: 2       # T-305b: D_low histeresis jarak (px kerja). 0 = mati; atau 1 ≤ D_low < D. Ujung oklusi boleh memanjang ke D_low (jalur ≤ ceil((D − D_low) / sin 45°) langkah)
+    exclude_groups: [hair]   # T-305b: grup tanpa garis oklusi ([] = semua grup); group_boundary + siluet tidak terpengaruh
   track:
     max_match_dist_px: 16    # jarak Chamfer simetris maks pencocokan track_id (T-202; 12 → 16 disetujui Rio)
 

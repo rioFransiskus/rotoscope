@@ -475,19 +475,22 @@ def test_new_active_params_make_strokes_stale(tmp_path, ov):
 
 
 # ── Data nyata ─────────────────────────────────────
-REAL_PINNED = {                       # sha256 strokes/frame_00080.svg|png klip asli T-401 (work/t402/before_strokes_*.sha256)
-    "test_short": {"frame_00080.svg": "8bad6c0696cfcd854fbe20b8d9a1d6fbbd4f96b7d952bcb3a2e25633a6e6b5aa",
-                   "frame_00080.png": "8c6d7437e52fd29f67b4cad877b509d675ee18f1e8abd6a943a829678740251f"},
-    "test": {"frame_00080.svg": "50bb877a1bb1a7c0f8528e1017b84963895db78393d42a3e280bdefd4f430e38",
-             "frame_00080.png": "a5a0fa944ef2bb7dd72afb145bc6dc0870c4ace834fd416970417429463033d5"},
+# sha256 render frame 80 (amplitude 0, 1 pass, opacity 1 = jalur T-401 / T-402) atas contours/ klip asli. DISEMATKAN ULANG di T-305b
+# Tahap 4: contours frame 80 berubah SENGAJA (garis oklusi D_low 2 + tanpa rambut); hash lama (T-401, work/t402/before_strokes_*.sha256)
+# ada di git history. Renderer ([5]) tidak berubah: dengan default netral strokes PNG + SVG byte-identik dengan sebelum T-305b (Tahap 3).
+REAL_PINNED = {
+    "test_short": {"frame_00080.svg": "e0f39c215418cf92c662e1f59c6244892bef03f1cfb6b8e76739a7abe71d7e2a",
+                   "frame_00080.png": "9094c676fe97e8bc4ffe8e7da9e964cc469cf4870cf1e3d9ee6887d93e95542e"},
+    "test": {"frame_00080.svg": "91c63e45a09aafe03d30ec183e52dfc24ef2f45cd1702f5ddb78f6a1c6cc661d",
+             "frame_00080.png": "6d6940a16add03364d8ed20eeaf9164b305a059ddab4e2007fe5f1e552bea6af"},
 }
 
 
 def real_doc(clip: str, index: int) -> dict:
     d = CLIPS / clip / "contours"
     man = d / "manifest.json"
-    if not man.is_file() or json.loads(man.read_text(encoding="utf-8")).get("contract") != "T-202":
-        pytest.skip(f"contours T-202 klip {clip} tidak ada")
+    if not man.is_file() or json.loads(man.read_text(encoding="utf-8")).get("contract") != "T-305b":
+        pytest.skip(f"contours T-305b klip {clip} tidak ada")
     return json.loads((d / f"frame_{index:05d}.json").read_text(encoding="utf-8"))
 
 

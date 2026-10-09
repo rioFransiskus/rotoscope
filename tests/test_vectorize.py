@@ -25,7 +25,8 @@ HAIR, FACE, TORSO, LARM = 1, 2, 3, 4          # id grup default (urutan YAML)
 NAMES = tuple(g for g, _ in load_pipeline().groups)
 PARAMS = {"min_region_area": 800, "min_hole_area": 200, "line_min_px": 5, "min_stroke_px": 6}
 DEPTH_DEFAULTS = {"depth_lines.blur_sigma": 1.0, "depth_lines.hi_pct": 95.0, "depth_lines.lo_pct": 90.0,
-                  "depth_lines.erode_px": 5, "depth_lines.min_dist_px": 7.0, "depth_lines.min_len_px": 30.0}
+                  "depth_lines.erode_px": 5, "depth_lines.min_dist_px": 7.0, "depth_lines.min_len_px": 30.0,
+                  "depth_lines.min_dist_low_px": 0.0, "depth_lines.exclude_groups": []}
 SMALL = {**PARAMS, "min_region_area": 1, "min_hole_area": 1}
 REAL_CLIP = Path("work/clips/test_short")
 
@@ -496,10 +497,13 @@ def subject_depth(i: int, h: int = H, w: int = W) -> np.ndarray:
 
 
 TRACK_DEFAULTS = {"track.max_match_dist_px": 16.0}
-CLIP_PARAMS = {**PARAMS, "min_region_area": 50, **DEPTH_DEFAULTS, **TRACK_DEFAULTS}   # subjek sintetis 24×32 << 800 px
+CLIP_PARAMS = {**PARAMS, "min_region_area": 50, **DEPTH_DEFAULTS, **TRACK_DEFAULTS,   # subjek sintetis 24×32 << 800 px
+               "depth_lines.min_dist_low_px": 2.0, "depth_lines.exclude_groups": ["hair"]}      # default T-305b
 
 
 def cfg_for(work: Path, **overrides):
+    if "groups" in overrides:                           # grup tanpa hair → default exclude_groups [hair] (T-305b) tidak berlaku
+        overrides.setdefault("vectorize.depth_lines.exclude_groups", [])
     return load_pipeline(overrides={"paths.work_dir": str(work), "vectorize.min_region_area": 50, **overrides})
 
 
@@ -533,7 +537,7 @@ def test_run_writes_outputs_manifest_and_log(tmp_path):
     assert run["processed"] == N_FRAMES and run["skipped"] == 0
     assert len(frame_hashes(work)) == N_FRAMES
     m = json.loads((work / "contours" / "manifest.json").read_text(encoding="utf-8"))
-    assert m["contract"] == "T-202" and m["stroke_types"] == list(vec.STROKE_TYPES)
+    assert m["contract"] == "T-305b" and m["stroke_types"] == list(vec.STROKE_TYPES)
     assert m["stroke_types"][-1] == "occlusion" and m["pending"] == []
     stats = json.loads((work / "contours" / "clip_stats.json").read_text(encoding="utf-8"))
     assert m["depth_thresholds"] == {"t_high": stats["t_high"], "t_low": stats["t_low"]} and m["clip_stats"]
@@ -635,7 +639,7 @@ def test_contract_change_marks_stale(tmp_path):
     m["contract"] = "T-201b"            # manifest lama (sebelum anchor / orientasi / track_id)
     p.write_text(json.dumps(m), encoding="utf-8")
     run = vec.run_vectorize(cfg_for(work), log=quiet)
-    assert run["stale"] == ["contract: 'T-201b' → 'T-202'"] and run["processed"] == N_FRAMES
+    assert run["stale"] == ["contract: 'T-201b' → 'T-305b'"] and run["processed"] == N_FRAMES
 
 
 @pytest.mark.parametrize("old", [1, None])

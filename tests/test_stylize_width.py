@@ -399,8 +399,8 @@ REAL_STEP = 40
 def real_docs(clip: str, step: int = REAL_STEP, start: int = 0):
     d = CLIPS / clip / "contours"
     man = d / "manifest.json"
-    if not man.is_file() or json.loads(man.read_text(encoding="utf-8")).get("contract") != "T-202":
-        pytest.skip(f"contours T-202 klip {clip} tidak ada")
+    if not man.is_file() or json.loads(man.read_text(encoding="utf-8")).get("contract") != "T-305b":
+        pytest.skip(f"contours T-305b klip {clip} tidak ada")
     return [json.loads(f.read_text(encoding="utf-8")) for f in sorted(d.glob("frame_*.json"))[start::step]]
 
 

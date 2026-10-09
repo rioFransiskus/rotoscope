@@ -58,7 +58,7 @@ CONTRACT = "T-403"
 # Naik 1 HANYA untuk perbaikan PERILAKU pada kode yang sudah dikontrak, tanpa perubahan parameter (docs/01). Fitur baru
 # (jitter, taper, ...) menaikkan CONTRACT, bukan ALGO_REV.
 ALGO_REV = 2    # 2 (T-406): zona mati tepi pass k >= 1 mengikuti tebal LOKAL (EDGE_INK_GUARD_PX); strokes ALGO_REV 1 basi
-SUPPORTED_CONTOURS_CONTRACTS = frozenset({"T-202"})
+SUPPORTED_CONTOURS_CONTRACTS = frozenset({"T-305b"})
 DEFAULT_PIPELINE = Path("configs") / "default.yaml"
 
 # ── Konstanta struktural (bukan parameter style) ───

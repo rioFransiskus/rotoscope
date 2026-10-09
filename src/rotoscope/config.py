@@ -210,6 +210,8 @@ class DepthLinesConfig:
     erode_px: int = 5
     min_dist_px: float = 7.0
     min_len_px: float = 30.0
+    min_dist_low_px: float = 2.0               # T-305b: D_low histeresis jarak (px kerja); 0 = mati, atau 1 ≤ D_low < D
+    exclude_groups: tuple[str, ...] = ("hair",)       # T-305b: grup tanpa garis oklusi (nama grup; terurut, tanpa duplikat)
 
 
 @dataclass(frozen=True)
@@ -566,6 +568,10 @@ def _convert(hint, v, key: str, resolve):
             _type_error(key, v, "mapping (key: nilai)")
         value_hint = get_args(hint)[1]
         return MappingProxyType({k: _convert(value_hint, vv, _join(key, k), resolve) for k, vv in v.items()})
+    if get_origin(hint) is tuple:                      # tuple[str, ...]: daftar nama, diurutkan + tanpa duplikat
+        if not isinstance(v, (list, tuple)) or any(not isinstance(x, str) or not x.strip() for x in v):
+            _type_error(key, v, "daftar string tidak kosong")
+        return tuple(sorted(set(v)))
     if v is None:
         if hint in (str | None, bool | None):
             return None
@@ -772,6 +778,14 @@ def _validate_pipeline(c: PipelineConfig) -> None:
     _odd("vectorize.depth_lines.erode_px", dl.erode_px, 1)
     _at_least("vectorize.depth_lines.min_dist_px", dl.min_dist_px, 0)
     _at_least("vectorize.depth_lines.min_len_px", dl.min_len_px, 0)
+    if dl.min_dist_low_px != 0 and not (1 <= dl.min_dist_low_px < dl.min_dist_px):
+        raise ConfigError(f"vectorize.depth_lines.min_dist_low_px ({_fmt(dl.min_dist_low_px)}) harus 0 (mati) atau "
+                          f"1 ≤ D_low < min_dist_px ({_fmt(dl.min_dist_px)}); D_low ≥ D tidak punya arti")
+    known = [name for name, _ in c.groups]
+    unknown = [g for g in dl.exclude_groups if g not in known]
+    if unknown:
+        raise ConfigError(f"vectorize.depth_lines.exclude_groups: grup tidak dikenal {unknown}; grup yang ada: "
+                          f"{', '.join(known)}")
     _at_least("vectorize.track.max_match_dist_px", v.track.max_match_dist_px, 0, strict=True)
 
     bad_style = [ch for ch in c.style if ord(ch) < 0x20 or ord(ch) == 0x7F]

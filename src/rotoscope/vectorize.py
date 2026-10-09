@@ -60,7 +60,7 @@ MANIFEST_FILENAME = "manifest.json"
 FRAMES_LOG_FILENAME = "frames.jsonl"
 FRAME_SUFFIX = ".json"
 CLIP_STATS_FILENAME = "clip_stats.json"
-CONTRACT = "T-202"           # T-201b → T-202: anchor + orientasi + track_id (output lama otomatis basi)
+CONTRACT = "T-305b"          # T-202 → T-305b: exclude_groups + histeresis jarak oklusi (fitur baru; output lama otomatis basi)
 # Naik 1 setiap perbaikan PERILAKU algoritma pada kode yang sudah dikontrak, tanpa perubahan parameter (output lama
 # otomatis basi, peringatan menyebut algo_rev lama → baru). 1 = junction ≥ 3 tetangga + Zhang-Suen; 2 = crossing
 # number + prune sudut tangga + klaster junction + Guo-Hall. Fitur baru = `contract` naik, bukan `algo_rev`
@@ -88,7 +88,13 @@ PREV_SHA_KEY = "prev_sha256"                              # kunci level-frame: s
 PARAM_KEYS = ("min_region_area", "min_hole_area", "line_min_px", "min_stroke_px")  # parameter T-201a
 TRACK_KEYS = ("max_match_dist_px",)                       # vectorize.track.*
 TRACK_PREFIX = "track."
-DEPTH_KEYS = ("blur_sigma", "hi_pct", "lo_pct", "erode_px", "min_dist_px", "min_len_px")   # vectorize.depth_lines.*
+DEPTH_KEYS = ("blur_sigma", "hi_pct", "lo_pct", "erode_px", "min_dist_px", "min_len_px",
+              "min_dist_low_px", "exclude_groups")   # vectorize.depth_lines.* (dua terakhir: T-305b)
+LIST_KEYS = ("exclude_groups",)              # nilai daftar: ditulis sebagai list terurut di dict datar (JSON round-trip stabil)
+# Histeresis jarak T-305b (docs/04 "Keputusan T-305b"): konstanta struktural, BUKAN parameter YAML — mengubahnya
+# = perubahan perilaku → ALGO_REV naik.
+OCC_REACH_MIN_ANGLE_DEG = 45.0               # sudut temu minimum ekstensi ke batas → batas panjang jalur
+OCC_REACH_TARGET_BAND_PX = 1.0               # dasar zona = jarak < D_low + band
 DEPTH_PREFIX = "depth_lines."                # kunci datar di dict parameter / manifest: "depth_lines.hi_pct"
 
 # ── Garis oklusi (T-201b): konstanta struktural, bukan parameter style ──
@@ -98,6 +104,7 @@ NMS_NEIGHBORS = (((0, -1), (0, 1)), ((-1, -1), (1, 1)), ((-1, 0), (1, 0)), ((-1,
 DIST_MASK = cv2.DIST_MASK_PRECISE            # distanceTransform eksak (bukan aproksimasi chamfer 3×3)
 STRENGTH_DECIMALS = 3                        # pembulatan `strength`
 PERCENTILE_METHOD = "linear"                 # interpolasi persentil (= np.percentile default)
+GEODESIC_FAR = 10 ** 6                       # jarak geodesik "tak terjangkau" (jumlah dua nilai ini masih muat int32)
 CLIP_STATS_RESULTS = ("t_high", "t_low", "n_values")   # field hasil di clip_stats.json (sisanya = masukan)
 
 # ── Konstanta struktural (bukan parameter style; sama dengan RING_KERNEL di stabilize) ──
@@ -127,7 +134,8 @@ def vectorize_params(cfg: PipelineConfig) -> dict:
     """4 parameter T-201a + `depth_lines.*` (T-201b) + `track.*` (T-202), dict DATAR ('depth_lines.hi_pct',
     'track.max_match_dist_px')."""
     out = {k: getattr(cfg.vectorize, k) for k in PARAM_KEYS}
-    out.update({DEPTH_PREFIX + k: getattr(cfg.vectorize.depth_lines, k) for k in DEPTH_KEYS})
+    out.update({DEPTH_PREFIX + k: (sorted(set(v)) if k in LIST_KEYS else v)
+                for k in DEPTH_KEYS for v in [getattr(cfg.vectorize.depth_lines, k)]})
     out.update({TRACK_PREFIX + k: getattr(cfg.vectorize.track, k) for k in TRACK_KEYS})
     return out
 
@@ -653,6 +661,62 @@ def keep_long_components(skel: np.ndarray, min_len: float) -> np.ndarray:
     return keep[lab]
 
 
+def geodesic_steps(src: np.ndarray, zone: np.ndarray, max_steps: int) -> np.ndarray:
+    """Jumlah langkah 8-arah dari `src` melalui `zone`, ≤ max_steps (int32); GEODESIC_FAR = tidak terjangkau.
+    Piksel `src` yang berada di luar `zone` tidak diberi nilai; langkah pertama masuk `zone` = 1."""
+    d = np.full(zone.shape, GEODESIC_FAR, np.int32)
+    cur = src.copy()
+    for step in range(1, max_steps + 1):
+        nxt = cv2.dilate(cur.astype(np.uint8), KERNEL_3X3).astype(bool) & zone & ~cur
+        if not nxt.any():
+            break
+        d[nxt] = step
+        cur |= nxt
+    return d
+
+
+def surviving_seeds(gmap: np.ndarray, seed: np.ndarray, params: dict, skip: set[int]) -> np.ndarray:
+    """Komponen benih (jarak ≥ D) yang skeleton-nya lolos L seperti jalur sekarang (thinning per grup, komponen
+    skeleton ≥ L). Komponen benih lain TIDAK boleh diperpanjang (tidak dihidupkan kembali lewat ekstensi). Satu
+    komponen 8-arah selalu satu grup: batas grup berjarak 0 dan bukan benih."""
+    dp = depth_params(params)
+    surv = np.zeros(gmap.shape, bool)
+    for gid in (int(g) for g in np.unique(gmap[seed]) if int(g) not in skip):
+        thinned = thin_band(seed & (gmap == gid), params["line_min_px"])
+        if thinned is None:
+            continue
+        skel, ox, oy = thinned
+        ys, xs = np.nonzero(keep_long_components(skel, dp["min_len_px"]))
+        surv[ys + oy, xs + ox] = True
+    n, lab = cv2.connectedComponents(seed.astype(np.uint8), connectivity=8)
+    ok = np.zeros(n, bool)
+    ok[np.unique(lab[surv])] = True
+    ok[0] = False
+    return ok[lab]
+
+
+def reach_extension(kept: np.ndarray, ridge: np.ndarray, dist: np.ndarray, d: float, d_low: float) -> np.ndarray:
+    """Ekstensi histeresis jarak (T-305b): piksel `ridge` (hysteresis, foreground, jarak ≥ D_low, BUKAN benih) pada
+    jalur 8-arah dari benih lolos-L (`kept`) ke dasar zona (jarak < D_low + band) dengan panjang jalur
+    ≤ ceil((D − D_low) / sin θ) langkah; jalur yang tidak sampai dasar zona (mis. menempel sejajar batas) tidak
+    diperpanjang. Piksel x diterima bila dari_benih(x) + ke_dasar(x) ≤ batas."""
+    zone = ridge & ~kept
+    bound = int(np.ceil((d - d_low) / np.sin(np.radians(OCC_REACH_MIN_ANGLE_DEG))))
+    target = zone & (dist < d_low + OCC_REACH_TARGET_BAND_PX)
+    if not target.any() or not zone.any():
+        return np.zeros(zone.shape, bool)
+    x, y, w, h = cv2.boundingRect(zone.astype(np.uint8))
+    pad = bound + 1
+    y0, y1, x0, x1 = max(y - pad, 0), min(y + h + pad, zone.shape[0]), max(x - pad, 0), min(x + w + pad, zone.shape[1])
+    win = (slice(y0, y1), slice(x0, x1))
+    z, t = zone[win], target[win]
+    ds = geodesic_steps(kept[win], z, bound)
+    dt = np.where(t, 0, geodesic_steps(t, z, bound))
+    ext = np.zeros(zone.shape, bool)
+    ext[win] = z & (ds + dt <= bound)
+    return ext
+
+
 def occlusion_strokes(gmap: np.ndarray, depth: np.ndarray, names: tuple[str, ...], params: dict,
                       t_high: float | None, t_low: float | None) -> tuple[list[dict], dict]:
     """Peta grup + depth_smooth + ambang klip → strok `occlusion` (terbuka, SATU grup, `strength`) + statistik.
@@ -662,16 +726,25 @@ def occlusion_strokes(gmap: np.ndarray, depth: np.ndarray, names: tuple[str, ...
     |grad| di titik strok (penutup loop tidak dihitung dua kali), STRENGTH_DECIMALS desimal. t_high / t_low = None
     (klip tanpa foreground) → tanpa strok.
     """
-    stats = {"occ_px_hyst": 0, "occ_px_dist": 0, "occ_px_len": 0, "n_occlusion": 0,
+    stats = {"occ_px_hyst": 0, "occ_px_dist": 0, "occ_px_ext": 0, "occ_px_len": 0, "n_occlusion": 0,
              "occ_loops": 0, "occ_spurs_dropped": 0, "occ_short_dropped": 0}
     if t_high is None or t_low is None:
         return [], stats
     dp = depth_params(params)
     m = occlusion_masks(gmap, depth, dp, t_high, t_low)
     stats["occ_px_hyst"], stats["occ_px_dist"] = int(m["hyst"].sum()), int(m["dist_ok"].sum())
+    skip = {names.index(g) + 1 for g in dp["exclude_groups"] if g in names}      # T-305b: grup tanpa garis oklusi
+    mask = m["dist_ok"]
+    if 0 < dp["min_dist_low_px"] < dp["min_dist_px"]:                            # T-305b: histeresis jarak terjaga
+        dist = boundary_distance(gmap)
+        kept = surviving_seeds(gmap, mask, params, skip)
+        ridge = m["hyst"] & (gmap != stb.BACKGROUND_ID) & (dist >= dp["min_dist_low_px"]) & ~mask
+        ext = reach_extension(kept, ridge, dist, dp["min_dist_px"], dp["min_dist_low_px"])
+        stats["occ_px_ext"] = int(ext.sum())
+        mask = kept | ext
     out: list[dict] = []
-    for gid in (int(g) for g in np.unique(gmap[m["dist_ok"]])):
-        thinned = thin_band(m["dist_ok"] & (gmap == gid), params["line_min_px"])
+    for gid in (int(g) for g in np.unique(gmap[mask]) if int(g) not in skip):
+        thinned = thin_band(mask & (gmap == gid), params["line_min_px"])
         if thinned is None:
             continue
         skel, ox, oy = thinned

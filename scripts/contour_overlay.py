@@ -599,8 +599,8 @@ def main_track(a: argparse.Namespace) -> int:
     clip = a.work_dir
     meta = read_json(clip / "meta.json")
     manifest = read_json(clip / "contours" / "manifest.json")
-    if manifest.get("contract") != "T-202":
-        print("ERROR: contours/ bukan kontrak T-202 — jalankan `python -m rotoscope vectorize` dulu", file=sys.stderr)
+    if manifest.get("contract") != "T-305b":
+        print("ERROR: contours/ bukan kontrak T-305b — jalankan `python -m rotoscope vectorize` dulu", file=sys.stderr)
         return 1
     thr0 = manifest["vectorize"]["track.max_match_dist_px"]
     stored = stored_frames(clip)

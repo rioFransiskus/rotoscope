@@ -107,9 +107,10 @@ def test_moving_mask_dilates_xor():
     assert int(m.sum()) == tm.ALIGN_DILATE_PX ** 2 and m[10, 10]
 
 
-@pytest.mark.parametrize("clip,expected", [("test_short", 0.0488), ("test", 0.0633)])
+@pytest.mark.parametrize("clip,expected", [("test_short", 0.0504), ("test", 0.0630)])
 def test_real_clip_pop_energy_t302_default(clip, expected):
-    """Regresi alat ukur pada klip nyata: nilai terukur T-303 Tahap 1 untuk contours/ default T-302 (hanya bila klip ada)."""
+    """Regresi alat ukur pada klip nyata: nilai terukur untuk contours/ default saat ini (hanya bila klip ada). T-305b Tahap 4:
+    disematkan ulang dari 0,0488 / 0,0633 (T-303 Tahap 1, default T-302) ke hasil run nyata D_low 2 + tanpa rambut."""
     d = REPO / "work" / "clips" / clip / "contours"
     if not d.is_dir() or not list(d.glob("frame_*.json")):
         pytest.skip(f"klip {clip} tidak ada")

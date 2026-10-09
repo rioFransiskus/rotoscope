@@ -56,7 +56,7 @@ def make_strokes(work: Path, cfg, *, n: int = te.N, w: int = te.W, h: int = te.H
     cdir, sdir = work / "contours", work / "strokes"
     cdir.mkdir(parents=True, exist_ok=True)
     sdir.mkdir(parents=True, exist_ok=True)
-    cm = {"stage": "vectorize", "contract": "T-202", "algo_rev": 2, "pending": [], "clip": ident,
+    cm = {"stage": "vectorize", "contract": "T-305b", "algo_rev": 2, "pending": [], "clip": ident,
           "frame_size": {"width": w, "height": h}, "vectorize_hash": "c" * 64, "created_utc": created_utc}
     (cdir / "manifest.json").write_text(json.dumps(cm), encoding="utf-8")
     ow, oh = w * SCALE, h * SCALE
@@ -568,7 +568,13 @@ def _real(clip: str):
     if not (m.is_file() and (d / "meta.json").is_file()):
         return None
     # strokes klip nyata dengan contract lama (belum dihitung ulang oleh `run`) = basi → dilewati (export menolaknya, lihat test lain)
-    return d if read_json(m).get("contract") in ex.SUPPORTED_STROKES_CONTRACTS else None
+    if read_json(m).get("contract") not in ex.SUPPORTED_STROKES_CONTRACTS:
+        return None
+    # T-305b: contours/ klip asli contract "T-202" sampai dihitung ulang di Tahap 4 → [5] menolaknya → dilewati (assert tidak dilemahkan)
+    cm = d / "contours" / "manifest.json"
+    if not cm.is_file() or read_json(cm).get("contract") not in sty.SUPPORTED_CONTOURS_CONTRACTS:
+        return None
+    return d
 
 
 def textured_clip_frames(n: int = 10, w: int = 100, h: int = 178):
@@ -641,7 +647,7 @@ def test_real_clip_objective_metrics(tmp_path, clip, textured):
     """textured False = kertas datar (ambang T-203b); True = kertas bertekstur default (T-404a Opsi B: style default → export menyusun kertas)."""
     work = _real(clip)
     if work is None:
-        pytest.skip(f"klip nyata {clip} tidak ada")
+        pytest.skip(f"klip nyata {clip} tidak ada / strokes basi / contours contract lama (belum dihitung ulang, T-305b Tahap 4)")
     out = tmp_path / "out"
     cfg = load_pipeline(overrides={"paths.work_dir": str(work), "paths.out_dir": str(out), **STROKES})
     sm = read_json(work / "strokes" / "manifest.json")
