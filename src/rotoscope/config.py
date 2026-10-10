@@ -183,7 +183,7 @@ class TemporalConfig:
     mask_ema_alpha: float = 0.7
     boil_preserve: float = 0.3
     qc_fail_weight: float = 0.1
-    cut_diff: float = 0.08
+    cut_diff: float = 0.06
 
 
 @dataclass(frozen=True)

@@ -80,7 +80,7 @@ stabilize:
     mask_ema_alpha: 0.7      # 1.0 = tanpa smoothing. Turun = lebih stabil, lebih lag
     boil_preserve: 0.3       # 0 = mati total, 1 = boiling penuh
     qc_fail_weight: 0.1      # SEMENTARA — bobot frame gagal QC di kernel; harus < ρ (0,176 pada α 0,7); klip kedua → T-305
-    cut_diff: 0.08           # selisih abu-abu rata-rata antar frame (0–1) yang dianggap cut → jendela temporal dipotong; 0 = mati
+    cut_diff: 0.06           # selisih abu-abu rata-rata antar frame (0–1) yang dianggap cut → jendela temporal dipotong; 0 = mati. 0,08 → 0,06 (keputusan Rio, label klip3: 7 / 7 cut, 1 FP diketahui; docs/04 "Kalibrasi cut_diff")
   island_min_px: 30          # N — filter pulau pada peta GRUP (T-102c: pada peta kelas → T-305)
   mode_k: 3                  # K — mode filter peta grup, background ikut
   depth:

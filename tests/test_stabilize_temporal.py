@@ -562,11 +562,11 @@ def test_config_accepts_enum_and_cut_zero():
 
 
 def test_shipped_defaults():
-    """Default T-302 (Tahap 4, disetujui Rio): temporal aktif, α 0,7, b 0,3, B, EMA kedalaman mati, cut 0,08, q 0,1."""
+    """Default T-302 (Tahap 4, disetujui Rio): temporal aktif, α 0,7, b 0,3, B, EMA kedalaman mati, cut 0,06 (sebelum 2026-10-10 0,08), q 0,1."""
     c = load_pipeline()
     t = c.stabilize.temporal
     assert t.enabled is True and t.mask_ema_alpha == 0.7 and t.boil_preserve == 0.3
-    assert t.cut_diff == 0.08 and t.qc_fail_weight == 0.1
+    assert t.cut_diff == 0.06 and t.qc_fail_weight == 0.1
     assert c.stabilize.depth.normalize == "log_median" and c.stabilize.depth.temporal is False
 
 

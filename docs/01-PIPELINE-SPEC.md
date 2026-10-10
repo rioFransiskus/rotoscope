@@ -405,8 +405,8 @@ dan temporal fill tidak cukup. D-002 (pose hanya fallback, bukan primary) tetap 
        jumlah bobot < `WEIGHT_SUM_MIN` → hanya frame tengah. Akumulasi float32, urutan naik k = −R..+R (deterministik);
        frame t hanya bergantung pada input mentah t−R..t+R (tanpa rantai) → resume per frame dan `--limit` sah;
      - **cut**: selisih absolut rata-rata abu-abu (thumbnail `CUT_THUMB_WIDTH` = 48 px lebar, INTER_AREA) antara frame t−1 dan t,
-       0–1; `> stabilize.temporal.cut_diff` (0,08; 0 = mati) → jendela tidak melintasi t−1 | t. Daftar cut tercatat di manifest
-       (`temporal.cut_frames`) dan di log. Maks terukur klip uji 0,038 (0 cut);
+       0–1; `> stabilize.temporal.cut_diff` (0,06; 0 = mati; sebelum 2026-10-10 0,08) → jendela tidak melintasi t−1 | t. Daftar cut tercatat di manifest
+       (`temporal.cut_frames`) dan di log. Maks terukur `test` 0,038 / `test_short` 0,030 / Klip2 0,0035 (0 cut); klip3: 7 cut berlabel (skor 0,072–0,090) + 1 FP diketahui (f49, 0,065);
      - **`boil_preserve` b**: `p = (1 − b) · p_halus + b · S_t` sebelum argmax (0 = stabilisasi penuh, 1 = tanpa stabilisasi);
      - **`qc_fail_weight`** q SEMENTARA 0,1: frame gagal ikut jendela tetangga dengan bobot kecil, dan dirinya sendiri diisi tetangga.
        **Hubungan dengan ρ:** frame gagal hanya diisi tetangga bila q < ρ (bobot tetangga langsung; ρ = 0,176 pada α 0,7); q 0,25 > ρ
@@ -451,7 +451,7 @@ dan temporal fill tidak cukup. D-002 (pose hanya fallback, bukan primary) tetap 
        muat float16; tidak finite → berhenti dengan error.
      - Frame `finite: false` di `depth/frames.jsonl` disalin ke `stable/frames.jsonl` (`depth_finite`),
        tanpa perlakuan khusus selama temporal mati.
-- Default sejak T-302 DONE: `stabilize.temporal.enabled: true` (α 0,7, R = 2, b 0,3, `cut_diff` 0,08, `qc_fail_weight` 0,1, normalisasi
+- Default sejak T-302 DONE: `stabilize.temporal.enabled: true` (α 0,7, R = 2, b 0,3, `cut_diff` 0,06 (0,08 sampai 2026-10-09), `qc_fail_weight` 0,1, normalisasi
   `log_median`, `depth.temporal: false`); langkah 2 tanpa optical flow (ditolak, T-303). `enabled: false` = hanya langkah 1, 3–6 (spasial, jalur T-106).
   Temporal butuh `frames/` + `qc_report.json` (klip yang di-ingest + di-segment lewat `run` memilikinya).
 - ⚠️ Jangan over-smooth. Sedikit boil = hand-drawn feel (`boil_preserve`), bukan nol (P-001).
