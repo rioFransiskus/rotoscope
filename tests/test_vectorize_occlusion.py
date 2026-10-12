@@ -379,7 +379,7 @@ def test_old_t201a_manifest_is_stale_and_gets_occlusion(tmp_path):
     stats_path(work).unlink()
     logs: list[str] = []
     run = vec.run_vectorize(cfg_for(work), log=logs.append)
-    assert run["processed"] == N_FRAMES and "contract: 'T-201a' → 'T-305b'" in "".join(run["stale"])
+    assert run["processed"] == N_FRAMES and "contract: 'T-201a' → 'T-305c'" in "".join(run["stale"])
     assert stats_path(work).is_file()
 
 

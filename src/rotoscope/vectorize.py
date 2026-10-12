@@ -60,7 +60,7 @@ MANIFEST_FILENAME = "manifest.json"
 FRAMES_LOG_FILENAME = "frames.jsonl"
 FRAME_SUFFIX = ".json"
 CLIP_STATS_FILENAME = "clip_stats.json"
-CONTRACT = "T-305b"          # T-202 → T-305b: exclude_groups + histeresis jarak oklusi (fitur baru; output lama otomatis basi)
+CONTRACT = "T-305c"          # T-305b → T-305c: `depth_lines.hi_floor` (lantai absolut T_high; fitur baru; output lama otomatis basi)
 # Naik 1 setiap perbaikan PERILAKU algoritma pada kode yang sudah dikontrak, tanpa perubahan parameter (output lama
 # otomatis basi, peringatan menyebut algo_rev lama → baru). 1 = junction ≥ 3 tetangga + Zhang-Suen; 2 = crossing
 # number + prune sudut tangga + klaster junction + Guo-Hall. Fitur baru = `contract` naik, bukan `algo_rev`
@@ -89,7 +89,7 @@ PARAM_KEYS = ("min_region_area", "min_hole_area", "line_min_px", "min_stroke_px"
 TRACK_KEYS = ("max_match_dist_px",)                       # vectorize.track.*
 TRACK_PREFIX = "track."
 DEPTH_KEYS = ("blur_sigma", "hi_pct", "lo_pct", "erode_px", "min_dist_px", "min_len_px",
-              "min_dist_low_px", "exclude_groups")   # vectorize.depth_lines.* (dua terakhir: T-305b)
+              "min_dist_low_px", "exclude_groups", "hi_floor")   # vectorize.depth_lines.* (T-305b: dua sebelum terakhir; T-305c: hi_floor)
 LIST_KEYS = ("exclude_groups",)              # nilai daftar: ditulis sebagai list terurut di dict datar (JSON round-trip stabil)
 # Histeresis jarak T-305b (docs/04 "Keputusan T-305b"): konstanta struktural, BUKAN parameter YAML — mengubahnya
 # = perubahan perilaku → ALGO_REV naik.
@@ -105,7 +105,7 @@ DIST_MASK = cv2.DIST_MASK_PRECISE            # distanceTransform eksak (bukan ap
 STRENGTH_DECIMALS = 3                        # pembulatan `strength`
 PERCENTILE_METHOD = "linear"                 # interpolasi persentil (= np.percentile default)
 GEODESIC_FAR = 10 ** 6                       # jarak geodesik "tak terjangkau" (jumlah dua nilai ini masih muat int32)
-CLIP_STATS_RESULTS = ("t_high", "t_low", "n_values")   # field hasil di clip_stats.json (sisanya = masukan)
+CLIP_STATS_RESULTS = ("t_high", "t_low", "n_values", "t_high_pct")   # field hasil di clip_stats.json (sisanya = masukan)
 
 # ── Konstanta struktural (bukan parameter style; sama dengan RING_KERNEL di stabilize) ──
 PAD_PX = 1                                   # padding background di sekeliling foreground / band
@@ -999,7 +999,7 @@ def clip_stats_inputs(params: dict, clip: Clip, stable: dict) -> dict:
     """Semua yang menentukan ambang. File clip_stats dipakai ulang hanya kalau blok ini sama persis."""
     dp = depth_params(params)
     return {"contract": CONTRACT, "algo_rev": ALGO_REV, "blur_sigma": dp["blur_sigma"], "erode_px": dp["erode_px"],
-            "hi_pct": dp["hi_pct"], "lo_pct": dp["lo_pct"], "sobel_norm": SOBEL_NORM,
+            "hi_pct": dp["hi_pct"], "lo_pct": dp["lo_pct"], "hi_floor": dp["hi_floor"], "sobel_norm": SOBEL_NORM,
             "percentile_method": PERCENTILE_METHOD, "n_frames": len(clip.names),
             "frame_size": {"width": clip.width, "height": clip.height},
             "stable": {"manifest": f"stable/{stb.MANIFEST_FILENAME}", "created_utc": stable["created_utc"],
@@ -1019,11 +1019,17 @@ def compute_clip_stats(clip: Clip, params: dict, inputs: dict, names: tuple[str,
     values = np.concatenate(chunks) if chunks else np.zeros(0, np.float32)
     del chunks
     values.sort()
-    stats = {**inputs, "n_values": int(values.size), "t_high": None, "t_low": None}
+    stats = {**inputs, "n_values": int(values.size), "t_high": None, "t_low": None, "t_high_pct": None}
     if values.size:
-        stats["t_high"] = percentile_linear(values, dp["hi_pct"])
+        stats["t_high_pct"] = percentile_linear(values, dp["hi_pct"])
+        stats["t_high"] = effective_t_high(stats["t_high_pct"], dp["hi_floor"])
         stats["t_low"] = percentile_linear(values, dp["lo_pct"])
     return stats
+
+
+def effective_t_high(t_high_pct: float, hi_floor: float) -> float:
+    """T-305c: T_high yang dipakai = max(T_high persentil, lantai absolut). Lantai 0 = netral. Hanya T_high; T_low tidak disentuh."""
+    return max(t_high_pct, float(hi_floor)) if hi_floor > 0 else t_high_pct
 
 
 def load_clip_stats(clip: Clip, inputs: dict) -> dict | None:
@@ -1034,7 +1040,7 @@ def load_clip_stats(clip: Clip, inputs: dict) -> dict | None:
         return None
     if not isinstance(s, dict) or {k: v for k, v in s.items() if k not in CLIP_STATS_RESULTS} != inputs:
         return None
-    ok = all(s.get(k) is None or isinstance(s.get(k), float) for k in ("t_high", "t_low"))
+    ok = all(s.get(k) is None or isinstance(s.get(k), float) for k in ("t_high", "t_low", "t_high_pct"))
     return s if ok and isinstance(s.get("n_values"), int) else None
 
 
@@ -1107,6 +1113,9 @@ def run_vectorize(cfg: PipelineConfig, *, restart: bool = False, limit: int | No
         clip_stats = compute_clip_stats(clip, params, inputs, names)
         log(f"[4] pass 1 (ambang per klip, {len(clip.names)} frame): T_high {clip_stats['t_high']}, T_low "
             f"{clip_stats['t_low']} ({time.perf_counter() - t0:.1f} s)")
+    if clip_stats.get("t_high_pct") is not None and clip_stats["t_high"] != clip_stats["t_high_pct"]:
+        log(f"[4] hi_floor {params[DEPTH_PREFIX + 'hi_floor']:g} aktif: T_high persentil {clip_stats['t_high_pct']:.6g} → dipakai "
+            f"{clip_stats['t_high']:.6g}")
     manifest = build_manifest(cfg, clip, stable, clip_stats)
     source = frame_source(manifest)
 

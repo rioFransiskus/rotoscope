@@ -69,7 +69,7 @@ def test_final_schema_keys_per_type_and_chain(tmp_path):
             if s["closed"]:
                 assert s["anchor"] == 0
     m = json.loads((work / "contours" / "manifest.json").read_text(encoding="utf-8"))
-    assert m["contract"] == "T-305b" and m["algo_rev"] == 2 and m["pending"] == []
+    assert m["contract"] == "T-305c" and m["algo_rev"] == 2 and m["pending"] == []
     assert m["vectorize"]["track.max_match_dist_px"] == 16 and "track.max_match_dist_px" in m["vectorize"]
     recs = list(json.loads(x) for x in (work / "contours" / "frames.jsonl").read_text(encoding="utf-8").splitlines())
     frames = [r for r in recs if r["event"] == "frame"]
@@ -307,8 +307,8 @@ def real_frames(clip: str) -> list[list[dict]]:
         m = json.loads((d / "manifest.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         pytest.skip(f"contours {clip} tidak ada")
-    if m.get("contract") != "T-305b":
-        pytest.skip(f"contours {clip} bukan T-305b")
+    if m.get("contract") != "T-305c":
+        pytest.skip(f"contours {clip} bukan T-305c (klip asli belum dihitung ulang)")
     return tm.load_frames(d)
 
 
@@ -340,5 +340,5 @@ def test_real_canonical_hashes_identical_to_t201b(clip):
 
 
 def test_params_module_constants_sane():
-    assert vec.CONTRACT == "T-305b" and vec.ALGO_REV == 2 and vec.PENDING == ()
+    assert vec.CONTRACT == "T-305c" and vec.ALGO_REV == 2 and vec.PENDING == ()
     assert vec.INHERIT_MAIN_SILHOUETTE is True and PARAMS["min_stroke_px"] == 6

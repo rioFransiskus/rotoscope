@@ -56,7 +56,7 @@ def make_strokes(work: Path, cfg, *, n: int = te.N, w: int = te.W, h: int = te.H
     cdir, sdir = work / "contours", work / "strokes"
     cdir.mkdir(parents=True, exist_ok=True)
     sdir.mkdir(parents=True, exist_ok=True)
-    cm = {"stage": "vectorize", "contract": "T-305b", "algo_rev": 2, "pending": [], "clip": ident,
+    cm = {"stage": "vectorize", "contract": "T-305c", "algo_rev": 2, "pending": [], "clip": ident,
           "frame_size": {"width": w, "height": h}, "vectorize_hash": "c" * 64, "created_utc": created_utc}
     (cdir / "manifest.json").write_text(json.dumps(cm), encoding="utf-8")
     ow, oh = w * SCALE, h * SCALE

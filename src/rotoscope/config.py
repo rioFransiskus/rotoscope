@@ -212,6 +212,7 @@ class DepthLinesConfig:
     min_len_px: float = 30.0
     min_dist_low_px: float = 2.0               # T-305b: D_low histeresis jarak (px kerja); 0 = mati, atau 1 ≤ D_low < D
     exclude_groups: tuple[str, ...] = ("hair",)       # T-305b: grup tanpa garis oklusi (nama grup; terurut, tanpa duplikat)
+    hi_floor: float = 0.0                      # T-305c: lantai absolut T_high (selisih depth_smooth / px); 0 = mati (netral)
 
 
 @dataclass(frozen=True)
@@ -778,6 +779,7 @@ def _validate_pipeline(c: PipelineConfig) -> None:
     _odd("vectorize.depth_lines.erode_px", dl.erode_px, 1)
     _at_least("vectorize.depth_lines.min_dist_px", dl.min_dist_px, 0)
     _at_least("vectorize.depth_lines.min_len_px", dl.min_len_px, 0)
+    _at_least("vectorize.depth_lines.hi_floor", dl.hi_floor, 0)
     if dl.min_dist_low_px != 0 and not (1 <= dl.min_dist_low_px < dl.min_dist_px):
         raise ConfigError(f"vectorize.depth_lines.min_dist_low_px ({_fmt(dl.min_dist_low_px)}) harus 0 (mati) atau "
                           f"1 ≤ D_low < min_dist_px ({_fmt(dl.min_dist_px)}); D_low ≥ D tidak punya arti")

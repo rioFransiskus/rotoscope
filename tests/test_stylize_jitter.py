@@ -489,8 +489,8 @@ REAL_PINNED = {
 def real_doc(clip: str, index: int) -> dict:
     d = CLIPS / clip / "contours"
     man = d / "manifest.json"
-    if not man.is_file() or json.loads(man.read_text(encoding="utf-8")).get("contract") != "T-305b":
-        pytest.skip(f"contours T-305b klip {clip} tidak ada")
+    if not man.is_file() or json.loads(man.read_text(encoding="utf-8")).get("contract") != "T-305c":
+        pytest.skip(f"contours T-305c klip {clip} tidak ada (klip asli belum dihitung ulang)")
     return json.loads((d / f"frame_{index:05d}.json").read_text(encoding="utf-8"))
 
 
