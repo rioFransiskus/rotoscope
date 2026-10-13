@@ -43,7 +43,11 @@ qc:
   area_max: 0.70
   iou_min: 0.55              # IoU foreground vs frame sebelumnya
   blob_min: 0.05             # komponen "besar" = > 5% area frame
-  max_big_blobs: 1
+  big_blobs_rule: transient  # T-305d: transient = gagal hanya bila jumlah blob besar NAIK SESAAT (run < transient_min_run
+                             # frame, lebih tinggi dari run panjang terdekat); legacy = > max_big_blobs (lama, satu subjek);
+                             # report = hanya dilaporkan, tidak pernah gagal
+  max_big_blobs: 1           # hanya big_blobs_rule: legacy
+  transient_min_run: 4       # frame, int ≥ 2; hanya big_blobs_rule: transient
   area_median_window: 49     # frame (±2 s); jendela DIGESER, bukan median klip. Jangan diubah tanpa kalibrasi
                              # ulang area_drop_min (W=25/49/73 memberi celah berbeda; W=73 tanpa celah)
   area_drop_min: 0.63        # SEMENTARA — T-102b, satu klip: celah aman 0.608 (MediaPipe kaki hilang) – 0.652 (Sapiens2)

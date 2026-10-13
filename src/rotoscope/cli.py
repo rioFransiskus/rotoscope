@@ -303,14 +303,18 @@ def stage_args(stage: str, ctx: Ctx) -> list[str]:
 def qc_warning(work_dir: Path) -> str | None:
     """Satu peringatan kalau ada frame gagal QC (stage [3] menanganinya, D-010). run tetap lanjut."""
     try:
-        s = json.loads((work_dir / QC_REPORT_FILENAME).read_text(encoding="utf-8"))["summary"]
+        report = json.loads((work_dir / QC_REPORT_FILENAME).read_text(encoding="utf-8"))
+        s = report["summary"]
         n_fail, n_frames, frames = int(s["n_fail"]), int(s["n_frames"]), list(s["fail_frames"])
     except (OSError, ValueError, KeyError, TypeError):
         return None
     if n_fail == 0:
         return None
-    return (f"PERINGATAN: {n_fail}/{n_frames} frame gagal QC "
-            f"(indeks: {', '.join(map(str, frames[:QC_INDEX_LIMIT]))}, maks {QC_INDEX_LIMIT} ditampilkan) — "
+    qc = report.get("qc")
+    rule = qc.get("big_blobs_rule") if isinstance(qc, dict) else None
+    rule = rule if isinstance(rule, str) else "legacy (laporan sebelum T-305d)"
+    return (f"PERINGATAN: {n_fail}/{n_frames} frame gagal QC (aturan big_blobs: {rule}; "
+            f"indeks: {', '.join(map(str, frames[:QC_INDEX_LIMIT]))}, maks {QC_INDEX_LIMIT} ditampilkan) — "
             f"stage [3] memberinya bobot temporal kecil; run dilanjutkan")
 
 

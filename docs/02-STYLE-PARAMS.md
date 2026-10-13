@@ -57,7 +57,11 @@ qc:
   area_max: 0.70
   iou_min: 0.55              # IoU foreground vs frame sebelumnya
   blob_min: 0.05             # komponen "besar" = > 5% area frame
-  max_big_blobs: 1
+  big_blobs_rule: transient  # T-305d: transient = gagal hanya bila jumlah blob besar NAIK SESAAT (run < transient_min_run
+                             # frame, lebih tinggi dari run panjang terdekat); legacy = > max_big_blobs (lama, satu subjek);
+                             # report = hanya dilaporkan, tidak pernah gagal
+  max_big_blobs: 1           # hanya big_blobs_rule: legacy
+  transient_min_run: 4       # frame, int ≥ 2; hanya big_blobs_rule: transient
   area_median_window: 49     # frame (±2 s); jendela DIGESER, bukan median klip. Jangan diubah tanpa kalibrasi
                              # ulang area_drop_min (W=25/49/73 memberi celah berbeda; W=73 tanpa celah)
   area_drop_min: 0.63        # SEMENTARA — T-102b, satu klip: celah aman 0.608 (MediaPipe kaki hilang) – 0.652 (Sapiens2)
@@ -138,7 +142,9 @@ export:
 | `depth.precision` | `"fp16"` atau `"fp32"` |
 | `qc.area_min`, `qc.area_max` | 0 ≤ min < max ≤ 1 |
 | `qc.iou_min`, `qc.blob_min`, `qc.area_drop_min` | 0–1 |
-| `qc.max_big_blobs` | int ≥ 1 |
+| `qc.big_blobs_rule` | `"transient"` (default, T-305d), `"legacy"` (sebelum T-305d) atau `"report"` (hanya dilaporkan); peka huruf besar-kecil |
+| `qc.max_big_blobs` | int ≥ 1 (hanya dipakai `big_blobs_rule: legacy`) |
+| `qc.transient_min_run` | int ≥ 2, bukan bool (hanya dipakai `big_blobs_rule: transient`) |
 | `qc.area_median_window` | int ganjil ≥ 3 |
 | `groups` | lihat aturan grup di bawah |
 | `stabilize.temporal.mask_ema_alpha` | (0, 1] |
@@ -166,6 +172,20 @@ export:
 | `export.foreground_color`, `export.background_color` | `#rrggbb`; keduanya harus berbeda (tanpa membedakan huruf besar/kecil) |
 | `export.audio` | bool |
 | `export.filename` | berakhiran `.mp4`; hanya nama file (tanpa `<>:"/\|?*`, tanpa awalan `.`); placeholder: `{source}` (nama video sumber) dan `{style}` (T-406: nama preset / stem berkas style, disanitasi seperti `{source}`). Folder SVG `out/svg/<stem nama MP4>/` mengikuti stem hasil (default `{source}.mp4` → nama sumber, tidak berubah); `{source}_{style}.mp4` memisahkan MP4 + SVG tiap preset. Tanpa `{style}`, merender style lain di klip yang sama menimpa MP4 + SVG (export mencetak satu baris peringatan) |
+
+**QC `big_blobs` (T-305d):** n_t = jumlah komponen foreground 8-arah > `qc.blob_min` × luas frame, selalu dicatat di
+`qc_report.json`. `qc.big_blobs_rule` menentukan kapan n_t membuat frame gagal:
+- `transient` (default): hanya bila n_t **naik sesaat** — frame di run (frame berurutan dengan n sama) yang lebih pendek
+  dari `qc.transient_min_run` (4) dan n_t > max(n run panjang terdekat sebelum, sesudah); satu sisi saja → sisi itu;
+  tanpa run panjang → lolos; turun sesaat tidak gagal. Video multi-orang (n tetap 2–3) tidak lagi gagal massal
+  (klip3: 92 → 1 frame).
+- `legacy`: n_t > `qc.max_big_blobs` (asumsi satu subjek; perilaku sebelum T-305d, `qc_report` byte-identik di
+  `frames[]` + `summary`).
+- `report`: tidak pernah gagal karena `big_blobs` (n_t tetap dilaporkan).
+
+Mengubah `qc.*` hanya menghitung ulang `qc_report.json` (`segment --qc-only` atau run [2] tanpa GPU bila semua frame
+valid); `seg/` dan `depth/` tidak basi. [3] dihitung ulang hanya bila himpunan frame gagal berubah. Batas dan angka
+sensitivitas: docs/01 [2] "Definisi `big_blobs` `transient`"; docs/04 "Keputusan akhir T-305d".
 
 **Aturan grup:**
 1. Setiap nama kelas ada di daftar 29 kelas Sapiens2 (`src/rotoscope/data/sapiens2_classes.json`)

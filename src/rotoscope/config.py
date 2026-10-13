@@ -71,6 +71,8 @@ PRECISIONS = ("fp16", "fp32")                   # tanpa bf16 (Turing, P-005)
 PROBS_DTYPES = ("uint8",)
 VRAM_MAX_MIB = 4096
 NORMALIZE_METHODS = ("log_median_iqr", "log_median")   # T-302: B = log_median (affine / IQR tetap per klip ditolak)
+BIG_BLOBS_RULES = ("transient", "legacy", "report")     # qc.big_blobs_rule (T-305d; legacy = perilaku sebelum T-305d)
+TRANSIENT_MIN_RUN_MIN = 2                               # qc.transient_min_run: run 1 frame tidak pernah "panjang"
 LOG_EPS_MIN, LOG_EPS_MAX = 1e-12, 0.01          # stabilize.depth.log_eps
 IQR_MIN_MIN, IQR_MIN_MAX = 1e-3, 1.0            # stabilize.depth.iqr_min
 STROKE_TYPES = ("silhouette", "silhouette_hole", "group_boundary", "occlusion")
@@ -159,7 +161,11 @@ class QcConfig:
     area_max: float = 0.70
     iou_min: float = 0.55
     blob_min: float = 0.05
-    max_big_blobs: int = 1
+    # T-305d: transient = gagal hanya bila jumlah blob besar naik sesaat (run < transient_min_run frame, lebih tinggi
+    # dari run panjang terdekat); legacy = > max_big_blobs (perilaku lama, asumsi satu subjek); report = hanya dilaporkan.
+    big_blobs_rule: str = "transient"
+    max_big_blobs: int = 1             # hanya big_blobs_rule legacy
+    transient_min_run: int = 4         # frame; hanya big_blobs_rule transient
     # Jangan ubah area_median_window tanpa kalibrasi ulang area_drop_min (W=25/49/73 memberi celah
     # berbeda; W=73 tanpa celah). area_drop_min SEMENTARA (T-102b, satu klip; celah aman 0.608–0.652).
     area_median_window: int = 49
@@ -750,7 +756,9 @@ def _validate_pipeline(c: PipelineConfig) -> None:
     _unit("qc.iou_min", q.iou_min)
     _unit("qc.blob_min", q.blob_min)
     _unit("qc.area_drop_min", q.area_drop_min)
+    _choice("qc.big_blobs_rule", q.big_blobs_rule, BIG_BLOBS_RULES)
     _at_least("qc.max_big_blobs", q.max_big_blobs, 1)
+    _at_least("qc.transient_min_run", q.transient_min_run, TRANSIENT_MIN_RUN_MIN)
     _odd("qc.area_median_window", q.area_median_window, 3)
 
     t = c.stabilize.temporal

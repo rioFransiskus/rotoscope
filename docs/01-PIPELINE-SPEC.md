@@ -320,7 +320,7 @@ sendiri (`--qc-only`). Foreground = `classmap ≠ 0`.
 |---|---|---|
 | `area_ratio` | luas foreground < `qc.area_min` atau > `qc.area_max` dari frame | 0.03 / 0.70 |
 | `iou_prev` | IoU foreground dengan frame sebelumnya < `qc.iou_min` (frame pertama: `null`; dua-duanya kosong: 1.0) | 0.55 |
-| `big_blobs` | jumlah komponen foreground 8-arah > `qc.blob_min` × area frame melebihi `qc.max_big_blobs` | 0.05 / 1 |
+| `big_blobs` | n_t = jumlah komponen foreground 8-arah dengan luas > `qc.blob_min` × area frame (selalu dilaporkan). Kondisi gagal menurut `qc.big_blobs_rule` (T-305d): **`transient`** (default) — n_t **naik sesaat**, definisi di bawah; `legacy` — n_t > `qc.max_big_blobs` (perilaku sebelum T-305d, asumsi satu subjek); `report` — tidak pernah gagal | 0.05 / `transient`, `qc.transient_min_run` 4 (`legacy`: `max_big_blobs` 1) |
 | `area_vs_median` | area / median area di jendela **digeser** `qc.area_median_window` (W) frame < `qc.area_drop_min` — lihat definisi di bawah | 49 / 0.63 (**sementara** — T-102b, satu klip: MediaPipe T-102a kaki hilang frame 1–7 maks 0.608, Sapiens2 min 0.652) |
 | `label_agreement_prev` | dilaporkan saja (kelas sama di irisan foreground dengan frame sebelumnya; irisan kosong: `null`) | – |
 | `finite` | logits mengandung NaN/inf (dari `frames.jsonl`; tidak tercatat → `null`, tidak gagal) | – |
@@ -335,7 +335,24 @@ gagal; `area_ratio` sudah gagal).
 - `qc.area_median_window` jangan diubah tanpa kalibrasi ulang `area_drop_min`: celah aman MediaPipe
   kaki hilang vs Sapiens2 di klip uji = W 25 (0.708, 0.757), W 49 (0.608, 0.652), W 73 tanpa celah.
 
-`qc_report.json` per frame: semua metrik di atas + `fail_reasons` (list nama metrik yang gagal).
+**Definisi `big_blobs` `transient`** (T-305d; N = `qc.transient_min_run`, int ≥ 2): deret n seluruh klip dipecah
+menjadi **run** (frame berurutan dengan n sama); run **panjang** = panjang ≥ N. Frame di run pendek gagal bila
+n_t > max(n run panjang terdekat **sebelum**, n run panjang terdekat **sesudah**); hanya satu sisi ada → sisi itu;
+tidak ada run panjang sama sekali → lolos. **Turun sesaat tidak menggagalkan** (dua orang bersentuhan = sah).
+QC dihitung per klip setelah semua frame selesai, jadi melihat frame sesudah t sah.
+- Hasil (docs/04 "Keputusan akhir T-305d"): klip3 (tiga orang) 92 → 1 frame gagal; `test` / `test_short` / Klip2
+  tetap 0.
+- **Batas:** sensitivitas multi-orang terukur 80% (12 / 15 kasus sintetis "tubuh terbelah" di klip3; gabungan
+  32 / 35 = 91,4%); blob palsu multi-orang tidak teruji; lonjakan ≥ N frame tidak tertangkap (dianggap perubahan
+  jumlah orang yang sah); subjek kecil rapuh — subjek < `blob_min` membuat n = 0, sehingga lonjakan dari n = 0
+  sepanjang ≥ N frame lolos dan < N frame gagal (pengaman "abaikan lonjakan dari n = 0" ditunda ke T-305e).
+
+`qc_report.json` per frame: semua metrik di atas + `fail_reasons` (list nama metrik yang gagal). Tingkat
+laporan: **`qc_version`** (2 sejak T-305d; laporan tanpa field = sebelum T-305d, `big_blobs` = aturan `legacy`),
+`qc` (nilai parameter), `qc_hash`, `definitions` (termasuk `big_blobs` = definisi aturan yang dipakai), `summary`.
+Mengubah `qc.*` tidak membuat `seg/` / `depth/` basi (manifest [2] / [2c] tidak memuat `qc`): run [2] dengan semua
+frame valid hanya menghitung ulang `qc_report.json`. [3] basi hanya bila **himpunan** frame gagal berubah
+(`temporal.qc_fail_frames` di manifest [3]); alasan gagal / `qc_version` tidak dibaca [3].
 Frame gagal QC **tidak** diganti di [2]; [3] memberinya bobot temporal lebih kecil (D-010, Q3).
 
 ### [2b] `fallback_pose.py` — DITUNDA (`BLOCKED`, D-010)

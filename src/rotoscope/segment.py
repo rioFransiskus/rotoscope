@@ -87,6 +87,16 @@ REQUIRED_FILES = ("config.json", "preprocessor_config.json", "model.safetensors"
 
 DEFAULT_CONFIG = Path("configs") / "default.yaml"
 QC_METRICS = ("area_ratio", "iou_prev", "big_blobs", "area_vs_median", "finite")
+# Versi aturan QC di qc_report.json (field `qc_version`). Laporan tanpa field = sebelum T-305d (big_blobs lama =
+# n_t > max_big_blobs). 2 = T-305d: aturan big_blobs dipilih lewat qc.big_blobs_rule (transient / legacy / report).
+QC_VERSION = 2
+BIG_BLOBS_DEFINITIONS = {   # definitions.big_blobs di qc_report.json, per qc.big_blobs_rule
+    "transient": "n_t = komponen foreground 8-arah > blob_min × luas frame; gagal bila n_t naik sesaat: run (frame "
+                 "berurutan dengan n sama) < transient_min_run frame dan n_t > max(n run panjang terdekat sebelum, "
+                 "sesudah); satu sisi saja → sisi itu; tanpa run panjang → lolos; turun sesaat tidak gagal",
+    "legacy": "n_t = komponen foreground 8-arah > blob_min × luas frame; gagal bila n_t > max_big_blobs (sebelum T-305d)",
+    "report": "n_t = komponen foreground 8-arah > blob_min × luas frame; hanya dilaporkan, tidak pernah gagal",
+}
 
 # Alias error bersama (stage_common): prasyarat gagal → exit 1, OOM di tengah run → exit 3.
 SegmentError = StageError
@@ -583,13 +593,61 @@ def area_vs_median(areas: Sequence[float], window: int) -> list[tuple[float | No
     return out
 
 
-def fail_reasons(row: dict, q) -> list[str]:
+def count_runs(n: Sequence[int]) -> list[tuple[int, int, int]]:
+    """Run = deretan frame berurutan dengan nilai sama: [(awal, akhir eksklusif, nilai)]."""
+    runs, start = [], 0
+    for i in range(1, len(n) + 1):
+        if i == len(n) or n[i] != n[start]:
+            runs.append((start, i, n[start]))
+            start = i
+    return runs
+
+
+def transient_big_blobs(n: Sequence[int], min_run: int) -> list[bool]:
+    """Aturan `transient` (T-305d): gagal hanya bila jumlah blob besar NAIK SESAAT.
+
+    Run panjang = run dengan panjang ≥ min_run. Frame di run pendek gagal bila n_t > max(n run panjang terdekat
+    sebelum, n run panjang terdekat sesudah); hanya satu sisi ada → sisi itu; tanpa run panjang sama sekali → lolos.
+    Turun sesaat tidak menggagalkan (dua orang bersentuhan = sah). QC per klip, jadi melihat frame sesudah t sah.
+    """
+    runs = count_runs(n)
+    out = [False] * len(n)
+    prev_long: list[int | None] = []
+    last = None
+    for s, e, v in runs:
+        prev_long.append(last)
+        if e - s >= min_run:
+            last = v
+    next_long = None
+    for k in range(len(runs) - 1, -1, -1):
+        s, e, v = runs[k]
+        if e - s >= min_run:
+            next_long = v
+            continue
+        refs = [x for x in (prev_long[k], next_long) if x is not None]
+        if refs and v > max(refs):
+            out[s:e] = [True] * (e - s)
+    return out
+
+
+def big_blobs_fail(n: Sequence[int], q) -> list[bool]:
+    """Per frame: gagal `big_blobs` menurut qc.big_blobs_rule (deret n = big_blobs seluruh klip)."""
+    if q.big_blobs_rule == "legacy":
+        return [x > q.max_big_blobs for x in n]
+    if q.big_blobs_rule == "transient":
+        return transient_big_blobs(n, q.transient_min_run)
+    if q.big_blobs_rule == "report":
+        return [False] * len(n)
+    raise ValueError(f"qc.big_blobs_rule tidak dikenal: {q.big_blobs_rule!r}")
+
+
+def fail_reasons(row: dict, q, big_fail: bool) -> list[str]:
     reasons = []
     if row["area_ratio"] < q.area_min or row["area_ratio"] > q.area_max:
         reasons.append("area_ratio")
     if row["iou_prev"] is not None and row["iou_prev"] < q.iou_min:
         reasons.append("iou_prev")
-    if row["big_blobs"] > q.max_big_blobs:
+    if big_fail:
         reasons.append("big_blobs")
     if row["area_vs_median"] is not None and row["area_vs_median"] < q.area_drop_min:
         reasons.append("area_vs_median")
@@ -621,8 +679,8 @@ def compute_qc(classmaps: Sequence[np.ndarray] | Any, q, names: Sequence[str], i
     for row, (med, ratio) in zip(rows, area_vs_median([r["area_px"] for r in rows], q.area_median_window)):
         row["area_median_px"] = med
         row["area_vs_median"] = ratio
-    for row in rows:
-        row["fail_reasons"] = fail_reasons(row, q)
+    for row, big in zip(rows, big_blobs_fail([r["big_blobs"] for r in rows], q)):
+        row["fail_reasons"] = fail_reasons(row, q, big)
     return rows
 
 
@@ -667,16 +725,18 @@ def run_qc(cfg: PipelineConfig, *, log: Callable[[str], None] = print) -> dict:
     classmaps = (read_classmap(clip.classmap_path(n)) for n in clip.names)
     rows = compute_qc(classmaps, cfg.qc, clip.names, clip.indices, last_frame_records(clip.frames_log))
     summary = summarize_qc(rows)
-    report = {"stage": "segment_qc", "created_utc": _utc_now(),
+    rule = cfg.qc.big_blobs_rule
+    report = {"stage": "segment_qc", "qc_version": QC_VERSION, "created_utc": _utc_now(),
               "seg_manifest": {k: manifest.get(k) for k in ("model", "model_id", "revision", "precision")},
               "qc": to_dict(cfg.qc), "qc_hash": section_hash(cfg, "qc"),
               "definitions": {"foreground": "classmap != 0",
                               "area_vs_median": "area / median area jendela digeser W frame (selalu W sampel, "
-                                                "memuat frame ini; n < W → seluruh klip)"},
+                                                "memuat frame ini; n < W → seluruh klip)",
+                              "big_blobs": BIG_BLOBS_DEFINITIONS[rule]},
               "summary": summary, "frames": rows}
     write_json_atomic(clip.qc_report_path, report)
-    log(f"QC: {summary['n_fail']}/{summary['n_frames']} frame gagal {summary['fail_counts']} → "
-        f"{clip.qc_report_path}")
+    log(f"QC: {summary['n_fail']}/{summary['n_frames']} frame gagal {summary['fail_counts']} (aturan big_blobs: "
+        f"{rule}) → {clip.qc_report_path}")
     return report
 
 

@@ -520,7 +520,8 @@ def test_qc_big_blobs():
     two = cm_rect(0, 40, 0, 20)
     two[0:40, 60:80] = 1                        # dua komponen masing-masing 8% > 5%
     two[90:92, 90:92] = 1                       # komponen kecil tidak dihitung
-    rows = qc_rows([cm_rect(0, 40, 0, 20), two], area_median_window=3, iou_min=0.0)
+    # Aturan lama (T-305d: legacy); aturan default transient diuji di tests/test_segment_qc.py
+    rows = qc_rows([cm_rect(0, 40, 0, 20), two], area_median_window=3, iou_min=0.0, big_blobs_rule="legacy")
     assert rows[0]["big_blobs"] == 1 and "big_blobs" not in rows[0]["fail_reasons"]
     assert rows[1]["big_blobs"] == 2 and "big_blobs" in rows[1]["fail_reasons"]
 
