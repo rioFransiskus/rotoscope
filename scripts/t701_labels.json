@@ -1,0 +1,652 @@
+{
+ "task": "T-701",
+ "judul": "Studi kelayakan garis lengan menempel badan (pose / normal)",
+ "tanggal": "2026-10-13 s/d 2026-10-14",
+ "hasil": "I0 (tanpa integrasi). Lengan baju menempel badan = BATAS YANG DIKETAHUI. Rinci: docs/04 'Keputusan akhir T-701 (2026-10-14)'.",
+ "sumber": "work/t701_scratch/ (dihapus saat penutupan) + label Rio di docs/04; dibuat sekali saat penutupan, mandiri (tidak bergantung pada scratch)",
+ "keputusan": {
+  "P1": "DITOLAK (1b): (c) gagal jauh, confidence / getaran buruk, multi-orang di luar cakupan model card",
+  "P2": "lolos (a)/(b)/(c) sebagai detektor titik dengan crop per orang (1c); integrasi I1 ditolak secara visual (prototipe Tahap 3)",
+  "N": "tidak memisahkan lipatan (AUC gabungan 0,683 [0,538-0,830]); hanya pelengkap; I2 diparkir",
+  "I1": "ditolak: R1 dan R2 lebih buruk dari base di kedua video (garis pendek / palsu, kedipan, kaku / generik)",
+  "I2": "DIPARKIR: dibuka lagi hanya dengan alasan baru yang menjawab 'kaku / generik' dan risiko lipatan (AUC N 0,68)",
+  "I3_I4": "ditolak (keputusan setelah Tahap 2)",
+  "vram_pose_fp32": "pengecualian tidak berlaku (tidak ada integrasi)"
+ },
+ "kriteria_layak": {
+  "a": "muat di VRAM tanpa NaN",
+  "b": "Rio menilai benar di >= 2/3 frame sampel (frame x tidak dihitung)",
+  "c": "pose: semua orang klip3 terdeteksi di >= 90% frame sampel (>= 18/20)",
+  "N": "memisahkan O vs L bila batas bawah CI AUC > 0,6 tanpa bobot DAN berbobot (aturan T-305c)",
+  "prototipe": "garis lengan benar di >= 2/3 frame papan; tanpa garis palsu mengganggu di dalam lengan baju; kedipan tidak lebih buruk dari base"
+ },
+ "model": {
+  "P1": {
+   "nama": "MediaPipe Pose Landmarker Heavy (float16/1)",
+   "url": "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task",
+   "gcs_generation": "1682642785425305",
+   "size": 30664242,
+   "md5_b64": "RT3sTQLMxNPOgStt6E+lFg==",
+   "md5_hex": "453dec4d02ccc4d3ce812b6de84fa516",
+   "crc32c_b64": "0kDHiw==",
+   "sha256": "64437af838a65d18e5ba7a0d39b465540069bc8aae8308de3e318aad31fcbc7b",
+   "sha256_catatan": "Google tidak menerbitkan sha256; dihitung setelah md5 + crc32c cocok (2026-10-14)",
+   "lisensi": "Apache-2.0 (model card BlazePose GHUM 3D, 2021-04-16)",
+   "indeks": {"bahu_L": 11, "bahu_R": 12, "siku_L": 13, "siku_R": 14, "pergelangan_L": 15, "pergelangan_R": 16, "pinggul_L": 23, "pinggul_R": 24},
+   "disimpan": "11-32",
+   "status": "DITOLAK (1b); models/pose_landmarker_heavy.task dihapus saat penutupan"
+  },
+  "P2": {
+   "nama": "Sapiens2-pose 0.4B",
+   "repo": "facebook/sapiens2-pose-0.4b",
+   "commit": "73572e121602e8a6eb40eb841732e88f386d250b",
+   "berkas": {"model.safetensors": 1702754120, "config.json": 21310, "preprocessor_config.json": 476, "README.md": 3668},
+   "sha256_model_safetensors": "f1b7b0e5423d667634a355dd86a14c5b03d243f2ac77943301c7db9f93329106",
+   "lisensi_tag": "sapiens2-license",
+   "status": "lolos (a)/(b)/(c) sebagai detektor titik (crop per orang, 1c); I1 ditolak visual; cache HF dihapus saat penutupan"
+  },
+  "N": {
+   "nama": "Sapiens2-normal 0.4B",
+   "repo": "facebook/sapiens2-normal-0.4b",
+   "commit": "52886591372f049acd4d59ae6d0a792ae1a61ac5",
+   "berkas": {"model.safetensors": 1813476476, "config.json": 2869, "preprocessor_config.json": 475, "README.md": 3390},
+   "sha256_model_safetensors": "d2f20e8df7186772b7710546416db0752be224c68003c7f18ccbbf8b980ef1fd",
+   "lisensi_tag": "sapiens2-license",
+   "status": "tidak memisahkan lipatan (AUC 0,683); I2 diparkir; cache HF dihapus saat penutupan"
+  },
+  "indeks_keypoint_P2": {
+   "repo": "facebookresearch/sapiens2",
+   "commit": "7e5bae88456ac418ff0e58e74106c9fe192055d4",
+   "path": "sapiens/pose/configs/_base_/keypoints308.py",
+   "sha256": "8602450c4c1ba7cad62814d6ac2a32f25d98c9d498fa7366a6846419ee6b0008",
+   "catatan": "Goliath 344 titik, remove_teeth (gigi 220-255 dibuang -> 308; id < 220 tidak bergeser)",
+   "dipakai": {"bahu_L": 5, "bahu_R": 6, "siku_L": 7, "siku_R": 8, "pergelangan_L": 62, "pergelangan_R": 41, "pinggul_L": 9, "pinggul_R": 10},
+   "disimpan": "5-69",
+   "dibuang_di_heatmap": "0-4 (hidung / mata / telinga) + 70-307 (wajah)"
+  }
+ },
+ "sampel": {
+  "klip3_20": [0, 19, 24, 30, 36, 42, 52, 60, 71, 82, 88, 96, 104, 120, 131, 139, 149, 159, 169, 178],
+  "klip3_1a_12": [19, 24, 30, 36, 42, 60, 120, 131, 139, 149, 159, 169],
+  "klip3_tambahan_1b": [0, 52, 71, 82, 88, 96, 104, 178],
+  "test_8": [7, 129, 145, 160, 183, 196, 210, 222],
+  "N_frame": {
+   "klip3": [0, 1, 3, 5, 7, 19, 22, 24, 25, 26, 29, 30, 34, 36, 42, 45, 52, 55, 60, 61, 67, 71, 73, 82, 88, 93, 96, 100, 104, 105, 106, 107, 108, 114, 120, 121, 122, 131, 139, 149, 151, 159, 162, 169, 170, 178],
+   "test": [7, 74, 78, 79, 80, 81, 82, 84, 86, 87, 88, 90, 91, 129, 145, 160, 183, 196, 210, 222]
+  },
+  "jendela_statis": {"klip3": [12, 23], "test": [26, 37]},
+  "klip3_cut": [49, 85, 126, 134, 146, 154, 166, 174],
+  "klip3_adegan": {
+   "kolom": ["awal", "akhir", "frame_valid", "sampel"],
+   "baris": [[0, 48, 47, [0, 19, 24, 30, 36, 42]], [49, 84, 31, [52, 60, 71, 82]], [85, 125, 35, [88, 96, 104, 120]], [126, 133, 3, [131]], [134, 145, 6, [139]], [146, 153, 3, [149]], [154, 165, 7, [159]], [166, 173, 3, [169]], [174, 181, 4, [178]]]
+  },
+  "unit_N_dari": "scripts/t305c_labels.json (56 unit O / L klip3 + test; dikenali lewat bbox strok wakil)",
+  "wajah_min_px": {"klip3": 921.6, "test": 409.92},
+  "jendela_prototipe": {
+   "klip3": {
+    "jendela": [24, 47],
+    "usulan_rio_lolos": true,
+    "kandidat_kolom": ["awal", "akhir", "cut_di_dalam", "frame_3_wajah_V1", "frame_blob_gabungan", "frame_lengan_baju", "orang_x_frame_lengan_baju"],
+    "kandidat": [
+     [0, 23, 0, 24, 17, 24, 54],
+     [1, 24, 0, 24, 16, 24, 55],
+     [2, 25, 0, 24, 15, 24, 57],
+     [3, 26, 0, 24, 14, 24, 58],
+     [4, 27, 0, 24, 13, 24, 59],
+     [5, 28, 0, 24, 12, 24, 60],
+     [6, 29, 0, 24, 11, 24, 61],
+     [7, 30, 0, 24, 10, 24, 62],
+     [8, 31, 0, 24, 9, 24, 63],
+     [9, 32, 0, 24, 8, 24, 64],
+     [10, 33, 0, 24, 7, 24, 65],
+     [11, 34, 0, 24, 6, 24, 66],
+     [12, 35, 0, 24, 5, 24, 67],
+     [13, 36, 0, 24, 4, 24, 68],
+     [14, 37, 0, 24, 3, 24, 69],
+     [15, 38, 0, 24, 2, 24, 70],
+     [16, 39, 0, 24, 1, 24, 71],
+     [17, 40, 0, 24, 0, 24, 72],
+     [18, 41, 0, 24, 0, 24, 72],
+     [19, 42, 0, 24, 0, 24, 72],
+     [20, 43, 0, 24, 0, 24, 72],
+     [21, 44, 0, 24, 0, 24, 72],
+     [22, 45, 0, 24, 0, 24, 72],
+     [23, 46, 0, 24, 0, 24, 72],
+     [24, 47, 0, 24, 0, 24, 72]
+    ]
+   },
+   "test": {
+    "jendela": [175, 186],
+    "memuat_sampel": [183],
+    "frame_skor_ge_0_5": 12,
+    "skor_mean": 0.9302,
+    "skor_min": 0.8482,
+    "skor_per_frame": {
+     "175": 0.8482,
+     "176": 0.871,
+     "177": 0.9465,
+     "178": 0.8917,
+     "179": 0.888,
+     "180": 0.8681,
+     "181": 0.9141,
+     "182": 0.9347,
+     "183": 1.0,
+     "184": 1.0,
+     "185": 1.0,
+     "186": 1.0
+    }
+   }
+  }
+ },
+ "papan_1b": {
+  "seed": 701002,
+  "kolom": ["foto", "P1", "P2", "N"],
+  "presisi_P2": "fp16",
+  "presisi_N": "fp16",
+  "peta": {
+   "01": ["test", 222],
+   "02": ["klip3", 159],
+   "03": ["klip3", 88],
+   "04": ["klip3", 0],
+   "05": ["klip3", 139],
+   "06": ["test", 7],
+   "07": ["klip3", 36],
+   "08": ["test", 210],
+   "09": ["klip3", 169],
+   "10": ["klip3", 19],
+   "11": ["klip3", 60],
+   "12": ["klip3", 42],
+   "13": ["klip3", 30],
+   "14": ["klip3", 52],
+   "15": ["klip3", 120],
+   "16": ["klip3", 149],
+   "17": ["test", 160],
+   "18": ["klip3", 71],
+   "19": ["klip3", 131],
+   "20": ["test", 129],
+   "21": ["klip3", 82],
+   "22": ["test", 183],
+   "23": ["klip3", 178],
+   "24": ["klip3", 96],
+   "25": ["klip3", 24],
+   "26": ["klip3", 104],
+   "27": ["test", 196],
+   "28": ["test", 145]
+  },
+  "label_rio": {
+   "01": ["P1", "P2", "N"],
+   "02": ["P1", "P2", "N"],
+   "03": ["P1", "P2", "N"],
+   "04": ["P1", "P2"],
+   "05": ["P1", "P2", "N"],
+   "06": ["P1", "P2", "N"],
+   "07": ["P1", "P2", "N"],
+   "08": ["P1", "P2", "N"],
+   "09": ["P1", "P2"],
+   "10": ["P1", "P2", "N"],
+   "11": ["P1", "P2", "N"],
+   "12": ["P2", "N"],
+   "13": ["P1", "P2", "N"],
+   "14": ["P2", "N"],
+   "15": ["P1", "P2"],
+   "16": ["P1", "P2"],
+   "17": ["P1", "P2", "N"],
+   "18": ["N"],
+   "19": ["P1", "P2", "N"],
+   "20": ["P1", "P2", "N"],
+   "21": ["P1", "P2", "N"],
+   "22": ["P1", "P2", "N"],
+   "23": ["P1", "P2", "N"],
+   "24": ["P1", "P2", "N"],
+   "25": ["P1", "P2", "N"],
+   "26": ["P1", "P2"],
+   "27": ["P1", "P2"],
+   "28": ["P1", "P2", "N"]
+  },
+  "catatan_rio": {"03": "ada 3 orang, yang di tengah pas, yang lain tidak"},
+  "kriteria_b": {"P1": "25/28", "P2": "27/28", "N": "22/28", "syarat": ">= 19/28", "03_sebagian": "P1 24, P2 26, N 21-22"},
+  "kelemahan": "orang yang tidak terdeteksi tidak tampak sebagai kesalahan -> (b) bukan bukti cakupan"
+ },
+ "papan_1c": {
+  "seed": 701003,
+  "kolom": ["foto", "P2 1b fp16", "P2 1c fp32"],
+  "presisi_1c": "fp32",
+  "peta": {
+   "01": ["klip3", 104],
+   "02": ["klip3", 88],
+   "03": ["klip3", 96],
+   "04": ["klip3", 71],
+   "05": ["klip3", 120],
+   "06": ["klip3", 0],
+   "07": ["klip3", 82]
+  },
+  "label_rio": {"01": "1c benar", "02": "1c benar", "03": "1c benar", "04": "1c benar", "05": "1c benar", "06": "1c benar", "07": "1c benar"},
+  "hasil": "7/7 (syarat >= 5/7)"
+ },
+ "papan_prototipe": {
+  "seed": 701004,
+  "kolom": ["foto", "base", "R1", "R2"],
+  "peta": {
+   "01": ["test", 186],
+   "02": ["klip3", 47],
+   "03": ["klip3", 38],
+   "04": ["test", 184],
+   "05": ["test", 175],
+   "06": ["test", 177],
+   "07": ["klip3", 29],
+   "08": ["test", 182],
+   "09": ["klip3", 24],
+   "10": ["test", 179],
+   "11": ["klip3", 42],
+   "12": ["klip3", 33]
+  },
+  "video": "work/t701/proto/{klip3,test}_{normal_3x,lambat_0.5x}.mp4 (base | R1 | R2)",
+  "label_rio_per_frame": null,
+  "penilaian_rio": {
+   "ringkas": "R1 dan R2 lebih buruk dari base di kedua video",
+   "a": "tidak diisi (penilaian keseluruhan sudah jelas)",
+   "b_garis_palsu_di_lengan_baju": {"R1": "ya", "R2": "ya"},
+   "c_kedipan_vs_base": {"R1": "lebih buruk", "R2": "lebih buruk"},
+   "d_kaku_generik": {"R1": "ya", "R2": "ya"},
+   "iterasi": "tidak dipilih (iterasi tidak menyentuh masalah d)"
+  }
+ },
+ "tabel_1b_per_frame": {
+  "kolom": ["n_faces", "n_blobs", "merged_blob", "p1_returned", "p1_detected", "p1_faces_covered", "p2_boxes", "p2_detected", "p2_faces_covered", "p1_all", "p2_all", "v1_n_faces", "v1_merged_blob", "v1_p1_covered", "v1_p2_covered", "v1_p1_all", "v1_p2_all"],
+  "baris": {
+   "klip3:0": [5, 2, true, 3, 3, 3, 2, 2, 2, false, false, 3, true, 3, 2, true, false],
+   "klip3:19": [4, 3, true, 2, 2, 2, 3, 3, 3, false, false, 3, false, 2, 3, false, true],
+   "klip3:24": [6, 3, true, 2, 2, 2, 3, 3, 3, false, false, 3, false, 2, 3, false, true],
+   "klip3:30": [6, 3, true, 2, 2, 2, 3, 3, 3, false, false, 3, false, 2, 3, false, true],
+   "klip3:36": [5, 3, true, 3, 3, 3, 3, 3, 3, false, false, 3, false, 3, 3, true, true],
+   "klip3:42": [4, 3, true, 3, 3, 3, 3, 3, 3, false, false, 3, false, 3, 3, true, true],
+   "klip3:52": [6, 3, true, 3, 2, 2, 3, 3, 3, false, false, 3, false, 2, 3, false, true],
+   "klip3:60": [5, 3, true, 3, 2, 2, 3, 3, 3, false, false, 3, false, 2, 3, false, true],
+   "klip3:71": [7, 2, true, 3, 3, 3, 2, 2, 2, false, false, 3, true, 3, 2, true, false],
+   "klip3:82": [6, 1, true, 2, 2, 2, 1, 1, 1, false, false, 3, true, 2, 1, false, false],
+   "klip3:88": [6, 1, true, 2, 2, 2, 1, 1, 1, false, false, 3, true, 2, 1, false, false],
+   "klip3:96": [5, 1, true, 2, 2, 2, 1, 1, 1, false, false, 3, true, 2, 1, false, false],
+   "klip3:104": [6, 1, true, 2, 2, 2, 1, 1, 1, false, false, 3, true, 2, 1, false, false],
+   "klip3:120": [5, 2, true, 1, 1, 1, 2, 2, 2, false, false, 3, true, 1, 2, false, false],
+   "klip3:131": [4, 2, true, 1, 1, 1, 2, 2, 2, false, false, 2, false, 1, 2, false, true],
+   "klip3:139": [3, 2, true, 1, 1, 1, 2, 2, 2, false, false, 2, false, 1, 2, false, true],
+   "klip3:149": [2, 1, true, 1, 1, 1, 1, 1, 1, false, false, 1, false, 1, 1, true, true],
+   "klip3:159": [1, 1, false, 1, 1, 1, 1, 1, 1, true, true, 1, false, 1, 1, true, true],
+   "klip3:169": [2, 1, true, 1, 1, 1, 1, 1, 1, false, false, 1, false, 1, 1, true, true],
+   "klip3:178": [1, 1, false, 1, 1, 1, 1, 1, 1, true, true, 1, false, 1, 1, true, true],
+   "test:7": [1, 1, false, 1, 1, 1, 1, 1, 1, true, true, 1, false, 1, 1, true, true],
+   "test:129": [1, 1, false, 1, 1, 1, 1, 1, 1, true, true, 1, false, 1, 1, true, true],
+   "test:145": [1, 1, false, 1, 1, 1, 1, 1, 1, true, true, 1, false, 1, 1, true, true],
+   "test:160": [1, 1, false, 1, 1, 1, 1, 1, 1, true, true, 1, false, 1, 1, true, true],
+   "test:183": [1, 1, false, 1, 1, 1, 1, 1, 1, true, true, 1, false, 1, 1, true, true],
+   "test:196": [1, 1, false, 1, 1, 1, 1, 1, 1, true, true, 1, false, 1, 1, true, true],
+   "test:210": [1, 1, false, 1, 1, 1, 1, 1, 1, true, true, 1, false, 1, 1, true, true],
+   "test:222": [0, 1, false, 1, 1, 0, 1, 1, 0, false, false, 0, false, 0, 0, false, false]
+  }
+ },
+ "metrik_1b": {
+  "keyakinan_p5_p50": {
+   "P1_vis_bahu_L": {"p5": 0.994, "p50": 1.0, "n": 47},
+   "P1_pres_bahu_L": {"p5": 0.969, "p50": 1.0, "n": 47},
+   "P1_vis_bahu_R": {"p5": 0.994, "p50": 1.0, "n": 47},
+   "P1_pres_bahu_R": {"p5": 0.986, "p50": 0.999, "n": 47},
+   "P1_vis_siku_L": {"p5": 0.07, "p50": 0.874, "n": 47},
+   "P1_pres_siku_L": {"p5": 0.802, "p50": 0.999, "n": 47},
+   "P1_vis_siku_R": {"p5": 0.102, "p50": 0.689, "n": 47},
+   "P1_pres_siku_R": {"p5": 0.933, "p50": 0.995, "n": 47},
+   "P1_vis_pergelangan_L": {"p5": 0.07, "p50": 0.853, "n": 47},
+   "P1_pres_pergelangan_L": {"p5": 0.316, "p50": 1.0, "n": 47},
+   "P1_vis_pergelangan_R": {"p5": 0.077, "p50": 0.761, "n": 47},
+   "P1_pres_pergelangan_R": {"p5": 0.927, "p50": 0.999, "n": 47},
+   "P2_bahu_L": {"p5": 0.834, "p50": 0.93, "n": 47},
+   "P2_bahu_R": {"p5": 0.624, "p50": 0.936, "n": 47},
+   "P2_siku_L": {"p5": 0.435, "p50": 0.967, "n": 47},
+   "P2_siku_R": {"p5": 0.478, "p50": 0.952, "n": 47},
+   "P2_pergelangan_L": {"p5": 0.636, "p50": 0.978, "n": 47},
+   "P2_pergelangan_R": {"p5": 0.329, "p50": 0.962, "n": 47}
+  },
+  "waktu_s": {
+   "P1_image": {"mean": 0.108, "p95": 0.179},
+   "P1_video": {"mean": 0.075, "p95": 0.082},
+   "P2_fp16_frame": {"mean": 14.642, "p95": 25.364},
+   "P2_fp16_box": {"mean": 8.583, "p95": 8.504},
+   "P2_fp32_frame": {"mean": 6.233, "p95": 11.244},
+   "N_fp16": {"mean": 10.07, "p95": 10.079}
+  },
+  "vram_mib": {
+   "P2_fp16_peak_reserved_mib": 2298.0,
+   "P2_fp16_peak_alloc_mib": 2222.0,
+   "P2_fp32_peak_reserved_mib": 3262.0,
+   "N_fp16_peak_reserved_mib": 2362.0
+  },
+  "nan": {
+   "P1_coord_nan": 0,
+   "P2_fp16": {"nan": 0, "inf": 0, "sat": 0},
+   "P2_fp16_absmax": 2.619,
+   "P2_fp32": {"nan": 0, "inf": 0, "sat": 0},
+   "P2_fp32_absmax": 2.49,
+   "N_fp16": {"nan_frames": 0, "frames": "66/66", "oom": null, "pad_ok": true}
+  },
+  "getaran_px": {
+   "klip3": {"P1": {"p50": 4.082, "p95": 26.072, "n": 20}, "P2": {"p50": 0.82, "p95": 2.408, "n": 136}},
+   "test": {"P1": {"p50": 2.107, "p95": 4.801, "n": 22}, "P2": {"p50": 0.75, "p95": 3.774, "n": 60}}
+  },
+  "p2_fp16_vs_fp32_lengan_px": {"p50": 0.019, "p95": 0.0487, "max": 0.0748, "n": 59},
+  "kriteria": {
+   "P1": {"a": true, "c_frames": 2, "c_of": 20, "c": false, "c_v1_posthoc_frames": 8, "c_v1_posthoc": false},
+   "P2": {"a": true, "c_frames": 2, "c_of": 20, "c": false, "c_v1_posthoc_frames": 13, "c_v1_posthoc": false},
+   "N": {"a_mode": "fp16", "a_fp16": true}
+  }
+ },
+ "auc_N": {
+  "gabungan": {
+   "tb": {"auc": 0.6833, "ci95": [0.5385, 0.8297], "n_boot_valid": 2000},
+   "b": {"auc": 0.7861, "ci95": [0.6251, 0.9105], "n_boot_valid": 2000},
+   "n_O": 36,
+   "n_L": 20,
+   "median_O": 28.4375,
+   "median_L": 14.4453
+  },
+  "klip3": {
+   "tb": {"auc": 0.6923, "ci95": [0.5214, 0.8712], "n_boot_valid": 2000},
+   "b": {"auc": 0.8074, "ci95": [0.6379, 0.9405], "n_boot_valid": 2000},
+   "n_O": 22,
+   "n_L": 13,
+   "median_O": 29.6602,
+   "median_L": 19.6719
+  },
+  "test": {
+   "tb": {"auc": 0.7245, "ci95": [0.4711, 0.9333], "n_boot_valid": 1999},
+   "b": {"auc": 0.7245, "ci95": [0.4711, 0.9333], "n_boot_valid": 1999},
+   "n_O": 14,
+   "n_L": 7,
+   "median_O": 14.7988,
+   "median_L": 6.2012
+  },
+  "memisahkan_gabungan": false,
+  "units_without_score": []
+ },
+ "unit_N": {
+  "kolom": ["unit", "klip", "label", "sel", "bobot", "skor_E_derajat", "valid_frac", "iou_cocok"],
+  "baris": [
+   ["01", "klip3", "O", "klip3:umurPanjang_lemah", 2.555556, 15.7109, 1.0, 1.0],
+   ["03", "klip3", "L", "klip3:umurPanjang_lemah", 2.555556, 23.6719, 1.0, 1.0],
+   ["04", "klip3", "O", "klip3:umurPanjang_lemah", 2.555556, 30.1797, 1.0, 1.0],
+   ["06", "klip3", "L", "klip3:umurPanjang_lemah", 2.555556, 16.2969, 1.0, 1.0],
+   ["07", "test", "O", "test:jendela", 1.0, 62.4688, 1.0, 1.0],
+   ["08", "klip3", "O", "klip3:umur1_kuat", 6.888889, 29.1406, 1.0, 1.0],
+   ["10", "klip3", "L", "klip3:umurPanjang_kuat", 1.111111, 130.0625, 1.0, 1.0],
+   ["12", "klip3", "L", "klip3:umur1_lemah", 12.444444, 6.3359, 1.0, 1.0],
+   ["13", "test", "O", "test:jendela", 1.0, 13.7969, 1.0, 1.0],
+   ["14", "test", "O", "test:jendela", 1.0, 21.0938, 1.0, 1.0],
+   ["15", "klip3", "L", "klip3:umur1_lemah", 12.444444, 4.0615, 1.0, 1.0],
+   ["17", "klip3", "L", "klip3:umur1_lemah", 12.444444, 7.5137, 1.0, 1.0],
+   ["18", "klip3", "O", "klip3:umurPanjang_kuat", 1.111111, 26.1406, 1.0, 1.0],
+   ["19", "test", "O", "test:jendela", 1.0, 4.5332, 1.0, 1.0],
+   ["20", "test", "L", "test:jendela", 1.0, 10.0, 1.0, 1.0],
+   ["21", "klip3", "L", "klip3:umur1_lemah", 12.444444, 7.5234, 1.0, 1.0],
+   ["22", "test", "O", "test:jendela", 1.0, 66.5625, 1.0, 1.0],
+   ["23", "test", "O", "test:jendela", 1.0, 1.4072, 1.0, 1.0],
+   ["24", "test", "O", "test:jendela", 1.0, 47.875, 1.0, 1.0],
+   ["26", "klip3", "O", "klip3:umur1_kuat", 6.888889, 118.3125, 1.0, 1.0],
+   ["27", "klip3", "O", "klip3:umurPanjang_lemah", 2.555556, 19.4844, 1.0, 1.0],
+   ["28", "test", "O", "test:jendela", 1.0, 10.9297, 1.0, 1.0],
+   ["29", "klip3", "O", "klip3:umur1_kuat", 6.888889, 122.75, 1.0, 1.0],
+   ["30", "test", "L", "test:jendela", 1.0, 14.0234, 1.0, 1.0],
+   ["31", "klip3", "O", "klip3:umurPanjang_kuat", 1.111111, 28.9375, 1.0, 1.0],
+   ["32", "klip3", "L", "klip3:umurPanjang_lemah", 2.555556, 25.0469, 1.0, 1.0],
+   ["33", "klip3", "O", "klip3:umurPanjang_kuat", 1.111111, 35.6875, 1.0, 1.0],
+   ["34", "klip3", "L", "klip3:umurPanjang_lemah", 2.555556, 22.75, 1.0, 1.0],
+   ["35", "klip3", "O", "klip3:umur1_lemah", 12.444444, 65.1875, 1.0, 1.0],
+   ["36", "klip3", "L", "klip3:umurPanjang_lemah", 2.555556, 51.625, 1.0, 1.0],
+   ["37", "test", "L", "test:jendela", 1.0, 1.687, 1.0, 1.0],
+   ["38", "test", "L", "test:jendela", 1.0, 2.1016, 1.0, 1.0],
+   ["39", "klip3", "O", "klip3:umurPanjang_lemah", 2.555556, 27.0, 1.0, 0.9944],
+   ["40", "klip3", "O", "klip3:umurPanjang_kuat", 1.111111, 20.1797, 1.0, 0.9825],
+   ["41", "klip3", "O", "klip3:umurPanjang_kuat", 1.111111, 35.7188, 1.0, 1.0],
+   ["42", "klip3", "O", "klip3:umur1_lemah", 12.444444, 27.9375, 1.0, 1.0],
+   ["43", "klip3", "O", "klip3:umur1_lemah", 12.444444, 42.8438, 1.0, 1.0],
+   ["44", "test", "L", "test:jendela", 1.0, 6.2012, 1.0, 1.0],
+   ["45", "test", "O", "test:jendela", 1.0, 8.6328, 1.0, 1.0],
+   ["46", "test", "O", "test:jendela", 1.0, 3.6553, 1.0, 1.0],
+   ["47", "klip3", "O", "klip3:umur1_kuat", 6.888889, 9.2188, 1.0, 1.0],
+   ["48", "klip3", "O", "klip3:umurPanjang_kuat", 1.111111, 112.9375, 1.0, 1.0],
+   ["49", "test", "O", "test:jendela", 1.0, 4.3203, 1.0, 1.0],
+   ["50", "test", "L", "test:jendela", 1.0, 20.9922, 1.0, 1.0],
+   ["51", "klip3", "L", "klip3:umur1_lemah", 12.444444, 14.8672, 1.0, 1.0],
+   ["52", "klip3", "O", "klip3:umur1_kuat", 6.888889, 17.6719, 1.0, 1.0],
+   ["53", "test", "O", "test:jendela", 1.0, 96.4688, 1.0, 1.0],
+   ["54", "test", "L", "test:jendela", 1.0, 2.8799, 1.0, 1.0],
+   ["55", "klip3", "L", "klip3:umur1_kuat", 6.888889, 114.625, 1.0, 1.0],
+   ["56", "klip3", "O", "klip3:umur1_kuat", 6.888889, 5.5801, 1.0, 1.0],
+   ["57", "klip3", "O", "klip3:umurPanjang_kuat", 1.111111, 78.5, 1.0, 1.0],
+   ["58", "klip3", "L", "klip3:umur1_lemah", 12.444444, 19.6719, 1.0, 1.0],
+   ["61", "klip3", "O", "klip3:umur1_kuat", 6.888889, 41.125, 1.0, 1.0],
+   ["63", "test", "O", "test:jendela", 1.0, 58.2812, 1.0, 1.0],
+   ["64", "klip3", "O", "klip3:umurPanjang_kuat", 1.111111, 125.25, 1.0, 1.0],
+   ["65", "test", "O", "test:jendela", 1.0, 15.8008, 1.0, 1.0]
+  ]
+ },
+ "tabel_1c_per_frame": {
+  "kolom": ["n_faces", "n_v1", "n_blobs", "v1_per_blob", "crop_changed", "n_parts", "parts_area", "parts_bbox", "detected_1b", "pass_1b", "detected_1c", "pass_1c", "arm_in_other_part", "time_s", "n_arm_per_pose"],
+  "baris": {
+   "0": [5, 3, 2, [1, 2], true, 3, [101245, 102272, 176489], [[0, 413, 203, 788], [163, 225, 291, 954], [292, 287, 385, 898]], 2, false, 3, true, 2, 18.04, [6, 6, 6]],
+   "19": [4, 3, 3, [1, 1, 1], false, 3, [65444, 160340, 115764], [[0, 446, 142, 767], [65, 251, 404, 963], [434, 317, 217, 894]], 3, true, 3, true, 0, 7.88, [5, 6, 6]],
+   "24": [6, 3, 3, [1, 1, 1], false, 3, [77268, 162913, 115987], [[0, 448, 159, 776], [74, 254, 397, 965], [447, 321, 219, 894]], 3, true, 3, true, 0, 8.07, [5, 6, 6]],
+   "30": [6, 3, 3, [1, 1, 1], false, 3, [98485, 161282, 116314], [[0, 457, 192, 785], [201, 261, 283, 967], [465, 331, 225, 894]], 3, true, 3, true, 0, 8.15, [6, 6, 6]],
+   "36": [5, 3, 3, [1, 1, 1], false, 3, [105108, 158108, 116250], [[0, 453, 208, 787], [203, 265, 277, 959], [470, 328, 224, 895]], 3, true, 3, true, 0, 8.3, [6, 6, 6]],
+   "42": [4, 3, 3, [1, 1, 1], false, 3, [109740, 163701, 116279], [[0, 459, 215, 787], [210, 274, 288, 958], [473, 335, 222, 894]], 3, true, 3, true, 0, 8.18, [6, 6, 6]],
+   "52": [6, 3, 3, [1, 1, 1], false, 3, [113670, 153465, 117051], [[6, 410, 228, 788], [231, 263, 303, 921], [492, 289, 223, 894]], 3, true, 3, true, 0, 7.99, [6, 6, 6]],
+   "60": [5, 3, 3, [1, 1, 1], false, 3, [102348, 148641, 117390], [[32, 370, 205, 793], [235, 269, 313, 879], [512, 254, 208, 892]], 3, true, 3, true, 0, 7.98, [6, 6, 6]],
+   "71": [7, 3, 2, [2, 1], true, 3, [133381, 101408, 117968], [[230, 278, 285, 830], [13, 333, 337, 794], [518, 224, 202, 885]], 2, false, 3, true, 1, 7.95, [6, 6, 5]],
+   "82": [6, 3, 1, [3], true, 3, [118772, 116316, 122126], [[489, 298, 231, 850], [227, 304, 288, 843], [0, 377, 356, 787]], 1, false, 3, true, 2, 8.12, [5, 6, 6]],
+   "88": [6, 3, 1, [3], true, 3, [105932, 139602, 99675], [[506, 265, 214, 836], [247, 298, 345, 805], [0, 326, 252, 788]], 1, false, 3, true, 2, 8.06, [5, 6, 6]],
+   "96": [5, 3, 1, [3], true, 3, [125464, 103706, 121904], [[472, 327, 248, 822], [241, 316, 243, 832], [0, 376, 373, 790]], 1, false, 3, true, 5, 7.98, [5, 6, 6]],
+   "104": [6, 3, 1, [3], true, 3, [125046, 132680, 97868], [[465, 313, 255, 835], [206, 325, 314, 823], [0, 373, 304, 792]], 1, false, 3, true, 2, 8.0, [6, 6, 6]],
+   "120": [5, 3, 2, [1, 2], true, 3, [102040, 40308, 164620], [[0, 269, 238, 824], [529, 183, 191, 538], [237, 329, 448, 750]], 2, false, 3, true, 3, 8.05, [6, 6, 6]],
+   "131": [4, 2, 2, [1, 1], false, 2, [81308, 156019], [[0, 148, 190, 869], [121, 326, 522, 681]], 2, true, 2, true, 0, 5.34, [5, 6]],
+   "139": [3, 2, 2, [1, 1], false, 2, [68683, 173933], [[0, 317, 140, 810], [232, 307, 477, 875]], 2, true, 2, true, 0, 5.35, [5, 6]],
+   "149": [2, 1, 1, [1], false, 1, [167992], [[0, 308, 572, 680]], 1, true, 1, true, 0, 2.7, [6]],
+   "159": [1, 1, 1, [1], false, 1, [198603], [[0, 262, 511, 954]], 1, true, 1, true, 0, 2.65, [6]],
+   "169": [2, 1, 1, [1], false, 1, [196947], [[194, 233, 526, 769]], 1, true, 1, true, 0, 2.7, [6]],
+   "178": [1, 1, 1, [1], false, 1, [263707], [[49, 251, 671, 970]], 1, true, 1, true, 0, 2.66, [6]]
+  }
+ },
+ "titik_lengan_di_bagian_orang_lain_1c": {
+  "kolom": ["frame", "part_pose", "kp", "di_part", "jarak_ke_titik_lengan_pemilik_px"],
+  "baris": [[0, 1, 7, 2, 67.5], [0, 1, 62, 2, 113.3], [71, 2, 41, 0, 24.8], [82, 0, 41, 1, 16.2], [82, 2, 62, 1, 46.7], [88, 0, 41, 1, 24.6], [88, 2, 62, 1, 27.5], [96, 0, 41, 1, 19.6], [96, 1, 7, 0, 82.7], [96, 1, 8, 2, 124.7], [96, 1, 62, 0, 178.1], [96, 2, 62, 1, 44.1], [104, 0, 41, 1, 18.5], [104, 2, 62, 1, 29.5], [120, 1, 62, 2, 51.6], [120, 1, 41, 2, 51.9], [120, 2, 62, 1, 110.2]]
+ },
+ "metrik_1c": {
+  "c": {"frames": 20, "of": 20, "pass": true, "failed": []},
+  "c_1b_v1": 13,
+  "crop_berubah": [0, 71, 82, 88, 96, 104, 120],
+  "pose_ganda": {},
+  "waktu_s": {
+   "part": {"mean": 2.883, "p50": 2.684, "p95": 2.786, "n": 50},
+   "frame": {"mean": 7.207, "p50": 7.987, "p95": 8.789, "n": 20},
+   "first_part_s": 12.831
+  },
+  "vram_mib": {"free_before_load_mib": 3317.7, "free_after_load_mib": 1681.7, "peak_reserved_mib": 3262.0, "peak_alloc_mib": 3045.1, "load_s": 10.19},
+  "nan": {"nan": 0, "inf": 0, "sat": 0, "absmax": 2.589},
+  "kotak_sama_1b_vs_1c_lengan_px": {"p50": 0.0194, "p95": 0.0467, "max": 0.0748, "n": 170}
+ },
+ "prototipe": {
+  "presisi_pose": "fp32",
+  "konvensi_kiri_kanan": "sama",
+  "kiri_kanan_per_set": {
+   "jendela_klip3": {"n_wrists": 140, "sama": 96, "terbalik": 0, "tak_tentu": 44, "frac_sama": 1.0},
+   "jendela_test": {"n_wrists": 24, "sama": 24, "terbalik": 0, "tak_tentu": 0, "frac_sama": 1.0},
+   "klip3_1c_20": {"n_wrists": 94, "sama": 64, "terbalik": 3, "tak_tentu": 27, "frac_sama": 0.9552}
+  },
+  "kiri_kanan_gabungan": {"n_wrists": 258, "sama": 184, "terbalik": 3, "tak_tentu": 71, "frac_sama": 0.984},
+  "parameter": {
+   "R1": "r = 0,17 x jarak bahu",
+   "R2": "median jarak sumbu ke tepi siluet luar (sinar tiap 4 px di 15-85% segmen, <= 3 x r_R1); < 3 sinar -> R1",
+   "kernel": "rho 0,176 (alpha 0,7), R 2",
+   "skor_min": 0.3,
+   "tahan_frame": 2,
+   "tutup_bahu": "cakram r + 2 px di sekitar titik bahu halus"
+  },
+  "klip": {
+   "klip3": {
+    "jendela": [24, 47],
+    "base_sama_dengan_produksi": {"contours_json_identik": 24, "strokes_png_identik": 24, "dari": 24},
+    "varian": {
+     "base": {
+      "group_boundary_per_frame": 42.25,
+      "occlusion_per_frame": 6.0833,
+      "new_gb_per_frame": 0.0,
+      "new_gb_min_max": [0, 0],
+      "new_gb_len_px": null,
+      "new_len_share_mean": 0.0,
+      "births_per_frame": 8.4783,
+      "births_new_per_frame": 0.0,
+      "pop_total_mean": 0.068,
+      "pop_new_mean": 0.0,
+      "pop_by_type": {"silhouette": 0.0184, "silhouette_hole": 0.0182, "group_boundary": 0.017, "occlusion": 0.0143}
+     },
+     "R1": {
+      "group_boundary_per_frame": 57.1667,
+      "occlusion_per_frame": 3.6667,
+      "new_gb_per_frame": 16.5833,
+      "new_gb_min_max": [13, 26],
+      "new_gb_len_px": {"p50": 75.3848, "p10": 7.7042, "p90": 302.8787, "pct_lt_30px": 34.9246},
+      "new_len_share_mean": 0.1473,
+      "births_per_frame": 12.6522,
+      "births_new_per_frame": 4.0,
+      "pop_total_mean": 0.0761,
+      "pop_new_mean": 0.0142,
+      "pop_by_type": {"silhouette": 0.017, "silhouette_hole": 0.0167, "group_boundary": 0.0308, "occlusion": 0.0116},
+      "relabel_px_per_frame": {"mean": 60613.375, "min": 51804, "max": 66258},
+      "arm_hint_s_per_frame": {"mean": 0.0426, "p95": 0.0452}
+     },
+     "R2": {
+      "group_boundary_per_frame": 59.5,
+      "occlusion_per_frame": 5.5833,
+      "new_gb_per_frame": 19.3333,
+      "new_gb_min_max": [15, 24],
+      "new_gb_len_px": {"p50": 51.4558, "p10": 7.0, "p90": 293.4401, "pct_lt_30px": 38.7931},
+      "new_len_share_mean": 0.1379,
+      "births_per_frame": 13.3043,
+      "births_new_per_frame": 4.0435,
+      "pop_total_mean": 0.0779,
+      "pop_new_mean": 0.0084,
+      "pop_by_type": {"silhouette": 0.0169, "silhouette_hole": 0.0167, "group_boundary": 0.0259, "occlusion": 0.0185},
+      "relabel_px_per_frame": {"mean": 77645.7083, "min": 66920, "max": 84665},
+      "arm_hint_s_per_frame": {"mean": 0.0539, "p95": 0.0572}
+     }
+    },
+    "p2_s_per_frame": {"mean": 8.563, "p50": 8.189, "p95": 8.224, "per_crop_p50": 2.717},
+    "vram_puncak_reserved_mib": 3262.0,
+    "trek": [
+     {
+      "track": 0,
+      "mid_x_mean": 83.3,
+      "frames_present": 24,
+      "seg_pct": {"L_atas": 100.0, "L_bawah": 100.0, "R_atas": 100.0, "R_bawah": 83.3},
+      "held_points": 0
+     },
+     {
+      "track": 1,
+      "mid_x_mean": 324.8,
+      "frames_present": 24,
+      "seg_pct": {"L_atas": 100.0, "L_bawah": 100.0, "R_atas": 100.0, "R_bawah": 100.0},
+      "held_points": 0
+     },
+     {
+      "track": 2,
+      "mid_x_mean": 599.2,
+      "frames_present": 24,
+      "seg_pct": {"L_atas": 100.0, "L_bawah": 100.0, "R_atas": 100.0, "R_bawah": 100.0},
+      "held_points": 0
+     }
+    ],
+    "r2_jatuh_ke_r1": {
+     "segment_frames": 284,
+     "fallback_r1": 44,
+     "pct": 15.5,
+     "per_seg": {
+      "L_atas": {"n": 72, "fallback": 0},
+      "L_bawah": {"n": 72, "fallback": 0},
+      "R_atas": {"n": 72, "fallback": 24},
+      "R_bawah": {"n": 68, "fallback": 20}
+     }
+    },
+    "radius_px": {"r1_median": 24.64, "r2_raw_median": 27.5}
+   },
+   "test": {
+    "jendela": [175, 186],
+    "base_sama_dengan_produksi": {"contours_json_identik": 12, "strokes_png_identik": 12, "dari": 12},
+    "varian": {
+     "base": {
+      "group_boundary_per_frame": 8.9167,
+      "occlusion_per_frame": 0.1667,
+      "new_gb_per_frame": 0.0,
+      "new_gb_min_max": [0, 0],
+      "new_gb_len_px": null,
+      "new_len_share_mean": 0.0,
+      "births_per_frame": 1.3636,
+      "births_new_per_frame": 0.0,
+      "pop_total_mean": 0.0896,
+      "pop_new_mean": 0.0,
+      "pop_by_type": {"silhouette": 0.0, "silhouette_hole": 0.0609, "group_boundary": 0.0202, "occlusion": 0.0085}
+     },
+     "R1": {
+      "group_boundary_per_frame": 14.0833,
+      "occlusion_per_frame": 0.5,
+      "new_gb_per_frame": 4.6667,
+      "new_gb_min_max": [3, 8],
+      "new_gb_len_px": {"p50": 27.864, "p10": 8.2426, "p90": 159.0833, "pct_lt_30px": 53.5714},
+      "new_len_share_mean": 0.0786,
+      "births_per_frame": 3.2727,
+      "births_new_per_frame": 1.5455,
+      "pop_total_mean": 0.1176,
+      "pop_new_mean": 0.031,
+      "pop_by_type": {"silhouette": 0.0, "silhouette_hole": 0.0587, "group_boundary": 0.0458, "occlusion": 0.0132},
+      "relabel_px_per_frame": {"mean": 4378.25, "min": 3099, "max": 5122},
+      "arm_hint_s_per_frame": {"mean": 0.0077, "p95": 0.0089}
+     },
+     "R2": {
+      "group_boundary_per_frame": 13.8333,
+      "occlusion_per_frame": 0.5,
+      "new_gb_per_frame": 4.3333,
+      "new_gb_min_max": [3, 7],
+      "new_gb_len_px": {"p50": 27.6213, "p10": 7.3012, "p90": 184.7764, "pct_lt_30px": 55.7692},
+      "new_len_share_mean": 0.0807,
+      "births_per_frame": 2.9091,
+      "births_new_per_frame": 1.3636,
+      "pop_total_mean": 0.1154,
+      "pop_new_mean": 0.0203,
+      "pop_by_type": {"silhouette": 0.0, "silhouette_hole": 0.0574, "group_boundary": 0.0427, "occlusion": 0.0153},
+      "relabel_px_per_frame": {"mean": 5307.5833, "min": 4231, "max": 6052},
+      "arm_hint_s_per_frame": {"mean": 0.0108, "p95": 0.0127}
+     }
+    },
+    "p2_s_per_frame": {"mean": 2.782, "p50": 2.784, "p95": 2.794, "per_crop_p50": 2.784},
+    "vram_puncak_reserved_mib": 3262.0,
+    "trek": [
+     {
+      "track": 0,
+      "mid_x_mean": 405.9,
+      "frames_present": 12,
+      "seg_pct": {"L_atas": 100.0, "L_bawah": 100.0, "R_atas": 100.0, "R_bawah": 100.0},
+      "held_points": 0
+     }
+    ],
+    "r2_jatuh_ke_r1": {
+     "segment_frames": 48,
+     "fallback_r1": 5,
+     "pct": 10.4,
+     "per_seg": {
+      "L_atas": {"n": 12, "fallback": 5},
+      "L_bawah": {"n": 12, "fallback": 0},
+      "R_atas": {"n": 12, "fallback": 0},
+      "R_bawah": {"n": 12, "fallback": 0}
+     }
+    },
+    "radius_px": {"r1_median": 20.74, "r2_raw_median": 22.5}
+   }
+  }
+ },
+ "referensi_titik_1c": "scripts/t701_ref_points_1c.json"
+}

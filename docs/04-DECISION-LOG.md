@@ -13,6 +13,7 @@ tidak sesuai style target.
 ### D-002 — MediaPipe Pose sebagai fallback, bukan primary
 **Alasan:** Pose skeleton sangat stabil tapi menghasilkan bentuk tubuh generik —
 karakter subjek hilang. Dipakai hanya untuk frame yang gagal QC segmentasi.
+Dikonfirmasi lagi oleh T-701 (2026-10-14): wilayah lengan berbentuk kapsul dari pose terasa kaku/generik menurut penilaian Rio.
 
 ### D-003 — ⚠️ JANGAN pakai model default rembg
 **Alasan:** Default rembg sekarang `bria-rmbg` (BRIA AI, ~1,02 GB, 1024×1024).
@@ -1850,6 +1851,481 @@ Frame terburuk f141 (IoU fg 0,928) dan f131 = frame terakhir / dalam run gagal l
 - **Suite penuh** (setelah run klip asli): **1298 lolos, 2 skip (GPU), 0 gagal**; tidak ada nilai harapan yang perlu diubah (test klip nyata klip3 membandingkan salinan relatif, tidak bergantung pada QC). Verifikasi diulang sesudah suite: hasil sama (suite tidak menyentuh klip asli).
 - **Dokumen:** docs/01 [2] tabel QC (`big_blobs` per aturan, definisi `transient`, `qc_version` 2, batas, rantai basi); docs/02 tabel validasi (`qc.big_blobs_rule`, `qc.transient_min_run`, `qc.max_big_blobs` hanya legacy) + prosa "QC `big_blobs` (T-305d)"; CLAUDE.md tidak diubah (tidak menyebut aturan QC, hanya "frame gagal QC").
 - **Pembersihan (F4):** `T305d-prompt.md` dan `work/t305d_scratch/` (1,4 GB) dihapus setelah perbandingan; `work/t305d/` dipertahankan (hash F1 Tahap 1 + Tahap 2–3, `mutations.json`, `verify_t4.json`, `qc_report_sebelum/`, `run_t4/`, `nilai/`). Angka Tahap 1–3 yang berharga sudah tercatat di dokumen ini. Skrip yang bergantung pada data scratch yang dihapus: `scripts/t305d_stage3.py` `qc` / `run` / `metrics` / `video` / `verify` (butuh salinan `work/t305d_scratch/t3/`; `prepare` bisa membangun ulang, tetapi dari klip yang kini sudah T-305d, jadi perbandingan "sekarang vs baru" tidak bisa diulang) dan `backup` (sengaja menolak karena `qc_report.json` kini berbeda dari hash F1). Mandiri: `scripts/t305d_mutations.py`, `tests/test_segment_qc.py`, `scripts/t305d_study.py` (`hash` butuh `work/t305d/`; `qc` / `synth` / `cost` / `stale` membangun scratch sendiri, tetapi kandidat `base` = aturan lama sedangkan `qc_report.json` di disk kini `transient`).
+
+### Keputusan T-701 (studi), 2026-10-13 — garis lengan menempel badan (pose / normal); Tahap 1a berjalan
+
+Dicatat SEBELUM skrip ditulis. Masalah (bahan: "Klip3 (observasi)" → "Diagnosis 2" butir a): lengan baju panjang yang menempel badan tidak punya garis. Penyebab = desain D-009: lengan baju berlabel `Upper_Clothing` → grup torso (kelas `Upper_Arm` mentah 0 px di 18 pasangan orang × frame), dan kedalamannya hampir sama dengan badan, jadi tidak ada garis oklusi. Cakupan Rio (2026-10-10): lengan baju menempel badan + video beberapa orang. Ini STUDI: tidak ada kode produksi; D-009 / D-010 tidak diubah.
+
+**Keputusan Rio (final, 2026-10-13):**
+1. **Task baru T-701** di **Phase 7 baru "Cakupan lanjutan"**. T-501 / T-502 tetap BLOCKED (tujuannya fallback QC, berbeda dari T-701).
+2. **Kandidat:** **P1** MediaPipe Pose Landmarker Heavy (CPU); **P2** Sapiens2-pose 0.4B (GPU); **N** Sapiens2-normal 0.4B (GPU). Tanpa dependency baru (mediapipe 1.0.1 dan transformers 5.17.0 sudah ada); hanya bobot model yang diunduh.
+3. **Unduhan butuh izin Rio:** `pose_landmarker_heavy.task`, `facebook/sapiens2-pose-0.4b`, `facebook/sapiens2-normal-0.4b`. Ukuran dan lisensi dilaporkan SEBELUM mengunduh; revision / versi di-pin.
+4. **Sampel** ±20 frame (klip3 lengan baju menempel + `test` lengan di depan badan), ditambah frame wakil unit berlabel T-305c (`scripts/t305c_labels.json`) untuk uji lipatan N. Baca-saja terhadap klip; output ke scratch.
+5. **Ukuran:** waktu per frame, VRAM puncak, NaN fp16 vs fp32, orang terdeteksi vs blob seg, confidence titik bahu / siku / pergelangan, getaran titik di jendela statis; untuk N: kekuatan tepi di strok berlabel O vs L.
+6. **Penilaian Rio** lewat papan per frame: foto | kerangka P1 | kerangka P2 | tepi N.
+7. **Kriteria layak (ditetapkan sebelum mengukur):** (a) muat di VRAM tanpa NaN; (b) Rio menilai benar di ≥ 2/3 frame sampel; (c) untuk pose: semua orang klip3 terdeteksi di ≥ 90% frame sampel. Waktu hanya dilaporkan (kualitas lebih penting). Tambahan untuk N: tepi normal "memisahkan" O vs L bila batas bawah CI AUC > 0,6 (aturan T-305c); bila tidak memisahkan, risiko lipatan dicatat.
+8. **Hasil akhir** = rekomendasi + rencana integrasi (stage mana, perubahan kontrak) untuk keputusan Rio. Tanpa kode produksi.
+
+**Lingkup Tahap 1a (tanpa unduhan, tanpa GPU):** verifikasi lisensi; ukuran + revision; daftar sampel frame; anggaran VRAM / disk; rencana Tahap 1b; docs/04 + docs/05. **LUAR:** perubahan `src/` / `configs/` / `tests/`; integrasi ke pipeline; model 0.8B ke atas; benda yang dipegang; perubahan D-009 / D-010.
+**Aturan:** semua berkas repo hanya lewat Edit / Write (tanpa `python -` / `python -c` penulis berkas, `cat >>`, `sed`, heredoc, `printf`, `echo >`, `Set-Content`; keluaran skrip yang dijalankan boleh); tanpa commit; tidak membuka PNG / MP4; penolakan classifier dilaporkan, tidak disiasati. Baca-saja terhadap klip: sha256 `work/clips/{test,test_short,Klip2,klip3}/{frames,seg,depth,stable,contours,strokes}/` + 4 `qc_report.json` + `out/` sebelum / sesudah identik (F1 `work/t701/`). Scratch `work/t701_scratch/` (F2, ter-ignore), skrip `scripts/t701_study.py` (F3); prompt + scratch dihapus di akhir task setelah data berharga dipindah ke berkas ter-track (F4). GPU (Tahap 1b): satu model di GPU pada satu waktu, cek VRAM bebas sebelum load, berhenti dengan pesan jelas bila kurang, tanpa bf16 (P-005). Bobot model di luar repo (cache Hugging Face seperti seg; `models/` hanya bila ter-ignore).
+
+### Hasil T-701 Tahap 1a (2026-10-13) — lisensi, ukuran, sampel, anggaran, rencana 1b; menunggu izin unduh Rio
+Alat `scripts/t701_study.py` (`hash before|after`, `meta`, `samples`); hasil `work/t701_scratch/meta.json`, `samples.json`; F1 `work/t701/{before,after}_sha256.txt`. CPU, baca-saja; TANPA unduhan bobot dan TANPA GPU. `meta` hanya memakai `model_info` + HEAD per berkas HF dan HEAD / listing metadata objek GCS (tidak ada isi bobot yang diunduh). **Hash F1: 7121 berkas identik sebelum / sesudah.**
+
+**(a) Lisensi** (teks sumber resmi; penilaian, BUKAN kepastian hukum):
+- **P1 `pose_landmarker_heavy.task`.** Halaman resmi Pose Landmarker (developers.google.com/edge/mediapipe/solutions/vision/pose_landmarker) menautkan model card yang SAMA untuk lite / full / heavy: "Model Card BlazePose GHUM 3D" (Google, 16 April 2021) → "LICENSED UNDER Apache License, Version 2.0". Paket `mediapipe` 1.0.1 terinstal: metadata `License: Apache 2.0`. Kutipan penting model card: OUT-OF-SCOPE "Multiple people in an image.", "People too far away from the camera (e.g. further than 14 feet/4 meters)", "Head is not visible", "Any form of surveillance or identity recognition is explicitly out of scope and not enabled by this technology"; Limitations "Tracks only one person on scene if multiple present"; "The primary intended application is entertainment." → lisensi aman komersial; **risiko KUALITAS untuk klip multi-orang** (model card 2021 mendahului opsi `num_poses` Tasks API, default 1; perilaku multi-orang harus diukur, tidak dijanjikan).
+- **P2 / N: Sapiens2 License** (`facebookresearch/sapiens2` `LICENSE.md` cabang main, tanpa nomor versi / tanggal; HF tag `license: other`, `license_name: sapiens2-license`, sama dengan seg yang sudah dipakai). 1a: "non-exclusive, worldwide, non-transferable and royalty-free limited license … to use, reproduce, distribute, copy, create derivative works of, and make modifications" — tanpa klausul non-komersial (sama dengan D-009). 1b.iii: wajib patuh hukum privasi termasuk "any and all laws governing the processing of biometric information". 1b.vi melarang: "(i) for purposes of surveillance…", "(ii) for biometric processing;", "(iii) … violates any third-party rights;", "(iv) for attempting to identify or re-identify any individual…", "(v) to create deepfakes, surveillance, or other misleading, deceptive, or inappropriate content including but not limited to impersonating any individual or facilitating false online engagement;", "(vi) … infer health, demographic, or other sensitive personal … information … without rights and consents", (vii) pornografi / fitnah, (viii)–(ix) profesi tanpa izin / senjata / militer. Lain: 1c audit + kewajiban menghapus atas permintaan Meta; 6 terminasi bila melanggar; 8 Meta boleh mengubah lisensi sepihak ("continued use … constitutes your agreement"); "By clicking 'I Accept' below or by using … you agree to be bound" (memakai = menerima).
+- **"Biometric processing" tidak didefinisikan di lisensi.** Acuan GDPR Art. 4(14) (diverifikasi di gdpr-info.eu): biometric data = data pribadi hasil pemrosesan teknis karakteristik fisik "which allow or confirm the unique identification of that natural person". Illinois BIPA (dari ingatan, TIDAK terverifikasi di sesi ini — situs resmi menolak koneksi) memasukkan "scan of … face geometry" ke biometric identifier. **Penilaian:** keypoint tubuh (bahu / siku / pergelangan / pinggul) dan peta normal untuk menggambar animasi, tanpa identifikasi / pencocokan / penyimpanan templat, kemungkinan besar BUKAN biometric processing dalam arti identifikasi. **Keraguan:** P2 menghasilkan 274 titik wajah (geometri wajah rapat) dan N menghasilkan geometri permukaan wajah; tafsiran luas ala BIPA bisa menyentuhnya. Mitigasi yang diusulkan: titik wajah P2 dibuang segera setelah inferensi (tidak disimpan, tidak dipakai), area wajah di peta N tidak disimpan / dimask (style target memang tanpa detail wajah). Risiko lama tetap: video meme milik pihak ketiga (1b.vi(iii); D-009); tafsiran "misleading content" untuk animasi dari video orang sungguhan tidak pasti. Untuk monetisasi berskala: pertimbangkan nasihat hukum.
+- **Gated / token:** `facebook/sapiens2-pose-0.4b` dan `facebook/sapiens2-normal-0.4b`: `gated: False`, `private: False`. Mesin ini **TIDAK punya token HF** (`get_token()` kosong, `whoami` gagal); HEAD semua berkas pada commit yang di-pin berhasil TANPA token → keadaan sekarang cukup (hanya peringatan batas laju untuk permintaan tanpa token).
+
+**(b) Ukuran, revision, disk** (metadata HF `model_info(files_metadata=True)` + HEAD; GCS HEAD + listing JSON API):
+
+| | P1 | P2 | N |
+|---|---|---|---|
+| sumber | `storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task` | `facebook/sapiens2-pose-0.4b` | `facebook/sapiens2-normal-0.4b` |
+| pin | path versi `float16/1` + generation `1682642785425305` (2023-04-28) | commit `73572e121602e8a6eb40eb841732e88f386d250b` (modified 2026-06-15) | commit `52886591372f049acd4d59ae6d0a792ae1a61ac5` (modified 2026-06-15) |
+| yang diunduh | `.task` | `model.safetensors` + `config.json` + `preprocessor_config.json` + `README.md` | idem |
+| ukuran | 30 664 242 B (29,2 MiB) | 1 702 754 120 B (1,586 GiB) + 25,5 KB | 1 813 476 476 B (1,689 GiB) + 6,7 KB |
+| hash verifikasi | md5 (base64) `RT3sTQLMxNPOgStt6E+lFg==` = hex `453dec4d02ccc4d3ce812b6de84fa516` (= ETag), crc32c `0kDHiw==`; sha256 tidak dipublikasikan Google | sha256 LFS `f1b7b0e5423d667634a355dd86a14c5b03d243f2ac77943301c7db9f93329106` | sha256 LFS `d2f20e8df7186772b7710546416db0752be224c68003c7f18ccbbf8b980ef1fd` |
+| gated / token | publik | tidak gated; tanpa token OK | tidak gated; tanpa token OK |
+| lisensi | Apache-2.0 (model card) | sapiens2-license | sapiens2-license |
+| parameter (ukuran F32 / 4 B) | — (model card: Heavy 26 MB) | ≈ 426 M (seg 0.4B ≈ 407 M) | ≈ 453 M |
+
+Catatan: `float16/latest` = objek yang sama dengan `float16/1` (md5, crc32c, ukuran sama; dibuat pada detik yang sama, generation berbeda) → dipakai URL `float16/1`, bukan "latest". Verifikasi setelah unduh: md5 + crc32c terhadap nilai GCS di atas, lalu sha256 dihitung dan dicatat sebagai pin (Google tidak menerbitkan sha256; trust-on-first-use yang dicek silang dengan md5 / crc32c). Repo HF memuat DUA salinan bobot identik (`model.safetensors` dan `sapiens2_0.4b_{pose,normal}.safetensors`, sha256 sama; total repo 3,41 / 3,63 GB) → unduh hanya `model.safetensors` (`allow_patterns`), seperti seg (cache seg-0.4b 1,515 GiB = satu salinan); verifikasi sha256 berkas di cache = sha256 LFS tabel. Lokasi: Sapiens2 → cache HF default `C:\Users\LEGION\.cache\huggingface\hub` (seperti seg); `.task` → `models/pose_landmarker_heavy.task` (`models/` ter-ignore, `.gitignore` baris 13, dicek `git check-ignore`). **Disk:** drive C: bebas **28,23 GiB** dari 475,47 (cache HF dan repo di drive yang sama); cache HF sekarang 4,69 GiB (seg-0.8b 3,083, seg-0.4b 1,515, DA-V2-S 0,092 GiB); unduhan T-701 ≈ **3,30 GiB** → sisa ≈ 24,9 GiB; scratch Tahap 1b diperkirakan < 1 GiB (peta normal float16 pada resolusi kerja klip3 5,3 MiB / `test` 2,3 MiB per frame × 59 frame × ≤ 2 presisi ≈ 0,5 GiB + papan ±0,1 GiB). RAM: 15,91 GiB total, 7,20 GiB bebas saat diukur.
+
+**(c) Sampel frame** (`samples.json`; cut klip3 terdeteksi f49, 85, 126, 134, 146, 154, 166, 174 — 7 label Rio + FP f49 — dihindari ±2 frame; `test` tanpa cut):
+- **klip3, 12 frame: f19, 24, 30, 36, 42, 60** (daftar "Diagnosis 2"; 3 orang tiap frame) **+ f120** (adegan f85–125), **f131** (f126–133), **f139** (f134–145), **f149** (f146–153), **f159** (f154–165), **f169** (f166–173). Kriteria: orang = komponen foreground 8-arah seg/classmap > `qc.blob_min` 0,05 × luas frame (+ komponen ≥ 30 px ikut orang terdekat; `klip3_diag.persons_of`); proksi "lengan baju tanpa kelas lengan" per orang = `Upper_Arm` 0 px DAN ≥ 1 komponen tangan (≥ 30 px) yang didilasi 5 px menyentuh `Upper_Clothing` orang itu; satu frame per adegan yang belum terwakili Diagnosis 2, adegan terpanjang dulu, frame dengan orang-proksi terbanyak (semua orang lolos diutamakan), terdekat ke tengah adegan. Adegan f174–181 (kandidat f178) tidak masuk karena kuota 12. Orang per frame: f19–f60 3; f120 / f131 / f139 2; f149 / f159 / f169 1. Setiap orang di 12 frame: `Upper_Arm` 0 px (`Lower_Arm` 0–2312 px). **Proksi lemah:** 179 / 182 frame lolos (semua orang berlengan panjang) → proksi membuktikan "lengan baju berlabel baju", BUKAN "menempel badan" (tidak ada uji geometri).
+- **`test`, 8 frame: f7, 129, 145, 160, 183, 196, 210, 222.** Kriteria: skor lengan-depan = fraksi cincin 3 px di sekeliling komponen lengan (argmax mentah, ≥ 200 px) yang berlabel torso, maks per frame; ≥ 0,5 = lengan di depan / di dalam siluet badan (129 / 283 frame; p50 0,466, p95 0,976); diambil skor tertinggi dengan jarak ≥ 12 frame. Skor: 0,64 / 1,00 / 0,99 / 0,98 / 1,00 / 0,89 (right_arm) / 1,00 / 0,79. Satu orang per frame.
+- **Tambahan untuk N (lipatan):** frame wakil SEMUA unit berlabel O / L T-305c di `test` + klip3: klip3 35 unit (O 22, L 13) di 31 frame (f1–f170), `test` 21 unit (O 14, L 7) di 12 frame (f74–f91). Klip3 diekspor sebelum T-305d (penomoran `track_id` berubah setelah f71) → unit dikenali lewat bbox strok wakil: **56 / 56 unit masih cocok** di contours sekarang (IoU bbox klip3 min 0,9825, pergeseran centroid ≤ 0,5 px; `test` IoU 1,0). Gabungan frame unik untuk N: **klip3 39, `test` 20 = 59 frame.**
+- **Jendela statis (definisi T-302:** argmax mentah, run ≥ 10 frame dengan kecepatan centroid foreground ≤ 3 px / frame DAN XOR foreground ≤ 0,06, tidak melintasi cut; sub-jendela 12 frame kecepatan terendah, preseden `klip2_review.py`): **`test` f26–37** (otomatis dari f26–40; kecepatan rata-rata 0,93 px, XOR 0,019); **klip3 f12–23** (tidak ada jendela otomatis → fallback 12 frame kecepatan terendah tanpa cut; 1,33 px, XOR 0,038; sama dengan docs "Klip3 (observasi)"); di klip3 jumlah blob berubah 2 → 3 di f17 (orang bersentuhan lalu terpisah) → getaran dihitung per orang setelah pencocokan.
+- **bbox P2 (top-down):** per orang (definisi di atas, ambang luas minimum = `qc.blob_min` 0,05 × luas frame: klip3 46 080 px, `test` 20 496 px) bbox ketat masker orang (xywh); margin = bawaan processor Sapiens2 (padding × 1,25 lalu koreksi rasio 3:4 ke 768 × 1024, luar frame diisi nol). Batas: orang yang bersentuhan menjadi satu blob → satu bbox untuk dua orang (Diagnosis 1 D2: 16 / 141 blob kedua ≤ 10 px dari blob terbesar); orang < 5% frame tidak mendapat bbox; f149 (572 × 680 px) dan f169 (526 × 769 px) adalah blob tunggal yang lebar — mungkin dua orang menyatu atau lengan terentang (belum diverifikasi visual). Model card P2: "requires bounding boxes from a person detector. We use RTMDet" — di sini bbox dari seg (tanpa dependency baru).
+
+**(d) Anggaran VRAM / waktu (PERKIRAAN, belum diukur).** Acuan: seg 0.4B fp16 2185 / 2258 MiB (alloc / reserved), 7,99 s / frame; fp32 2972 / 3188 MiB, 2,54 s / frame (fp16 LEBIH lambat di GTX 1650 Ti); pointmap 0.4B (dekoder PixelShuffle seperti N) fp16 2420 / 3084 MiB + NaN / inf 20 / 20, fp32 OOM (3437 MiB saat gagal); VRAM bebas sebelum run terdahulu 3318–3526 MiB.
+- **P1:** CPU, VRAM 0; RAM < 0,5 GiB; ≤ 0,1 s / frame (model card: Heavy ±4 FPS di CPU Pixel 3).
+- **P2:** parameter +4,7% vs seg 0.4B; aktivasi head terbesar 768 × 256 × 192 ≈ 37,7 M elemen (< head seg 64 × 1024 × 768 ≈ 50,3 M) → **fp16 ≈ 2,3–2,4 GiB reserved**, ≈ 8 s per bbox orang (klip3 ±2,5 bbox / frame ≈ 20 s / frame); **fp32 ≈ 3,2–3,3 GiB reserved — di batas VRAM bebas**, ≈ 2,6 s per bbox. Batch 1 per bbox.
+- **N:** parameter +11,5% vs seg 0.4B; head PixelShuffle sampai 1024 × 768 dengan 128 kanal ≈ 100 M elemen (2× head seg) → **fp16 ≈ 2,4–2,6 GiB alloc / ≈ 3,0–3,1 GiB reserved** (analog pointmap fp16), 8–15 s / frame; **fp32 kemungkinan OOM** (analog pointmap). **Risiko NaN fp16** (pointmap fp16 NaN 20 / 20; seg 0.4B / 0.8B fp16 0 NaN dengan backbone sejenis → dugaan sumber NaN pointmap = head / cabang skala; N tanpa cabang skala; belum diverifikasi).
+- Total GPU Tahap 1b ≈ 30–45 menit (P2 78 bbox fp16 — sampel 35 + jendela statis 43 — ≈ 10–11 menit + cek fp32 5 frame; N 59 frame fp16 ≈ 8–15 menit; load model ±1–2 menit tiap model).
+
+**(e) Rencana Tahap 1b (TULIS saja; dijalankan setelah izin Rio):**
+0. Hash F1 sebelum. Unduh (pin): `.task` `float16/1` → `models/pose_landmarker_heavy.task`, cek md5 + crc32c, catat sha256; `snapshot_download(repo, revision=<commit>, allow_patterns=[model.safetensors, config.json, preprocessor_config.json, README.md])` untuk P2 / N, cek sha256 = LFS, cek tag lisensi README = `sapiens2-license`.
+1. **P1 (CPU, Tasks API `PoseLandmarker`):** `num_poses` 4 (≥ orang terbanyak 3 + 1), `min_pose_detection_confidence` / `min_pose_presence_confidence` / `min_tracking_confidence` 0,5 (bawaan); mode IMAGE untuk 20 frame sampel, mode VIDEO (timestamp = indeks × 1000 / 24 ms, landmarker baru per jendela) untuk 2 jendela statis. Simpan titik 11–16 (bahu / siku / pergelangan; juga pinggul 23–24 untuk kerangka), visibility, presence, jumlah pose, waktu.
+2. **P2 (GPU, `Sapiens2ForPoseEstimation`):** cek VRAM bebas ≥ perkiraan + 300 MiB sebelum load, berhenti dengan pesan jelas bila kurang; satu model di GPU; fp16 dulu, tanpa flip-test; bbox dari seg (c); keypoint lewat `post_process_pose_estimation` (skor = puncak heatmap); NaN / inf dan nilai jenuh heatmap dihitung; fp32 pada 5 frame bila VRAM cukup → beda titik fp16 vs fp32 (px). **Peta indeks 308 titik** (config hanya `LABEL_n`) diambil dari dokumen resmi Sapiens2 SEBELUM mengukur (dugaan dari Sapiens v1 / Goliath: bahu 5 / 6, siku 7 / 8, pergelangan di blok tangan — harus diverifikasi). Titik wajah dibuang segera (mitigasi lisensi).
+3. **N (GPU, `Sapiens2ForNormalEstimation`):** frame utuh, `do_pad=True` (komentar processor: "Set to True for normal, albedo, and pointmap estimation"), potong padding, resize ke resolusi kerja, normalisasi ke vektor satuan; fp16 dulu → fp32 bila NaN / jenuh (VRAM dicek; perkiraan OOM). Bila fp16 NaN DAN fp32 OOM: BERHENTI dan lapor; opsi (butuh izin Rio, di luar rencana fp16 → fp32): backbone fp16 + head fp32, atau CPU fp32 (pointmap CPU 30,7 s / frame, RAM 5,1 GiB → 59 frame ≈ 30 menit). Area wajah tidak disimpan.
+4. **Metrik (butir 5):** waktu per frame (forward dan total), VRAM puncak (`max_memory_allocated` / `reserved`) + bebas sebelum load; NaN / inf fp16 vs fp32; **orang terdeteksi vs blob seg** — pose dihitung "mendeteksi" sebuah blob bila titik tengah kedua bahu berada di masker blob (dilasi 10 px) dan ≥ 4 / 6 titik lengan (bahu / siku / pergelangan) melewati ambang keyakinan (P1 visibility ≥ 0,5; P2 skor heatmap ≥ 0,3) — ambang ditetapkan sekarang, sebelum mengukur; distribusi keyakinan 6 titik lengan per model; **getaran** di jendela statis: per orang (dicocokkan antar frame lewat jarak titik tengah bahu) per titik lengan, |p_t − (p_{t−1} + p_{t+1}) / 2| (px dan % tinggi bbox orang), median dan p95; **N:** tepi = sudut antar normal tetangga 4-arah (maks kanan / bawah, derajat) di dalam foreground peta grup stabil yang dierosi 2 px (tepi siluet tidak dihitung); kekuatan strok = median tepi di titik strok (bilinear) untuk strok wakil unit O / L di frame wakilnya (dikenali lewat bbox); AUC O vs L per unit (arah ditetapkan sekarang: tepi lebih kuat → O), tanpa bobot dan berbobot (bobot sampling T-305c), bootstrap persentil 95% 2000 ulangan resampling unit di dalam sel sampling, seed 701001; "memisahkan" bila batas bawah CI > 0,6 pada keduanya (aturan T-305c); bila tidak → risiko lipatan dicatat.
+5. **Papan `work/t701/papan/`:** 20 frame sampel, satu frame per gambar, empat panel foto | kerangka P1 | kerangka P2 | tepi N (kerangka tubuh saja: kepala–bahu–siku–pergelangan–pinggul–lutut–mata kaki; tanpa titik wajah; tanpa angka metrik); nomor 01–20 diacak seed 701002; peta nomor → (klip, frame) hanya di scratch. `PANDUAN.md`: balasan Rio per frame `01: P1 P2 N` (kolom yang benar) atau `01: -`; definisi "benar" pose = semua orang di frame punya kerangka dan rantai bahu–siku–pergelangan mengikuti lengan (termasuk lengan menempel badan); orang terlewat = salah; "benar" N = batas lengan yang menempel badan tampak sebagai tepi di panel N.
+6. **Kriteria:** (a) per model; (b) ≥ 14 / 20 frame "benar"; (c) pose: semua blob orang klip3 terdeteksi di ≥ 11 / 12 frame sampel klip3. Hash F1 sesudah. Laporan → rekomendasi + rencana integrasi (stage, kontrak) untuk keputusan Rio.
+
+**Penyimpangan / keraguan:** (1) proksi lengan menempel klip3 lemah (179 / 182 frame lolos) — 12 frame mungkin memuat lengan terentang; usul: Rio memeriksa daftar (atau menandai `-` di papan); (2) P1: model card menyebut multi-orang di luar cakupan → kriteria (c) berisiko; (3) "biometric processing" tidak didefinisikan — penilaian di (a) bukan kepastian hukum; BIPA dikutip dari ingatan (tidak terverifikasi); (4) sha256 `.task` tidak diterbitkan → pin = path versi + generation + md5 / crc32c, sha256 dicatat setelah unduh; (5) unduh hanya satu dari dua salinan bobot HF (bukan snapshot penuh); (6) bacaan web: teks lisensi Sapiens2 dicetak ke layar lewat `curl` (tidak disimpan), PDF model card BlazePose dibaca lewat WebFetch (salinan otomatis di folder tool-results Claude Code di luar repo), `config.json` ketiga repo dibaca lewat halaman HF (tidak masuk cache HF / repo) — bukan unduhan bobot; (7) N fp32 kemungkinan OOM dan fp16 berisiko NaN → opsi cadangan butuh izin Rio; (8) jendela statis klip3 = fallback, jumlah blob berubah di dalamnya; (9) bbox P2 dari blob seg (bukan detektor orang seperti RTMDet di model card) → orang bersentuhan bisa satu bbox (f149, f169 mencurigakan); (10) kebenaran "jumlah orang" untuk kriteria (c) = jumlah blob seg, batas bawah bila orang menyatu; (11) indeks titik Sapiens2 harus diverifikasi; (12) sampel `test` (f7–f222) tidak memuat jendela kaki menyilang f73–92 (frame itu masuk lewat unit N); (13) `scripts/t701_study.py` mengimpor `persons_of` dari `scripts/klip3_diag.py`; (14) pelanggaran aturan: tidak ada (berkas repo lewat Edit / Write; berkas data ditulis skrip yang dijalankan; `python -c` hanya membaca).
+
+### Keputusan T-701 Tahap 1b (2026-10-13)
+Dicatat SEBELUM menjalankan apa pun di Tahap 1b. Keputusan Rio atas laporan Tahap 1a:
+1. **Izin unduh + GPU** diberikan: `pose_landmarker_heavy.task` (`float16/1`) ke `models/`, `facebook/sapiens2-pose-0.4b` dan `facebook/sapiens2-normal-0.4b` pada commit yang di-pin ke cache HF (hanya `model.safetensors` + berkas config / processor yang diperlukan; md5 / crc32c / sha256 dicocokkan); GPU untuk P2 dan N.
+2. **Sampel klip3 = 20 frame** (12 frame Tahap 1a + 8 tambahan tersebar per adegan, > 2 frame dari cut); `test` 8 frame Tahap 1a; papan 28 frame. Rio boleh menjawab **`x` (tidak relevan:** lengan tidak menempel / tidak di depan badan); **kriteria (b) hanya dihitung di frame relevan** (bukan `x`); bila frame relevan < 10, dilaporkan.
+3. **Acuan jumlah orang = jumlah komponen grup `face` per frame.** Blob tubuh tetap dilaporkan; frame dengan blob gabungan ditandai.
+4. **Titik wajah P2 dibuang langsung setelah inferensi** (tidak pernah ditulis ke disk); **area wajah di peta N dimasking sebelum disimpan.**
+5. **Cadangan presisi (sudah diizinkan):** fp16 → backbone fp16 + head fp32 → CPU fp32.
+6. **Indeks keypoint Sapiens2 wajib dari dokumen / kode resmi Sapiens2;** bila tidak terverifikasi, BERHENTI sebelum menjalankan P2.
+
+**Definisi operasional (ditetapkan sekarang, sebelum mengukur):**
+- **Komponen wajah:** komponen 8-arah grup `face` (Face_Neck, Eyeglass, bibir, gigi, lidah; config `groups`) pada peta grup argmax mentah (`seg/classmap` → LUT grup, tanpa filter) dengan **luas ≥ 0,1% luas frame** (klip3 720 × 1280 → ≥ 922 px; `test` 480 × 854 → ≥ 410 px). Komponen lebih kecil diabaikan. Batas: wajah yang membelakangi kamera (hanya rambut) tidak terhitung; dua wajah yang bersentuhan menjadi satu komponen.
+- **Blob tubuh:** definisi Tahap 1a (komponen foreground > `qc.blob_min` 0,05 × luas frame + komponen ≥ 30 px ke orang terdekat). **Blob gabungan** = blob tubuh yang memuat ≥ 2 komponen wajah (mayoritas piksel wajah di dalam blob).
+- **Pencocokan pose ↔ wajah (kriteria c):** titik tengah kedua bahu tiap pose terdeteksi; pasangan (pose, wajah) sah bila titik tengah bahu berada di blob tubuh (dilasi 10 px) yang sama dengan wajah itu; penugasan satu-satu serakah berdasarkan jarak titik tengah bahu → centroid wajah (terdekat dulu). Frame "semua orang terdeteksi" = setiap komponen wajah mendapat pose terdeteksi. Kriteria (c): ≥ 90% frame sampel klip3 (≥ 18 / 20).
+- **P1 terdeteksi:** pose yang dikembalikan Tasks API (lolos `min_pose_presence_confidence` 0,5 — filter presence tingkat pose bawaan; ditambah rata-rata `presence` 6 titik lengan ≥ 0,5) DAN ≥ 4 / 6 titik lengan (bahu / siku / pergelangan L+R, indeks 11–16) dengan `visibility` ≥ 0,5. `num_poses` = (jumlah wajah maksimum di frame sampel) + 1, satu nilai untuk seluruh run.
+- **P2 terdeteksi:** per bbox blob tubuh, ≥ 4 / 6 titik lengan dengan skor (puncak heatmap) ≥ 0,3. Satu bbox = satu pose (blob gabungan → paling banyak satu pose dari bbox itu). **Titik yang dibuang** setelah inferensi: SEMUA titik di wajah / kepala (274 titik wajah + hidung / mata / telinga); yang disimpan hanya titik tubuh (tubuh, tangan, kaki).
+- **fp32 P2 di 5 frame:** klip3 f19, f60, f120, f159 + `test` f129 (orang 3 / 3 / 2 / 1 / 1); bila VRAM tidak cukup untuk fp32 → dilaporkan, tidak dipaksa. Kejenuhan heatmap = nilai |h| ≥ 60 000 atau inf.
+- **Getaran:** di jendela statis (`test` f26–37, klip3 f12–23), per orang (dicocokkan antar frame lewat jarak titik tengah bahu terdekat, ≤ 15% tinggi bbox) per titik lengan yang lolos ambang di t−1, t, t+1: |p_t − (p_{t−1} + p_{t+1}) / 2| (px kerja); p50 / p95. P1 mode VIDEO, P2 per frame.
+- **N:** `do_pad=True`, padding dipotong, resize bilinear ke resolusi kerja, dinormalisasi ke vektor satuan. **Tepi E** = sudut (derajat) antar normal tetangga kanan dan bawah, maks keduanya, hanya bila kedua piksel di foreground peta grup stabil yang dierosi 2 px. **Masking wajah:** piksel grup `face` peta stabil didilasi 5 px → NaN pada normal dan E SEBELUM disimpan. **Kekuatan strok** = median atas titik strok dari E yang dimaks-filter 5 × 5 (radius 2 px; garis oklusi bisa bergeser 1–2 px dari tepi normal), titik NaN dilewati; strok = strok oklusi di contours sekarang pada frame wakil unit dengan IoU bbox terbesar (Tahap 1a: 56 / 56 cocok). Arah: E lebih kuat → O. AUC O vs L per unit, tanpa bobot dan berbobot (bobot sampling T-305c), bootstrap persentil 95%, 2000 ulangan, resampling unit di dalam sel sampling T-305c, seed **701001**; gabungan (`test` + klip3) dan per klip; "memisahkan" bila batas bawah CI > 0,6 (gabungan: tanpa bobot DAN berbobot).
+- **Papan:** 28 frame, satu gambar per frame (baris: foto | P1 | P2 | N), urutan diacak dengan seed **701002**; peta nomor → (klip, frame) hanya di `work/t701_scratch/board_map.json`.
+
+### Hasil T-701 Tahap 1b (2026-10-14) — angka + papan; menunggu penilaian Rio
+Alat `scripts/t701_study.py` (`hash before_1b|after_1b`, `download`, `samples1b`, `p1`, `p2 fp16|fp32`, `normal fp16|mixed|cpu`, `metrics`, `board`); hasil `work/t701_scratch/{download,samples_1b,p1,p2_fp16,p2_fp32,normal_fp16,metrics,board_map}.json`, `normal_fp16/*.npz` (wajah dimasking); papan `work/t701/papan/`. **Hash F1: 7121 berkas identik sebelum / sesudah** (`before_1b` = `after` Tahap 1a = `after_1b`). Tanpa perubahan `src/` / `configs/` / `tests/`.
+**Gangguan koneksi (API ENOTFOUND, 2026-10-13) dan pemulihan (2026-10-14):** saat terputus, keputusan 1b sudah dicatat, skrip sudah ditulis dan hash `before_1b` sudah dibuat; belum ada unduhan / run. Dicek ulang: tidak ada `.task` / `.part` di `models/`, tidak ada cache HF pose / normal, tidak ada proses python di GPU, scratch hanya berisi hasil 1a yang lengkap → tidak ada berkas yang dihapus atau run yang diulang.
+
+**Unduhan (semua cocok; tidak ada yang diunduh ulang):**
+
+| | berkas | ukuran nyata | verifikasi | waktu |
+|---|---|---|---|---|
+| P1 | `models/pose_landmarker_heavy.task` (`float16/1`, generation 1682642785425305) | 30 664 242 B | md5 `RT3sTQLMxNPOgStt6E+lFg==` ✔, crc32c `0kDHiw==` ✔, ukuran ✔ → **sha256 `64437af838a65d18e5ba7a0d39b465540069bc8aae8308de3e318aad31fcbc7b`** (dicatat sebagai pin) | 32,7 s |
+| P2 | `facebook/sapiens2-pose-0.4b@73572e12…` `model.safetensors` + `config.json` + `preprocessor_config.json` + `README.md` | 1 702 754 120 + 25 454 = 1 702 779 574 B | sha256 `f1b7b0e5…29106` ✔, tag `sapiens2-license` ✔, folder snapshot = commit ✔ | 489 s |
+| N | `facebook/sapiens2-normal-0.4b@52886591…` (berkas sama) | 1 813 476 476 + 6 734 = 1 813 483 210 B | sha256 `d2f20e8d…f1fd` ✔, tag lisensi ✔, commit ✔ | 540 s |
+
+Cache HF di Windows tanpa symlink (peringatan `huggingface_hub`; berkas disalin, bukan ditautkan). Disk C: bebas turun dari 28,23 GiB (Tahap 1a) ke ±17 GiB; T-701 menyumbang ±3,6 GiB (cache HF 3,3 GiB, `.task` 29 MiB, scratch 260 MiB, papan 50 MiB; cache xet 444 KiB); sisanya di luar T-701, tidak diselidiki.
+**Sumber indeks keypoint P2 (syarat 6, terverifikasi):** `facebookresearch/sapiens2` commit `7e5bae88456ac418ff0e58e74106c9fe192055d4`, `sapiens/pose/configs/_base_/keypoints308.py` (sha256 `8602450c…0008`): `dataset_info` Goliath 344 titik, `remove_teeth=True` ("344 - 36 = 308"; gigi id 220–255 dibuang, id di bawah 220 tidak bergeser); `docs/POSE.md`: "Predictions follow the Sociopticon keypoint format (keypoints308.py)"; config 0.4B `num_keypoints = 308`; `flip_pairs` HF konsisten ([5,6] bahu, [7,8] siku, [9,10] pinggul, [21,42] blok tangan). Dipakai: 5 / 6 bahu L / R, 7 / 8 siku, **62 left_wrist / 41 right_wrist** (pergelangan ada di blok tangan, BUKAN 9 / 10 seperti COCO), 9 / 10 pinggul. Disimpan 5–69; dibuang sebelum post-process (`index_select` pada heatmap): 0–4 (hidung / mata / telinga) + 70–307 (wajah). P1: indeks 11–16 / 23–24 dari dokumentasi resmi Pose Landmarker; disimpan 11–32 (titik kepala 0–10 juga tidak disimpan).
+**Sampel:** klip3 20 frame = Tahap 1a (f19, 24, 30, 36, 42, 60, 120, 131, 139, 149, 159, 169) + **tambahan f0, 52, 71, 82, 88, 96, 104, 178** (aturan: adegan tanpa sampel dulu → f178; lalu prioritas frame valid / (sampel + 1), frame terjauh dari sampel adegan itu; > 2 frame dari cut); `test` 8 (f7, 129, 145, 160, 183, 196, 210, 222); N 66 frame (klip3 46 = 20 sampel ∪ 31 frame unit; `test` 20); jendela statis `test` f26–37, klip3 f12–23.
+**Precision yang dipakai:** P1 CPU (TFLite XNNPACK, model float16); **P2 fp16** (+ fp32 di 5 frame pembanding); **N fp16** (66 / 66 frame tanpa NaN → cadangan mixed / CPU tidak dipakai).
+
+**Temuan: acuan jumlah orang terdaftar (komponen `face` ≥ 0,1% frame) MENGHITUNG LEBIH di klip3.** klip3 berisi 3 orang, tetapi komponen wajah 4–7 per frame. Komponen ekstra (930–2017 px, y ≈ 1030–1200 dari 1280) adalah piksel `Face_Neck` murni tanpa bibir / gigi, dikelilingi `Right_Shoe` / `Lower_Clothing` / latar → **kulit kaki di atas sepatu yang dilabeli `Face_Neck` oleh Sapiens2-seg** (diperiksa f19, f82, f120, f169). Akibatnya hampir semua frame klip3 ditandai blob gabungan (18 / 20), dan kriteria (c) terdaftar gagal karena "wajah" kaki tidak bisa dicocokkan dengan pose. Definisi terdaftar TIDAK diubah; ditambah **varian POST-HOC V1** (bukan definisi terdaftar): wajah dihitung hanya bila centroid-nya di setengah atas bbox blob tubuhnya → 3 / 3 / … orang sesuai pengamatan (klip3 f0–f104: 3; f120: 3 termasuk wajah terpotong di tepi kanan x 694–720; f131 / f139: 2; f149–f178: 1). `test` f222: 0 wajah (wajah < 410 px / tidak terlihat), orang tetap terdeteksi kedua pose.
+
+**Tabel per frame klip3** (wajah terdaftar / V1 · blob tubuh, * = blob gabungan menurut V1 · P1 pose dikembalikan → terdeteksi / wajah V1 tercakup · P2 kotak → terdeteksi / wajah V1 tercakup):
+
+| frame | wajah | blob | P1 | P2 |
+|---|---|---|---|---|
+| f0 | 5 / 3 | 2* | 3 → 3 / 3 | 2 → 2 / 2 |
+| f19, f24, f30 | 4–6 / 3 | 3 | 2 → 2 / 2 | 3 → 3 / 3 |
+| f36, f42 | 4–5 / 3 | 3 | 3 → 3 / 3 | 3 → 3 / 3 |
+| f52, f60 | 5–6 / 3 | 3 | 3 → 2 / 2 | 3 → 3 / 3 |
+| f71 | 7 / 3 | 2* | 3 → 3 / 3 | 2 → 2 / 2 |
+| f82, f88, f96, f104 | 5–6 / 3 | 1* | 2 → 2 / 2 | 1 → 1 / 1 |
+| f120 | 5 / 3 | 2* | 1 → 1 / 1 | 2 → 2 / 2 |
+| f131, f139 | 3–4 / 2 | 2 | 1 → 1 / 1 | 2 → 2 / 2 |
+| f149, f169 | 2 / 1 | 1 | 1 → 1 / 1 | 1 → 1 / 1 |
+| f159, f178 | 1 / 1 | 1 | 1 → 1 / 1 | 1 → 1 / 1 |
+
+`test` 8 frame: 1 orang, P1 dan P2 terdeteksi di 8 / 8.
+
+**Tabel metrik:**
+
+| ukuran | P1 (MediaPipe Heavy, CPU) | P2 (Sapiens2-pose 0.4B) | N (Sapiens2-normal 0.4B) |
+|---|---|---|---|
+| waktu / frame mean / p95 | IMAGE 0,108 / 0,179 s; VIDEO 0,075 / 0,082 s | fp16 14,64 / 25,36 s (51 frame; per kotak median 8,44 s); fp32 6,23 / 11,24 s (5 frame; per kotak 3,12 s) | fp16 10,07 / 10,08 s (66 frame) |
+| VRAM puncak reserved | — (CPU) | fp16 **2298 MiB** (alloc 2222); fp32 **3262 MiB** | fp16 **2362 MiB** |
+| VRAM bebas sebelum load | — | 3317,7 MiB | 3313,7 MiB |
+| NaN / inf | koordinat NaN 0 | fp16 0 / 0, jenuh (≥ 60 000) 0, maks \|h\| 2,62; fp32 0 / 0 / 0, maks 2,49 | 0 / 0 di 66 frame; padding terverifikasi (`pad_ok` 66 / 66) |
+| fp16 vs fp32 | — | titik lengan: p50 0,019 px, p95 0,049, maks 0,075 (n 59) | — |
+| keyakinan p5 / p50: bahu L / R | vis 0,994 / 1,000; 0,994 / 1,000 | 0,834 / 0,930; 0,624 / 0,936 | — |
+| siku L / R | vis 0,070 / 0,874; 0,102 / 0,689 | 0,435 / 0,967; 0,478 / 0,952 | — |
+| pergelangan L / R | vis 0,070 / 0,853; 0,077 / 0,761 | 0,636 / 0,978; 0,329 / 0,962 | — |
+| getaran lengan (px kerja / frame) p50 / p95 | klip3 4,08 / 26,07 (n 20); `test` 2,11 / 4,80 (n 22) | klip3 0,82 / 2,41 (n 136); `test` 0,75 / 3,77 (n 60) | — |
+
+(Keyakinan atas 47 pose / kotak di 28 frame sampel; P1 presence p50 ≥ 0,995 di semua titik lengan, p5 terendah 0,316 di pergelangan L.)
+**Getaran P1 klip3 tidak sebanding:** di mode VIDEO P1 hanya melacak **1 orang** per frame di jendela f12–23 (mode IMAGE di frame yang sama: 2–3), dan visibility siku / pergelangan minimum per pose 0,05–0,40 → hanya 20 nilai lolos ambang. P2 dihitung per frame tanpa pelacakan temporal.
+
+**Kriteria layak:**
+
+| | (a) muat VRAM tanpa NaN | (c) semua orang klip3 di ≥ 18 / 20 frame — definisi terdaftar | (c) varian post-hoc V1 |
+|---|---|---|---|
+| P1 | ✔ (CPU; NaN 0) | ✘ 2 / 20 (f159, f178) | ✘ 8 / 20 (f0, 36, 42, 71, 149, 159, 169, 178) |
+| P2 | ✔ fp16 2298 MiB, NaN 0 (fp32 juga muat: 3262 MiB) | ✘ 2 / 20 | ✘ 13 / 20 — 7 frame gagal = blob gabungan V1 (f0, 71, 82, 88, 96, 104, 120): satu kotak per blob → paling banyak satu pose (keterbatasan desain crop, bukan model) |
+| N | ✔ fp16 2362 MiB, NaN 0 | — | — |
+
+P1 melewatkan orang di 12 / 20 frame V1 (2 dari 3 di f19–30 dan f82–104; 2 dari 3 di f52 / f60 karena satu pose gagal aturan lengan; 1 dari 3 di f120; 1 dari 2 di f131 / f139). Kriteria (b) menunggu penilaian Rio di papan.
+
+**AUC N** (kekuatan strok = median E maks-filter 5 × 5 di titik strok, derajat; O positif; bootstrap 2000 ulangan per unit dalam sel, seed 701001; 56 / 56 unit punya skor, semua titik strok di area valid):
+
+| | n O / L | median O / L (°) | AUC tanpa bobot [CI 95%] | AUC berbobot [CI 95%] |
+|---|---|---|---|---|
+| gabungan | 36 / 20 | 28,4 / 14,4 | 0,683 [0,538–0,830] | 0,786 [0,625–0,910] |
+| klip3 | 22 / 13 | 29,7 / 19,7 | 0,692 [0,521–0,871] | 0,807 [0,638–0,940] |
+| `test` | 14 / 7 | 14,8 / 6,2 | 0,724 [0,471–0,933] | 0,724 [0,471–0,933] (bobot 1) |
+
+**N TIDAK "memisahkan" O vs L menurut aturan terdaftar** (batas bawah CI gabungan tanpa bobot 0,538 < 0,6; berbobot 0,625 > 0,6, tetapi aturan mensyaratkan keduanya) → **risiko lipatan dicatat:** tepi normal juga kuat di garis lipatan / tepi kain (median L 14,4° vs E foreground p50 ±2°). Pembanding (bukan kriteria): fitur kedalaman T-305c terbaik `strength_abs` 0,609 [0,45–0,76] / 0,738 [0,52–0,91] — arah serupa, sedikit lebih tinggi, tetap tidak memisahkan.
+
+**Papan:** `work/t701/papan/01.png … 28.png` (2220 × 1062; panel 540 × 960: foto | P1 kerangka bahu–siku–pergelangan–pinggul warna per orang | P2 titik tubuh skor ≥ 0,3 (titik besar = lengan) | N tepi normal 0–30° dengan wajah dimasking) + `PANDUAN.md`; **28 frame** (klip3 20 + `test` 8), urutan seed **701002**; peta nomor di `work/t701_scratch/board_map.json`. Dicek numerik (tidak dibuka): 28 nomor unik, setiap panel P1 / P2 berisi piksel warna, setiap panel N berisi area wajah-mask.
+
+**Penyimpangan / keraguan:** (1) acuan wajah terdaftar terkontaminasi kulit kaki (`Face_Neck` salah label) → (c) dilaporkan dengan definisi terdaftar + varian post-hoc V1 (dipilih SETELAH melihat data); (2) `num_poses` P1 = 8 (wajah maks terdaftar 7 + 1), lebih besar dari yang perlu; P1 tidak pernah mengembalikan > 3 pose; (3) P2 di blob gabungan secara desain hanya satu pose (crop per blob, bukan detektor orang); (4) getaran P1 klip3 berbasis 1 orang yang dilacak + 20 nilai — tidak sebanding dengan P2; (5) aturan P1 "terdeteksi" memakai presence tingkat pose (filter bawaan 0,5) + rata-rata presence 6 titik lengan ≥ 0,5 — tafsiran saya atas "presence ≥ 0,5"; (6) titik kepala P1 (0–10) juga tidak disimpan (di luar keputusan 4, demi konsistensi); (7) masker wajah N memakai grup `face` peta stabil sehingga kulit kaki ber-`Face_Neck` ikut dimasking (lebih konservatif); (8) frame klip3 f19 ada di sampel dan jendela statis → P2 fp16 51 frame unik (bukan 52); (9) P2 fp16 2,7× LEBIH LAMBAT dari fp32 (seperti seg 0.4B di T-102c); (10) penurunan disk ±7 GiB di luar T-701 tidak diselidiki; (11) pelanggaran aturan tulis: tidak ada (berkas repo lewat Edit / Write; `PANDUAN.md` lewat Write; berkas data ditulis skrip yang dijalankan; `python -c` hanya membaca).
+
+### Keputusan T-701 setelah Tahap 1b (2026-10-14)
+Dicatat SEBELUM menjalankan apa pun di Tahap 1c. Keputusan Rio atas laporan Tahap 1b:
+1. **Label papan Rio (apa adanya):** 01 P1 P2 N · 02 P1 P2 N · 03 P1 P2 N (catatan Rio: ada 3 orang, yang di tengah pas, yang lain tidak) · 04 P1 P2 · 05 P1 P2 N · 06 P1 P2 N · 07 P1 P2 N · 08 P1 P2 N · 09 P1 P2 · 10 P1 P2 N · 11 P1 P2 N · 12 P2 N · 13 P1 P2 N · 14 P2 N · 15 P1 P2 · 16 P1 P2 · 17 P1 P2 N · 18 N · 19–25 P1 P2 N · 26 P1 P2 · 27 P1 P2 · 28 P1 P2 N.
+2. **Kriteria (b):** P1 25 / 28, P2 27 / 28, N 22 / 28. Bila 03 dihitung sebagian: P1 24, P2 26, N 21–22. Semuanya lolos ≥ 19 / 28. (Tanpa jawaban `x` → 28 / 28 frame relevan, ≥ 10. Dicek ulang dari label: tanpa P1 = 12, 14, 18; tanpa P2 = 18; tanpa N = 04, 09, 15, 16, 26, 27 → angka sama.)
+3. **Kelemahan papan:** orang yang tidak terdeteksi tidak terlihat sebagai kesalahan, jadi (b) bukan bukti cakupan.
+4. **Kriteria (c):** definisi terdaftar = hasil resmi 1b (P1 2 / 20, P2 2 / 20, gagal). V1 tetap eksploratif untuk 1b.
+5. **P1 DITOLAK:** (c) gagal jauh, confidence dan getaran buruk, multi-orang di luar cakupan model card.
+6. **N hanya pelengkap:** tidak memisahkan lipatan (AUC 0,68), jadi hanya dipakai di area lengan dari P2.
+7. **Tahap 1c: P2 dengan crop per orang.** V1 kini DIDAFTARKAN sebagai acuan jumlah orang untuk 1c, sebelum 1c diukur. Syarat lolos (c) ≥ 18 / 20 frame klip3.
+8. **Bila lolos:** rekomendasi + rencana integrasi hibrida P2 + N (perintah terpisah). **Bila gagal:** P2 diparkir; lengan menempel badan tetap tercatat sebagai batas yang diketahui.
+
+Batas perintah 1c: klip asli dan `out/` tidak berubah (hash F1 `before_1c` / `after_1c`); keluaran di `work/t701_scratch/` dan `work/t701/`; tanpa perubahan `src/` / `configs/` / `tests/`; tanpa commit; berhenti setelah laporan 1c.
+
+**Desain crop per orang Tahap 1c (ditetapkan dan dicatat SEBELUM run):**
+- **Acuan orang = wajah V1** (= implementasi varian V1 di `metrics` 1b, kini terdaftar): komponen wajah definisi 1b (grup `face` argmax mentah, 8-arah, ≥ 0,1% luas frame = klip3 ≥ 922 px) yang centroid-nya berada di **setengah atas bbox blob tubuhnya** (y centroid < y0 + h / 2). Blob tubuh sebuah wajah = blob yang memuat > 50% piksel wajah itu (1b). Wajah tanpa blob tubuh tetap dihitung sebagai orang (seperti V1 1b; tidak bisa diberi crop → frame itu gagal); jumlahnya dilaporkan.
+- **Blob ≤ 1 wajah V1:** satu crop = bbox ketat blob (sama seperti 1b).
+- **Blob ≥ 2 wajah V1:** piksel blob (masker blob tubuh 1b, termasuk komponen ≥ 30 px yang ditempelkan) dibagi ke wajah V1 terdekat di blob itu (**Voronoi** Euclidean dari centroid wajah, dibatasi di dalam blob; seri → wajah dengan urutan komponen lebih kecil). Wajah yang ditolak V1 (setengah bawah blob, mis. kulit kaki) bukan benih. Tiap bagian = satu crop: bbox ketat bagian itu. **Margin seperti 1b** = tanpa margin tambahan dari skrip; processor Sapiens2 memperbesar kotak 1,25× dan mengoreksi rasio ke 3:4 (768 × 1024), sama dengan 1b.
+- **Bagian orang** (untuk aturan terdeteksi) = bagian Voronoi-nya; untuk blob dengan tepat 1 wajah V1 = seluruh blob. Tanpa dilasi.
+- **Orang V1 terdeteksi** = pose dari crop-nya memiliki ≥ 4 / 6 titik lengan (5, 6, 7, 8, 62, 41) dengan skor ≥ 0,3 DAN titik tengah kedua bahu (5, 6; tanpa syarat skor, seperti 1b) berada di dalam bagian orang tersebut. **Frame lolos (c)** bila semua orang V1 di frame itu terdeteksi (frame dengan 0 wajah V1 = tidak lolos, seperti 1b). Lolos (c) bila ≥ 18 / 20.
+- Blob dengan 0 wajah V1: crop tetap dijalankan dan dilaporkan, tidak masuk (c).
+- **Pose ganda pada orang yang sama** = ≥ 2 pose terdeteksi (≥ 4 / 6) dalam satu frame yang titik tengah bahunya berada di bagian orang yang sama. Diagnostik tambahan: titik lengan (skor ≥ 0,3) sebuah pose yang jatuh di bagian orang lain.
+- **Precision:** fp32 bila VRAM bebas ≥ 3300 MiB (ambang 1b), selain itu fp16 bila ≥ 2500 MiB, selain itu berhenti dengan pesan. OOM di tengah run fp32 → hasil fp32 dibuang dan ke-20 frame diulang dengan fp16 (dilaporkan). Titik wajah / kepala tetap dibuang di heatmap sebelum post-process (indeks 0–4 + 70–307); yang disimpan 5–69.
+- **Sampel:** 20 frame klip3 1b (f0, 19, 24, 30, 36, 42, 52, 60, 71, 82, 88, 96, 104, 120, 131, 139, 149, 159, 169, 178); semua dijalankan ulang (termasuk yang crop-nya sama dengan 1b), satu run.
+- **Pembanding "terdeteksi 1b"** = kolom V1 P2 di `metrics` 1b (pencocokan serakah, blob dilasi 10 px).
+- **Papan kecil** `work/t701/papan_1c/`: hanya frame yang crop-nya berubah dibanding 1b (= frame dengan blob ≥ 2 wajah V1); baris foto | P2 versi 1b (fp16, sama dengan papan 1b) | P2 versi 1c; urutan diacak seed **701003**; peta nomor di `work/t701_scratch/board_map_1c.json`. `PANDUAN.md`: `01: 1c benar` / `01: 1c salah` / `01: x`.
+- **Dilaporkan:** frame dengan jumlah wajah V1 ≠ jumlah blob; pose ganda; waktu per orang (crop) dan per frame; VRAM puncak reserved.
+
+### Hasil T-701 Tahap 1c (2026-10-14) — P2 crop per orang: (c) 20 / 20 LOLOS; menunggu penilaian papan 1c Rio
+Alat `scripts/t701_study.py` (`hash before_1c|after_1c`, `p2c [fp32|fp16]`, `metrics1c`, `board1c`); hasil `work/t701_scratch/{p2c_fp32,metrics_1c,board_map_1c}.json`; papan `work/t701/papan_1c/`. **Hash F1: 7121 berkas identik** (`before_1c` = `after_1b` = `after_1c`). Tanpa perubahan `src/` / `configs/` / `tests/`. Sebelum load: tidak ada proses python di GPU (`nvidia-smi`).
+**Precision: fp32** (VRAM bebas sebelum load 3317,7 MiB ≥ 3300; `nvidia-smi` 3365 MiB). Tanpa OOM → cadangan fp16 tidak dipakai. Titik wajah / kepala dibuang di heatmap sebelum post-process (disimpan 5–69).
+
+**Tabel per frame klip3** (wajah V1 · blob tubuh [wajah V1 per blob] · terdeteksi 1b = kolom V1 P2 `metrics` 1b · terdeteksi 1c = aturan 1c):
+
+| frame | wajah V1 | blob | terdeteksi 1b | terdeteksi 1c | crop berubah |
+|---|---|---|---|---|---|
+| f0 | 3 | 2 [1, 2] | 2 / 3 | **3 / 3** | ya |
+| f19, f24, f30, f36, f42, f52, f60 | 3 | 3 [1, 1, 1] | 3 / 3 | 3 / 3 | — |
+| f71 | 3 | 2 [2, 1] | 2 / 3 | **3 / 3** | ya |
+| f82, f88, f96, f104 | 3 | 1 [3] | 1 / 3 | **3 / 3** | ya |
+| f120 | 3 | 2 [1, 2] | 2 / 3 | **3 / 3** | ya |
+| f131, f139 | 2 | 2 [1, 1] | 2 / 2 | 2 / 2 | — |
+| f149, f159, f169, f178 | 1 | 1 [1] | 1 / 1 | 1 / 1 | — |
+
+**Frame dengan jumlah wajah V1 ≠ jumlah blob:** f0, f71, f82, f88, f96, f104, f120 (7) = tepat frame yang crop-nya berubah. Wajah V1 tanpa blob tubuh: 0. Semua 50 pose: ≥ 5 / 6 titik lengan skor ≥ 0,3, titik tengah bahu di bagian orangnya sendiri (aturan "bahu di dalam bagian" tidak menggagalkan satu pun).
+
+**Kriteria (c) 1c: ✔ 20 / 20** (syarat ≥ 18 / 20). Pembanding V1 1b (eksploratif): 13 / 20.
+**Pose ganda pada orang yang sama: 0.** Diagnostik (ditambahkan SETELAH run, bukan kriteria): **17 titik lengan di 7 frame berubah jatuh di bagian Voronoi orang lain**; jarak ke titik lengan terdekat pose pemilik bagian itu 16–178 px (median 46,7). 7 titik ≤ 30 px (16,2–29,5), semuanya pergelangan (41 / 62) di f71, f82, f88 (2), f96, f104 (2). Bisa tangan yang memang bersentuhan atau pergelangan orang sebelah yang terbaca dobel; tidak bisa dibedakan secara numerik → papan 1c.
+
+**Waktu / VRAM (fp32):** per crop mean 2,88 s, p50 2,68, p95 2,79 (n 50; crop pertama 12,83 s termasuk pemanasan CUDA); per frame mean 7,21 s, p50 7,99, p95 8,79 (n 20; 3 orang ≈ 8 s; 1b fp16: 14,64 / 25,36 s). Load 10,2 s; VRAM bebas setelah load 1681,7 MiB; **puncak reserved 3262,0 MiB** (alloc 3045,1), sama dengan fp32 1b. NaN / inf / jenuh 0, maks |h| 2,59. Pemeriksaan kesamaan: di 13 frame yang kotaknya sama dengan 1b, titik lengan 1b (fp16) vs 1c (fp32) p50 0,019 px, p95 0,047, maks 0,075 (n 170).
+
+**Papan 1c:** `work/t701/papan_1c/01.png … 07.png` (1668 × 1062; panel 540 × 960: foto | P2 1b fp16 | P2 1c fp32, titik skor ≥ 0,3, satu warna per crop) + `PANDUAN.md` (`01: 1c benar` / `01: 1c salah` / `01: x`); **7 frame** (semua frame yang crop-nya berubah), urutan seed **701003**; peta nomor di `work/t701_scratch/board_map_1c.json`. Dicek numerik (tidak dibuka): 7 nomor unik; piksel berwarna panel 1c 5461–6487 vs 1b 2246–4360 per gambar.
+
+**Catatan atas label papan 1b (pengamatan, bukan keputusan):** di 7 frame blob gabungan V1, P2 1b hanya punya satu pose per blob (orang lain tanpa titik), tetapi P2 ditandai benar di 5 (papan 04 = f0, 15 = f120, 21 = f82, 24 = f96, 26 = f104), 03 (= f88) dengan catatan "yang lain tidak", dan tidak ditandai hanya di 18 (= f71). Ini sejalan dengan kelemahan papan yang dicatat Rio. Papan 1b menggambar SEMUA pose yang dikembalikan P1 / semua kotak P2, termasuk pose P1 yang gagal aturan visibility (mis. f52 / f60), jadi (b) dan (c) tidak sebanding langsung.
+
+**Penyimpangan / keraguan:** (1) **(c) 20 / 20 sebagian besar mengikuti dari desain:** model top-down selalu mengeluarkan satu pose per crop, dan jumlah crop = jumlah wajah V1. Yang benar-benar diuji hanya "≥ 4 / 6 skor ≥ 0,3" (p5 skor lengan 1b 0,33–0,64, mudah lolos) dan "bahu di dalam bagian". Ketepatan titik di 7 frame berubah hanya bisa dinilai di papan 1c. (2) Acuan V1 didaftarkan sebelum 1c, tetapi aturannya dirumuskan setelah melihat data 1b. (3) Batas Voronoi = garis lurus antar centroid wajah: lengan yang melintasi batas terpotong dari bbox crop-nya (padding 1,25× processor menambah konteks); bagian terkecil f120 = 40 308 px (bbox x 529–719, menyentuh tepi kanan frame; orang yang wajahnya terpotong di tepi kanan, 1b). (4) Diagnostik titik lengan di bagian lain dibuat setelah run (`metrics1c` dijalankan ulang di CPU; GPU tidak diulang). (5) Satu eksekusi `metrics1c` terputus karena pipa tampilan PowerShell (exit 255, setelah `metrics_1c.json` tersimpan) → dijalankan ulang penuh; stdout run ulang disimpan ke folder scratchpad sesi Claude Code (di luar repo) lewat `>` agar bisa dibaca. (6) Panel 1b fp16 vs 1c fp32: selisih presisi diabaikan (0,019 px). (7) Perkiraan kasar (bukan ukuran): klip 182 frame dengan 3 orang ≈ 182 × 8 s ≈ 24 menit P2 fp32. (8) Disk: papan 1c 12,9 MiB, `p2c_fp32.json` 369 KiB. (9) Pelanggaran aturan tulis: tidak ada (berkas repo lewat Edit / Write, termasuk `PANDUAN.md`; berkas data ditulis skrip yang dijalankan).
+
+### Keputusan T-701 setelah Tahap 1c (2026-10-14)
+1. **Label papan 1c Rio:** 01–07 semuanya **"1c benar" (7 / 7)**; syarat ≥ 5 / 7 ditetapkan Rio sebelum penilaian (syarat itu tidak tertulis di docs/04 sebelum penilaian; dicatat sekarang). Peta nomor (seed 701003): 01 f104, 02 f88, 03 f96, 04 f71, 05 f120, 06 f0, 07 f82 (klip3).
+2. **Kesimpulan:** **P2 (Sapiens2-pose 0.4B) dengan crop per orang lolos (a), (b), (c)**: (a) fp32 3262 MiB / fp16 2298 MiB, NaN 0; (b) papan 1b P2 27 / 28 (21 frame dengan kotak sama di 1c, selisih titik ≤ 0,075 px) + papan 1c 7 / 7 di frame yang crop-nya berubah; (c) 20 / 20. **P1 ditolak. N hanya pelengkap.**
+3. **Tahap 2 = rekomendasi + rencana integrasi, TULIS SAJA:** tanpa GPU, tanpa perubahan `src/` / `configs/` / `tests/`, tanpa commit, klip asli tidak disentuh. T-701 belum ditutup dan scratch belum dihapus (setelah Rio memutuskan).
+
+### Rekomendasi T-701 + rencana integrasi (usulan, menunggu Rio) — 2026-10-14
+Semua angka dari T-701 (1b / 1c) atau run klip3 penuh ("Klip3 (observasi)"); yang belum diukur ditandai *perkiraan*. Istilah: **kapsul** = wilayah berbentuk pil di sekitar ruas bahu–siku dan siku–pergelangan (jarak ke ruas ≤ radius r); **relabel** = mengganti label grup piksel; **pita** = jalur sempit selebar ± w px di sekitar tepi kapsul.
+
+#### a) Opsi integrasi
+
+| opsi | inti | pro (data T-701) | kontra (data T-701) |
+|---|---|---|---|
+| **I0** tanpa integrasi | P2 diparkir | biaya 0; D-009 / D-010 utuh | masalah tetap: lengan baju menempel badan tanpa garis (`Upper_Arm` mentah 0 px di 18 pasangan orang × frame klip3) |
+| **I1** kapsul → relabel → `group_boundary` | pose → kapsul lengan → piksel `Upper_Clothing` di kapsul (dan di bagian orang itu) dilabeli ulang sebagai grup lengan sisi yang sama → batas digambar mesin `group_boundary` yang sudah ada; tanpa N | P2 lolos (a) / (b) / (c), papan 1c 7 / 7; getaran titik lengan p50 / p95 0,82 / 2,41 px (klip3), 0,75 / 3,77 (`test`); kernel temporal [3] dan mesin batas grup sudah ada; tanpa risiko lipatan N; garis dari batas wilayah (selaras D-001) | tepi dalam lengan = tepi kapsul **sintetis** (lebar dari aturan radius, bukan dari citra; aturan radius belum diukur); garis melintang di bahu (ujung kapsul) harus ditekan; 17 titik lengan jatuh di bagian orang lain (7 pergelangan ≤ 30 px dari titik lengan orang itu); siku yang mengarah ke kamera (ruas pendek) → kapsul buruk |
+| **I2** I1 + tempel ke tepi N / kedalaman (hibrida) | seperti I1, tetapi tepi kapsul digeser ke tepi N (atau tepi kedalaman) terkuat di pita ± w px; tanpa tepi kuat → tepi kapsul | garis mengikuti bukti citra di tempat yang ada; median E strok O 28,4° vs L 14,4°; pita sempit membatasi tempat lipatan bisa ikut | + stage N (30,6 mnt / klip); N tidak memisahkan lipatan (AUC 0,683 [0,538–0,830]) → lipatan di pita (siku, ketiak) bisa menarik tepi; kedalaman lengan baju klip3 ≈ badan (Diagnosis 2) → varian kedalaman tanpa sinyal di klip3; algoritma tempel + parameter baru |
+| **I3** tepi N di wilayah lengan = tipe strok baru | tepi N (NMS + histeresis seperti garis oklusi) hanya di dalam kapsul lengan → tipe strok baru (mis. `arm_edge`) | bukti citra; pemetaan kelas D-009 tidak berubah; tipe strok bisa diatur / dimatikan per style | "edge detection di dalam mask" = alternatif yang DITOLAK di D-009 / D-001; lipatan (AUC 0,68) → garis lipatan baju (dilarang style target); preseden kedipan: strok oklusi torso klip3 1241 / 1256 lipatan, 23% hidup 1 frame (T-305c); kontrak [4] / [5] / [6] berubah |
+| **I4** (tambahan) kapsul → ambang garis oklusi kedalaman | ambang T_high / T_low garis oklusi diturunkan di dalam kapsul (mesin oklusi yang ada) | tanpa N; tanpa relabel | klip3: kedalaman lengan baju ≈ badan → tidak ada tepi untuk diturunkan; menurunkan ambang = lebih banyak lipatan (T-305c: `strength_abs` AUC 0,609 [0,45–0,76]) |
+
+Varian yang dipertimbangkan dan tidak diusulkan: menggambar strok langsung dari kerangka (offset ruas) — itu "Pose-only", alternatif C yang ditolak di D-001 / D-002 (bentuk generik).
+
+#### b) Stage, kontrak, D-009 / D-010, temporal per opsi
+**I1**
+- **Stage baru [2d] `pose.py`** (GPU, proses sendiri; bergantung pada [2] karena butuh `seg/classmap`): crop per orang = blob tubuh + wajah V1 + Voronoi (desain 1c). Keluaran `pose/frame_%05d.json` (per orang: kotak crop, blob, dibagi / tidak, centroid wajah V1, titik 5–69 `[id, x, y, skor]`, precision), `pose/manifest.json` (model id, revision `73572e12…`, sha256 `model.safetensors`, tag + sha256 teks lisensi, kebijakan precision, indeks yang disimpan, aturan crop + parameter, identitas klip) dan `pose/frames.jsonl` (waktu, VRAM, NaN, jumlah orang, penanda wajah V1 ≠ blob). Aturan sama dengan [2] / [2c]: cek VRAM, resume per frame, manifest beda → tolak + `--restart --yes`, identitas klip, `HF_HUB_OFFLINE`, subperintah `download`. Urutan `run`: ingest → segment → depth → **pose** → stabilize → … Titik 0–4 dan 70–307 dibuang di heatmap, tidak pernah ke disk.
+- **[3] berubah:** input baru `pose/` (+ hash manifest di `stable/manifest.json`); blok config baru `arm_hint` (mis. `enabled`, `relabel_classes: [Upper_Clothing]`, `min_score` 0,3, aturan radius, `max_gap`); langkah baru sebelum kernel temporal grup: pelacakan orang antar frame → penghalusan titik → kapsul → pindahkan probabilitas grup `torso` piksel `Upper_Clothing` di kapsul ∩ bagian orang itu ke grup lengan sisi yang sama. Keluaran baru `stable/pose_smooth/frame_%05d.json` (titik halus + radius) untuk [4] dan diagnosis; `stable/frames.jsonl` + jumlah piksel relabel. `arm_hint.enabled: false` → `stable/` byte-identik dengan sekarang.
+- **[4] berubah sedikit:** `group_boundary` sudah menggambar batas lengan | torso; baru: penekanan garis melintang di ujung bahu kapsul (membaca `stable/pose_smooth/`, parameter `shoulder_gap_px`), hanya di piksel hasil relabel. Contract [4] naik → set contract yang diterima [5] / [6] diperbarui (pola T-305b / T-305c). Tidak ada tipe strok baru.
+- **docs/01:** kontrak [2d] baru; input / config / keluaran [3]; input + parameter [4]; diagram alur; anggaran waktu / VRAM / disk; CLI (`pose`, `--restart-from pose --yes`).
+- **D-009:** pemetaan `Upper_Clothing → torso` tetap, KECUALI di dalam kapsul lengan dari pose → grup lengan. "Tanpa garis batas baju–kulit" tetap berlaku (batas yang digambar = lengan | torso). Daftar model ditambah Sapiens2-pose 0.4B → CLAUDE.md aturan 1 dan 6 berubah; **fp32 3262 MiB reserved > batas 3 GB** → butuh pengecualian seperti seg 0.8B (fp16 2298 MiB di bawah batas tetapi 3,1× lebih lambat).
+- **D-010 / D-002:** peran pose baru = **petunjuk wilayah lengan**: bukan fallback, bukan primary. Siluet dan grup tetap dari seg; tanpa pose (dimatikan / orang tanpa pose) pipeline = sekarang. D-002 ("pose hanya fallback") perlu diubah teksnya. [2b] / T-501 / T-502 tetap BLOCKED (tujuan fallback QC berbeda); catatan untuk bila dibuka lagi: P1 MediaPipe gagal multi-orang di T-701 → pakai keluaran [2d].
+- **Temporal [3]: PERLU.** Pelacakan orang (titik tengah bahu, ≤ 15% tinggi orang, seperti studi) + penghalusan titik dengan kernel yang sama dengan grup (ρ^|k|, α 0,7 → R 2, dipotong di cut, bobot frame gagal QC); celah titik (skor < 0,3) ≤ R frame diisi dari tetangga, selebihnya kapsul tidak ada. Relabel dilakukan SEBELUM kernel temporal grup, sehingga tepi kapsul ikut dihaluskan kernel yang sudah ada.
+
+**I2** (= I1 ditambah)
+- **Stage baru [2e] `normal.py`** (GPU, proses sendiri; tidak bergantung pada [2]): Sapiens2-normal 0.4B fp16 → cadangan mixed (backbone fp16 + head fp32) → CPU fp32 (rantai yang diizinkan di 1b). Keluaran `normal/` (format diputuskan: normal mentah fp16 hanya foreground, atau E uint8; lihat c) + manifest + `frames.jsonl`; wajah dimasking sebelum disimpan.
+- **[3]:** input `normal/` (dan / atau `depth/`); langkah tempel di pita ± w px (jalur dengan E maksimum, mis. pemrograman dinamis atas profil geser sepanjang kapsul); E di bawah ambang → tepi kapsul; profil geser dihaluskan temporal. [4] sama dengan I1.
+- **D-009:** seperti I1 + Sapiens2-normal masuk daftar model. **D-010:** seperti I1. **Temporal:** seperti I1 + penghalusan profil geser (tepi N per frame bisa melompat antar lipatan).
+
+**I3**
+- **Stage:** [2d] + [2e]; [3] penghalusan temporal E di dalam kapsul (`stable/arm_edges/`); **[4] tipe strok baru** dari E di kapsul ∩ foreground (NMS + histeresis seperti garis oklusi, `track_id`); [5] parameter per tipe (`stroke.by_type.arm_edge`); [6] set contract.
+- **docs/01:** kontrak [2e], [3], skema strok [4] (tipe baru), [5], [6]; docs/02 parameter style tipe baru.
+- **D-009:** pemetaan kelas tidak berubah, tetapi bertentangan dengan alternatif yang ditolak "edge detection di dalam mask" (dan D-001) → butuh pembatalan eksplisit. **D-010:** seperti I1 + N. **Temporal:** paling berat: E per frame + garis lahir / mati (preseden T-305: strok oklusi torso berkedip).
+
+**I4**
+- **Stage:** [2d]; [3] menulis kapsul (`stable/pose_smooth/`); [4] ambang oklusi dikalikan faktor di dalam kapsul → contract [4] naik. **D-009:** konsep garis oklusi kedalaman tetap; daftar model + pose. **D-010:** seperti I1. **Temporal:** seperti I1.
+
+#### c) Anggaran — klip3 penuh (182 frame, 720 × 1280), dihitung untuk 3 orang di setiap frame
+klip3 nyata: 3 orang di f0–f120, 2 di f131–f139, 1 sejak f149 → angka per klip di bawah = batas atas.
+
+**Waktu T-701 lengkap (laporan 1b memotong baris ini):**
+
+| kandidat | n | mean | p50 | p95 | min / maks | load |
+|---|---|---|---|---|---|---|
+| P1 IMAGE (CPU) per frame | 28 | 0,108 s | — | 0,179 s | — | — |
+| P1 VIDEO (CPU) per frame | 24 | 0,075 s | — | 0,082 s | — | — |
+| P2 fp16 per frame (1b, 1–3 kotak) | 51 | 14,64 s | — | 25,36 s | — | 9,3 s |
+| P2 fp16 per kotak (1b) | 87 | 8,58 s | 8,44 s | 8,50 s | 8,33 / 19,86 s | — |
+| P2 fp32 per kotak (1b, 5 frame) | 10 | 3,12 s | 2,73 s | 4,88 s | 2,70 / 6,59 s | 7,4 s |
+| P2 fp32 per crop (1c) | 50 | 2,88 s | 2,68 s | 2,79 s | 2,60 / 12,83 s (pemanasan; tanpa crop pertama maks 2,83) | 10,2 s |
+| P2 fp32 per frame (1c, 1–3 crop) | 20 | 7,21 s | 7,99 s | 8,79 s | — | — |
+| **N fp16 per frame (1b, semua)** | 66 | **10,07 s** | 10,01 s | 10,08 s | 10,00 / 13,29 s | 4,1 s |
+| N fp16 per frame, klip3 / `test` | 46 / 20 | 10,10 / 10,02 s | 10,02 / 10,01 s | 10,08 / 10,07 s | — | — |
+
+N tidak bergantung pada jumlah orang (seluruh frame, input tetap 1024 × 768). N fp32 dan mixed belum diukur (perkiraan 1a: fp32 kemungkinan OOM).
+
+**GPU + total per frame / per klip:**
+
+| stage | model / precision | VRAM puncak reserved | per frame | per klip 182 | sumber |
+|---|---|---|---|---|---|
+| [2] seg | 0.8B fp16 | 3276 MiB | 16,85 s | 51,1 mnt | run klip3 |
+| [2c] depth | DA-V2 Small fp32 | 424 MiB | 0,28 s | 0,8 mnt | run klip3 |
+| [2d] pose | P2 fp32 | 3262 MiB | 3 × 2,68 = 8,04 s | 24,6 mnt | 1c |
+| [2d] pose cadangan | P2 fp16 | 2298 MiB | 3 × 8,44 = 25,3 s | 77,0 mnt | 1b |
+| [2e] normal | N fp16 | 2362 MiB | 10,07 s | 30,6 mnt | 1b |
+| [1] + [3]–[6] | CPU | — | — | 3,5 mnt (2,8 + 64,4 + 60,9 + 64,1 + 20,8 s) | run klip3 |
+| langkah `arm_hint` di [3] | CPU | — | *perkiraan* < 0,1 s | *perkiraan* < 0,3 mnt | belum diukur |
+
+| skenario | GPU per frame | total per klip | vs sekarang |
+|---|---|---|---|
+| I0 (sekarang) | 17,1 s | 55,5 mnt (3331 s) | — |
+| I1 / I4, pose fp32 | 25,2 s | 80,1 mnt | +44% |
+| I1 / I4, pose fp16 (cadangan) | 42,5 s | 132,5 mnt | +139% |
+| I2 / I3, pose fp32 + N fp16 | 35,2 s | 110,7 mnt | +99% |
+| I2 / I3, pose fp16 + N fp16 | 52,5 s | 163,1 mnt | +194% |
+
+**Disk per frame** (pose diukur dari 50 orang 1c; N dari 20 frame sampel klip3, dikompresi di memori, tidak ditulis):
+
+| data | format | per frame (3 orang) | per klip 182 |
+|---|---|---|---|
+| pose | npz float32, 65 titik × (x, y, skor) | 0,94 KiB / orang → 2,8 KiB | 0,5 MiB |
+| pose | JSON ringkas 2 desimal | 1,31 KiB / orang → 3,9 KiB | 0,7 MiB |
+| normal | format studi (normal fp16 + E fp16 + kode, npz) | 4,75 MiB (klip3, n 46) | 864 MiB |
+| normal | normal mentah fp16 hanya foreground, zlib | 1,49 MiB (p50 1,65; maks 1,82) | 271 MiB |
+| normal | E uint8 seluruh frame, zlib | 67 KiB (p50 72; maks 82) | 11,9 MiB |
+| normal | E uint8 hanya ≤ 60 px dari ruas lengan P2 (16,1% frame; ≤ 40 px: 10,6%, 24 KiB), zlib | 30 KiB (p50 30; maks 45) | 5,4 MiB |
+
+Pembanding klip3 sekarang: `seg/probs` 424 KiB / frame (75 MiB), `depth` 1,74 MiB (320 MiB), `stable/depth_smooth` 1,76 MiB (320 MiB). Prinsip D-010 butir 2 ("stage GPU menyimpan keluaran MENTAH") mengarah ke normal mentah fp16 foreground (≈ 271 MiB / klip, setara depth); E saja jauh lebih kecil tetapi sudah turunan.
+
+**VRAM:** satu model di GPU pada satu waktu → puncak tetap seg 0.8B 3276 MiB; pose fp32 3262, N fp16 2362, depth 424. VRAM bebas sebelum load di T-701: 3313,7–3317,7 MiB (run lama 3318–3526).
+**Cadangan fp32 → fp16 otomatis (usulan [2d]):** `pose.precision: auto`; saat stage mulai: bebas ≥ `pose.vram_min_free_fp32_mib` (3300) → fp32; ≥ `pose.vram_min_free_fp16_mib` (2500) → fp16; kurang → berhenti dengan pesan (seperti [2]). Margin 1c: bebas 3317,7 = 17,7 MiB di atas ambang (ruang nyata terhadap puncak 3262: 55,7 MiB) → di sesi dengan VRAM bebas < 3300 stage otomatis memakai fp16 (3,1× lebih lambat). OOM di tengah fp32 → proses keluar dengan kode khusus (melepas CUDA context, prinsip D-010 butir 3), `run` mengulang stage dengan fp16; frame fp32 yang sudah ada dipertahankan (resume). Precision dicatat per frame di `pose/frames.jsonl`; manifest mencatat kebijakan `auto`. Campur fp32 / fp16 dalam satu klip **dapat diterima untuk pose** karena selisih terukur kecil (titik lengan p50 0,019 px, p95 0,047, maks 0,075; n 59 + 170) — berbeda dengan seg (0.8B vs 0.4B = model lain, tidak dicampur). Keputusan Rio. N (I2 / I3): rantai fp16 → mixed → CPU fp32; waktu CPU fp32 belum diukur (*perkiraan* dari pointmap CPU 30,7 s / frame: ±93 mnt / klip).
+
+#### d) Risiko + mitigasi
+1. **Lipatan pada N (AUC 0,683 [0,538–0,830] tanpa bobot; tidak memisahkan):** I1 / I4 tidak memakai N. I2: tempel hanya di pita sempit, ambang E minimum, tepi harus bertahan ≥ 2 frame, kembali ke tepi kapsul bila tidak ada; uji ulang AUC di dalam pita pada unit T-305c sebelum dipakai. I3: risiko tertinggi (garis lipatan = dilarang style target).
+2. **Batas Voronoi lurus saat orang bersentuhan** (17 titik lengan di bagian orang lain; 7 pergelangan ≤ 30 px dari titik lengan orang itu; papan 1c tetap 7 / 7): relabel hanya di dalam bagian orang itu sendiri (kesalahan = garis hilang, bukan garis di badan orang lain); titik lengan yang jatuh di bagian lain DAN dekat titik lengan orang lain dibuang / diberi bobot kecil (ambang ditetapkan sebelum mengukur); pelacakan temporal menolak lompatan titik.
+3. **Acuan wajah V1** (kulit kaki berlabel `Face_Neck`; V1 = centroid di setengah atas blob): gagal pada orang tanpa wajah terlihat (membelakangi kamera) di blob gabungan → tidak dibagi → satu pose; anak / orang pendek di samping orang tinggi dalam satu blob bisa jatuh di setengah bawah. Mitigasi: parameter V1 di YAML; `pose/frames.jsonl` menandai blob dengan luas per wajah V1 jauh di atas median orang (peringatan, bukan gagal); evaluasi komponen `hair` di setengah atas blob sebagai benih tambahan (diukur di task [2d], bukan diasumsikan).
+4. **Lisensi Sapiens2** (larangan "biometric processing" tidak didefinisikan; Meta dapat mengubah lisensi sepihak; bukan OSI): titik kepala / wajah (0–4, 70–307) dibuang di heatmap dan tidak pernah ke disk (dites); area wajah N dimasking sebelum disimpan; revision dan sha256 di-pin; teks lisensi saat unduh disimpan sha256-nya di manifest (bukti versi syarat, bukan kepastian hukum); fitur opsional (`arm_hint.enabled`), sehingga pipeline tetap jalan tanpa pose bila lisensi berubah. Seg sudah memakai lisensi yang sama (risiko sama sudah diterima di D-009).
+5. **Disk C:** saat 1b ±17 GiB bebas; diukur saat menulis rencana ini **26,08 GiB** (perubahan di luar T-701, tidak diselidiki). Tambahan per klip: I1 +0,5–0,7 MiB; I2 / I3 +5 MiB (E pita) sampai +271 MiB (normal mentah foreground). Cache HF pose 1,59 GiB + normal 1,69 GiB sudah terpasang. Mitigasi: format ringkas; hapus `models/pose_landmarker_heavy.task` (29 MiB, P1 ditolak) dan cache normal (1,69 GiB) bila I2 / I3 tidak dipilih; hapus scratch T-701 (260 MiB) + papan (62 MiB) setelah penutupan; `paths.work_dir` ke drive lain.
+6. **Konvensi kiri / kanan pose vs seg** (`left_wrist` 62 vs kelas `Left_Hand`): belum diperiksa; relabel ke sisi yang salah membuat garis lengan kiri | kanan palsu di pergelangan → wajib diukur di task [3] sebelum dipakai.
+7. **Radius kapsul:** lebar lengan baju tidak diketahui dari pose. Calon aturan (diukur sebelum dipilih): jarak ruas ke siluet di sisi luar lengan (dicerminkan), lebar tangan dari seg, atau fraksi lebar bahu; batas atas = tidak melewati garis tengah badan.
+8. **Lengan menunjuk kamera / sangat pendek di gambar:** ruas < k px → kapsul tidak dibuat (garis hilang, bukan salah).
+9. **Waktu:** +44% (I1 fp32) sampai +194% (I2 / I3 fp16) per klip.
+
+#### e) Rekomendasi Claude Code (kandidat, BUKAN keputusan)
+**I1** (kapsul pose → relabel `Upper_Clothing` → `group_boundary`, tanpa N), dengan I2 sebagai tahap lanjutan BERSYARAT. Alasan:
+1. Hanya memakai komponen yang lolos semua kriteria terukur (P2: (a), (b) 27 / 28 + 7 / 7, (c) 20 / 20). N tidak lolos aturan pemisahan lipatan dan oleh Rio ditetapkan hanya pelengkap.
+2. Termurah: +24,6 mnt / klip (+44%) vs +55 mnt (+99%) untuk I2 / I3; disk +0,5 MiB.
+3. Memakai mesin yang sudah ada (`group_boundary`, kernel temporal [3]) → mekanisme baru paling sedikit; garis berasal dari batas wilayah (selaras D-001), bukan edge detection.
+4. Garis sintetis yang halus sepanjang lengan cocok dengan target "gesture drawing", dan getaran titik P2 kecil (p50 0,82 px).
+5. Bisa dibatalkan: `arm_hint.enabled: false` = byte-identik dengan sekarang.
+6. Bila papan evaluasi menunjukkan tepi kapsul salah tempat, I2 ditambahkan di atas I1 (bobot N sudah di cache).
+Menyimpang dari bingkai "hibrida P2 + N" di keputusan setelah 1b: N ditunda, tidak dibuang. Aturan radius dan konvensi kiri / kanan belum diukur — keduanya syarat di task [3].
+
+#### f) Usulan pemecahan task (satu stage per task; masuk docs/05 hanya setelah Rio setuju)
+- **T-702 · [2d] `pose.py` (Sapiens2-pose 0.4B, crop per orang).** *Done when:* (1) kontrak [2d] di docs/01 + keputusan baru (D-011) + CLAUDE.md aturan 1 / 6 / pengecualian VRAM disetujui Rio; (2) `python -m rotoscope pose <video>`, urutan `run`, `download` dengan pin (commit `73572e12…`, sha256 `f1b7b0e5…`, tag lisensi); (3) precision `auto` fp32 → fp16 (ambang YAML) + jalur OOM; (4) titik 0–4 / 70–307 tidak pernah ada di keluaran (test); (5) resume per frame, manifest beda → tolak, identitas klip, `--restart --yes`; (6) `tests/test_pose.py` (backend palsu: V1, Voronoi, indeks titik, resume, manifest) + seluruh test lama lolos; (7) run nyata klip3 + `test`: NaN 0; di 20 frame sampel klip3 (c) 20 / 20 dengan aturan 1c dan titik lengan ≤ 0,1 px dari referensi T-701 (precision sama); (8) hash stage lain tidak berubah.
+- **T-703 · [3] `arm_hint` di `stabilize.py` (pelacakan + penghalusan titik + kapsul + relabel).** *Done when:* (1) `arm_hint.enabled: false` → `stable/` byte-identik; (2) relabel hanya di `Upper_Clothing` ∩ kapsul ∩ bagian orang itu (test); (3) konvensi kiri / kanan pose vs seg diukur dengan ambang yang ditetapkan sebelum mengukur; (4) aturan radius dipilih dari data (kandidat + kriteria ditetapkan sebelum mengukur); (5) getaran tepi kapsul di jendela statis p95 ≤ X px (X ditetapkan sebelum mengukur), celah ≤ R diisi, cut dihormati; (6) kontrak `stable/pose_smooth/` di docs/01 + test `test_stabilize.py`.
+- **T-704 · [4] penekanan garis melintang bahu + contract.** *Done when:* batas lengan | torso hanya ditekan di dekat bahu DAN di piksel hasil relabel (batas lengan telanjang dari seg tidak tersentuh; test); contract [4] baru diterima [5] / [6]; dengan `arm_hint` mati `contours/` byte-identik; test lolos.
+- **T-705 · Evaluasi visual + default.** *Done when:* papan sebelum / sesudah (klip3, `test`, Klip2) dinilai Rio dengan kriteria yang ditetapkan sebelum menilai (usulan: lebih baik di ≥ 2/3 frame relevan dan 0 garis di badan orang lain); default `arm_hint.enabled` + D-011 final dicatat; anggaran waktu nyata klip3 dilaporkan.
+- **T-706 (bersyarat, hanya bila T-705 menunjukkan tepi kapsul salah tempat) · [2e] `normal.py` + tempel I2** — dipecah lagi menjadi T-706a ([2e]) dan T-706b ([3] tempel), masing-masing dengan Done-when sendiri.
+- Penutupan T-701 (F4: simpan data, hapus `T701-prompt.md` + scratch) dikerjakan setelah keputusan Rio, terpisah dari task di atas.
+
+#### g) Data T-701 yang perlu disimpan ke berkas ter-track sebelum scratch dihapus
+Usulan satu berkas **`scripts/t701_labels.json`** (pola `scripts/t305c_labels.json`, 34 088 B), *perkiraan* 10–15 KiB:
+
+| isi | sumber (scratch / work, ter-ignore) | ukuran sumber |
+|---|---|---|
+| label papan 1b Rio (28 baris + catatan 03) dan 1c (7 / 7) | docs/04 (sudah tercatat) | — |
+| peta papan 1b (seed 701002, 28 nomor → klip / frame) | `work/t701_scratch/board_map.json` | 1 573 B |
+| peta papan 1c (seed 701003, 7 nomor) | `work/t701_scratch/board_map_1c.json` | 441 B |
+| daftar sampel: klip3 20, `test` 8, frame N (klip3 46, `test` 20), jendela statis, 56 unit O / L | `work/t701_scratch/samples_1b.json` (lengkap dengan wajah / blob per frame) | 65 624 B |
+| pin model: `.task` (URL, generation, md5, crc32c, sha256, ukuran), pose / normal (repo, commit, sha256, ukuran), sumber indeks `keypoints308.py` (commit, sha256) | `work/t701_scratch/download.json` (+ docs/04) | 1 904 B |
+| tabel per frame 1b / 1c (wajah, wajah V1, blob, terdeteksi) + kriteria | `metrics.json` / `metrics_1c.json` | 27 277 / 33 781 B |
+| tabel AUC N + skor 56 unit | `metrics.json` | (termasuk di atas) |
+
+Opsional: **referensi titik 1c fp32** (50 orang × titik 5–69, 2 desimal, tanpa titik wajah) untuk Done-when T-702 butir 7 → ±67 KiB (sumber `p2c_fp32.json` 378 021 B).
+Tidak disimpan (dihapus bersama scratch; bisa dibuat ulang dari model yang di-pin): `normal_fp16/*.npz` 258,8 MiB, `p1.json` 216 757 B (P1 ditolak), `p2_fp16.json` 621 159 B, `p2_fp32.json` 75 727 B, `meta.json` 10 199 B, `samples.json` 34 525 B (isinya masuk berkas label). Di `work/t701/` (ter-ignore, bukan scratch): 6 daftar hash × 781 024 B, `download.json`, papan 49,0 MiB + papan 1c 12,9 MiB — tidak di-track (berisi frame video); dihapus atau disimpan sesuai keputusan Rio.
+
+### Keputusan T-701 setelah Tahap 2 (2026-10-14)
+Dicatat SEBELUM menjalankan apa pun di Tahap 3. Keputusan Rio atas rekomendasi Tahap 2:
+1. **Opsi I1.** N ditunda (I2 bersyarat, T-706); **I3 dan I4 ditolak.**
+2. **Prototipe I1 dulu (Tahap 3)** sebelum task produksi.
+3. **Kriteria prototipe:** Rio menilai garis lengan benar di ≥ 2/3 frame papan; tidak ada garis palsu yang mengganggu di dalam lengan baju; kedipan tidak lebih buruk dari base. **Bila gagal: T-701 ditutup dengan I0.**
+4. **Pengecualian VRAM pose fp32 disetujui**, dengan cadangan otomatis: fp32 bila bebas ≥ 3300 MiB, fp16 bila ≥ 2500 MiB, selain itu berhenti.
+5. **Satu precision per klip, tidak dicampur** (preseden D-005). OOM fp32 di tengah klip → seluruh klip diulang dengan fp16. Precision dicatat di manifest. (Usulan Tahap 2 "campur boleh" tidak dipakai.)
+6. **T-702–T-706 baru masuk papan setelah prototipe lolos.**
+7. **Saat penutupan:** simpan `scripts/t701_labels.json` + referensi titik 1c.
+
+Batas perintah Tahap 3: klip asli dan `out/` tidak berubah (hash F1 `before_3` / `after_3`); keluaran di `work/t701_scratch/` dan `work/t701/`; kode prototipe hanya di `scripts/`; tanpa perubahan `src/` / `configs/` / `tests/`; tanpa commit; berhenti setelah laporan.
+
+### Desain prototipe I1 (Tahap 3) — ditetapkan SEBELUM run (2026-10-14)
+Alat: `scripts/t701_proto.py` (`windows`, `pose`, `lr`, `arm`, `render`, `metrics`, `media`); hash F1 lewat `scripts/t701_study.py hash before_3|after_3`. Jendela dipilih dengan perintah `windows` (CPU, baca-saja) SEBELUM pose dijalankan.
+- **Jendela klip3 = f24–f47** (usulan Rio, lolos verifikasi). Cut [3] klip3: f49, 85, 126, 134, 146, 154, 166, 174 → tidak ada cut di dalam jendela. Di ke-24 frame: 3 wajah V1 = 3 blob tubuh terpisah, dan proksi "lengan baju menempel" (1a) 3 / 3 orang. Alasan memilih ini daripada f0–f23: f0–f23 punya 17 frame blob gabungan (bagian Voronoi) dan proksi lengan baju menempel hanya 54 orang × frame (f24–f47: 72), jadi f24–f47 menguji relabel lengan baju paling bersih. Memuat sampel 1b f24, f30, f36, f42 (papan 1b no. 25, 13, 07, 12). Batas: pembagian Voronoi tidak teruji di jendela ini.
+- **Jendela `test` = f175–f186**: aturan = 12 frame berurutan, tanpa cut, memuat satu sampel 1b, dengan jumlah frame skor "lengan di depan badan" (1a, fraksi cincin lengan berlabel torso) ≥ 0,5 terbanyak, lalu rata-rata skor tertinggi. Hasil: memuat f183 (papan 1b no. 22), 12 / 12 frame ≥ 0,5, rata-rata 0,930, minimum 0,848 (`test` tanpa cut).
+- **Pose:** P2 fp32 (cadangan: fp32 bila VRAM bebas ≥ 3300 MiB, fp16 bila ≥ 2500 MiB, selain itu berhenti; satu precision untuk seluruh run, OOM → seluruh run diulang fp16), crop per orang (desain 1c), titik 0–4 / 70–307 dibuang di heatmap. Hasil `work/t701_scratch/proto/pose.json`.
+- **Orang per frame** = bagian crop (dengan atau tanpa wajah V1) yang posenya punya ≥ 4 / 6 titik lengan dengan skor ≥ 0,3.
+- **Pelacakan:** penugasan optimal (Hungarian) berdasarkan jarak titik tengah bahu terhadap trek yang terakhir terlihat ≤ 3 frame lalu; cocok bila jarak ≤ 0,15 × tinggi kotak orang; selain itu trek baru.
+- **Titik dan penghalusan:** titik lengan (5, 6, 7, 8, 62, 41) valid bila skor ≥ 0,3. Bila tidak valid, dipakai titik valid terakhir paling lama 2 frame; sesudah itu titik hilang dan segmennya dihapus. Lalu kernel [3]: bobot ρ^|k|, ρ = (1 − α) / (1 + α) = 0,176 (α 0,7), R 2, atas frame trek yang punya nilai, dinormalisasi; di tepi jendela kernel terpotong.
+- **Kapsul** per segmen bahu–siku (5–7, 6–8) dan siku–pergelangan (7–62, 8–41); piksel termasuk bila jaraknya ke segmen ≤ r. Segmen hanya ada bila kedua ujungnya ada.
+  - **R1:** r = 0,17 × jarak bahu kiri–kanan (titik halus) di frame itu. Bila salah satu bahu hilang, dipakai median jarak bahu trek itu di jendela.
+  - **R2 (cermin):** sampel tiap 4 px di 15–85% panjang segmen (sampel harus di foreground peta grup base). Dari tiap sampel ditarik sinar tegak lurus ke kedua sisi sampai 3 × r_R1. Hanya sinar yang mengenai background yang dihitung (jarak = langkah pertama di background − 0,5 px); sinar yang keluar frame tidak dihitung. r = median jarak itu. Bila < 3 sinar mengenai background (mis. lengan di depan badan), R2 tidak terukur dan dipakai R1 (dicatat). Nilai r per trek-segmen lalu dihaluskan dengan kernel yang sama (tambahan saya, supaya tepi tidak bergetar karena r per frame).
+- **Relabel:** piksel dengan peta grup base = torso DAN kelas seg mentah = `Upper_Clothing` DAN di dalam kapsul DAN di bagian crop (Voronoi / blob) orang itu → grup lengan. Sisi lengan mengikuti konvensi kiri / kanan yang diukur. Piksel yang masuk dua kapsul → segmen dengan sumbu terdekat.
+  - **Konvensi kiri / kanan diukur dulu:** di cakram berjari-jari 0,02 × tinggi frame di sekitar titik pergelangan (skor ≥ 0,3), di dalam bagian orang itu, dihitung piksel seg `Left_Lower_Arm` + `Left_Hand` vs `Right_Lower_Arm` + `Right_Hand`. Suara "sama" bila sisi mayoritas = sisi titik pose. Konvensi sah bila ≥ 90% suara yang menentukan searah; bila tidak, berhenti dan dilaporkan. Diukur di 36 frame jendela + 20 frame 1c.
+- **Aturan tutup bahu:** di cakram berjari-jari (r + 2 px) di sekitar titik bahu halus tiap segmen bahu–siku, piksel band `group_boundary` pasangan torso | lengan yang bersebelahan (3 × 3) dengan piksel hasil relabel orang itu dibuang SEBELUM thinning. Batas lengan lama (dari seg) dan pasangan grup lain tidak tersentuh. Diterapkan lewat patch `pair_skeletons` di proses [4] prototipe; kode [4] tidak berubah.
+- **Render:** salinan scratch per varian × klip (`work/t701_scratch/proto/<varian>/<klip>/`: `meta.json`, `qc_report.json`, `stable/` dengan `groups` DISALIN dan `depth_smooth` di-hard-link). Peta grup jendela dilabeli ulang SESUDAH [3]; ini penyederhanaan prototipe, karena produksi (T-703) merelabel sebelum kernel temporal grup. Lalu [4] `--limit` akhir jendela + 1, dan [5] / [6] `--from K --limit N`, dengan config = `configs/default.yaml` (hanya `out_dir` ke scratch) dan style default `rough-sketch`. **Tiga versi:** base (salinan tanpa relabel, harus identik dengan produksi), R1, R2.
+- **Bahan penilaian** di `work/t701/proto/`:
+  - per jendela, MP4 berdampingan base | R1 | R2 (hasil [6], kertas bertekstur): kecepatan normal diulang 3× dan lambat 0,5× (tiap frame dua kali);
+  - papan 12 frame (6 per jendela, jarak rata termasuk frame pertama / terakhir), urutan acak seed **701004**, baris foto | base | R1 | R2 dari PNG [5] (kertas datar);
+  - `PANDUAN.md`.
+- **Metrik** per varian × jendela:
+  - piksel relabel per frame;
+  - strok `group_boundary` baru per frame: torso | lengan dengan ≥ 50% titik ≤ 2 px dari piksel relabel;
+  - kelahiran strok per frame (semua strok dan strok baru; (tipe, `track_id`) di t yang tidak ada di t−1, di dalam jendela);
+  - pop energy total (`tests/temporal_metrics.py`) dan pop energy strok baru (panjang lahir + mati strok baru / panjang semua strok);
+  - % frame trek dan segmen ada;
+  - porsi R2 yang jatuh ke R1;
+  - konvensi kiri / kanan;
+  - waktu P2 per frame dan langkah `arm_hint` per frame (CPU: lacak + haluskan dibagi rata, R2, kapsul + relabel + masker).
+
+### Hasil T-701 Tahap 3 (2026-10-14) — prototipe I1 dirender; menunggu penilaian Rio
+Alat `scripts/t701_proto.py`; hasil `work/t701_scratch/proto/{windows,pose,lr,arm,metrics,board_map_proto}.json`, salinan per varian `proto/{base,R1,R2}/{klip3,test}/`, log `proto/logs/`; bahan `work/t701/proto/`. **Hash F1: 7121 berkas identik** (`before_3` = `after_1c` = `after_3`). Tanpa perubahan `src/` / `configs/` / `tests/`. Sebelum load tidak ada proses python di GPU. **Jalur scratch terverifikasi:** base di scratch = produksi di jendela (`contours` JSON byte-identik 24 / 24 klip3 dan 12 / 12 `test`; PNG [5] identik 24 / 24 dan 12 / 12).
+
+**Jendela:** klip3 f24–f47 (24 frame, 3 orang), `test` f175–f186 (12 frame, 1 orang); rincian di "Desain prototipe I1".
+**Pose:** **fp32** (VRAM bebas 3317,7 MiB ≥ 3300), 84 crop, NaN / inf 0, puncak reserved 3262 MiB. Per frame: klip3 mean 8,56 s (p50 8,19, p95 8,22; frame pertama 17,4 s karena pemanasan CUDA), per crop p50 2,72 s; `test` 2,78 s / frame.
+**Konvensi kiri / kanan pose vs seg = SAMA** (`left_*` pose = `Left_*` seg): 258 pergelangan → 184 sama, 3 terbalik, 71 tak tentu (tanpa piksel kulit lengan bawah / tangan di cakram) → 98,4% dari suara yang menentukan. Per set: jendela klip3 96 / 0 / 44; jendela `test` 24 / 0 / 0; 20 frame 1c 64 / 3 / 27 (95,5%).
+**Pelacakan / segmen:** klip3 3 trek, ada di 24 / 24 frame. Semua segmen ada di 100% frame, kecuali lengan bawah kanan orang paling kiri: 83,3%, karena hilang di f24–f27 (skor pergelangan 0,22–0,26 < 0,3 di awal jendela, tanpa titik valid sebelumnya) lalu muncul di f28. Aturan tahan 2 frame tidak pernah terpakai. `test` 1 trek, semua segmen 100%.
+**Radius:** klip3 r_R1 median 24,6 px, r_R2 mentah median 27,5 px; `test` 20,7 / 22,5 px. **R2 jatuh ke R1:** klip3 44 / 284 segmen-frame (15,5%; semuanya lengan kanan pose: atas 24 / 72, bawah 20 / 68); `test` 5 / 48 (10,4%; lengan atas kiri).
+
+**Tabel metrik** (per frame di jendela; kelahiran dan pop energy atas pasangan frame berurutan di dalam jendela):
+
+| ukuran | klip3 base | klip3 R1 | klip3 R2 | `test` base | `test` R1 | `test` R2 |
+|---|---|---|---|---|---|---|
+| piksel relabel / frame (mean, min–maks) | — | 60 613 (51 804–66 258) | 77 646 (66 920–84 665) | — | 4 378 (3 099–5 122) | 5 308 (4 231–6 052) |
+| strok `group_boundary` / frame (semua) | 42,3 | 57,2 | 59,5 | 8,9 | 14,1 | 13,8 |
+| strok `group_boundary` baru / frame (min–maks) | 0 | 16,6 (13–26) | 19,3 (15–24) | 0 | 4,7 (3–8) | 4,3 (3–7) |
+| panjang strok baru p50 (p10–p90) px; % < 30 px | — | 75 (8–303); 35% | 51 (7–293); 39% | — | 28 (8–159); 54% | 28 (7–185); 56% |
+| porsi panjang strok baru | — | 14,7% | 13,8% | — | 7,9% | 8,1% |
+| kelahiran strok / frame (semua) | 8,48 | 12,65 | 13,30 | 1,36 | 3,27 | 2,91 |
+| kelahiran strok baru / frame | — | 4,00 | 4,04 | — | 1,55 | 1,36 |
+| pop energy total (mean) | 0,0680 | 0,0761 | 0,0779 | 0,0896 | 0,1176 | 0,1154 |
+| pop energy `group_boundary` | 0,0170 | 0,0308 | 0,0259 | 0,0202 | 0,0458 | 0,0427 |
+| pop energy strok baru | — | 0,0142 | 0,0084 | — | 0,0310 | 0,0203 |
+| strok oklusi / frame | 6,08 | 3,67 | 5,58 | 0,17 | 0,50 | 0,50 |
+| langkah `arm_hint` CPU / frame (mean / p95) | — | 0,043 / 0,045 s | 0,054 / 0,057 s | — | 0,008 / 0,009 s | 0,011 / 0,013 s |
+
+Waktu `arm_hint` = lacak + haluskan (dibagi rata; klip3 0,13 ms / frame) + ukur R2 + kapsul + relabel + masker, tanpa baca input (baca classmap / peta grup + hitung ulang bagian crop: klip3 0,065 s / frame, `test` 0,012 s / frame).
+
+**Bahan penilaian** (`work/t701/proto/`):
+- `klip3_normal_3x.mp4` (72 frame), `klip3_lambat_0.5x.mp4` (48 frame), `test_normal_3x.mp4` (36), `test_lambat_0.5x.mp4` (24); 1668 × 1062, 24 fps, yuv420p (diperiksa ffprobe).
+- `papan/01.png … 12.png` (2220 × 1062): 6 frame per jendela (klip3 f24, 29, 33, 38, 42, 47; `test` f175, 177, 179, 182, 184, 186), urutan seed **701004**, peta di `work/t701_scratch/proto/board_map_proto.json`. Dicek numerik: setiap gambar R1 / R2 berbeda dari base (11 926–45 231 piksel PNG [5] berbeda).
+- `PANDUAN.md`.
+
+**Pengamatan / keraguan:**
+1. **Ukuran kedipan R1 / R2 LEBIH TINGGI dari base:** kelahiran strok klip3 +49% / +57%, `test` +140% / +113%; pop energy total klip3 +12% / +15%, `test` +31% / +29%. Kriteria (c) dinilai Rio dari video; angka ini dilaporkan sebagai pembanding.
+2. **Strok baru banyak dan sebagian pendek** (klip3 16–19 per frame untuk 3 orang; 35–56% < 30 px): batas `Upper_Clothing` ∩ kapsul bergerigi / terpecah. Bisa tampak sebagai garis palsu atau kedipan; dinilai Rio di (b) / (c).
+3. **Strok oklusi klip3 turun** 6,08 → 3,67 (R1) / 5,58 (R2) per frame: aturan jarak garis oklusi ke batas grup (D / D_low) memotong garis oklusi di dekat batas baru. Garis yang hilang bisa lipatan, bisa garis sah; belum diperiksa.
+4. Relabel dilakukan SESUDAH [3] (penyederhanaan prototipe). Produksi yang merelabel sebelum kernel temporal grup mungkin lebih stabil; belum diukur.
+5. Penghalusan r R2 per trek-segmen adalah tambahan saya (tercatat di desain sebelum run).
+6. Pembagian Voronoi tidak teruji (jendela klip3 tanpa blob gabungan).
+7. Tafsiran kriteria "≥ 2/3 frame papan" (perlu konfirmasi Rio): per varian, atas frame relevan (`x` tidak dihitung, seperti 1b); tanpa `x` → ≥ 8 / 12.
+8. Disk: scratch prototipe ±130 MiB (ditambah 1,62 GiB `depth_smooth` hard link, tanpa ruang tambahan), bahan 18,6 MiB; C: bebas 25,69 GiB.
+9. Pelanggaran aturan tulis: tidak ada (berkas repo lewat Edit / Write, termasuk `PANDUAN.md` dan `scripts/t701_proto.py`; `cfg.yaml`, salinan, masker, MP4, PNG ditulis skrip yang dijalankan; stdout `metrics` disalin ke scratchpad sesi di luar repo lewat `>`; skrip cek baca-saja di scratchpad sesi).
+
+### Keputusan akhir T-701 (2026-10-14) — DONE, hasil I0 (tanpa integrasi)
+
+- **Penilaian Rio atas prototipe I1 (Tahap 3):** R1 dan R2 **lebih buruk dari base di kedua video** (klip3 f24–f47, `test` f175–f186). (b) potongan garis pendek / palsu di dalam lengan baju: **ya** untuk R1 dan R2. (c) kedipan dibanding base: **lebih buruk** untuk keduanya. (d) bentuk lengan kaku / generik: **ya** untuk keduanya. Papan (a) per frame tidak diisi, karena penilaian keseluruhan sudah jelas. Arah penilaian sama dengan ukuran Tahap 3 (kelahiran strok klip3 +49% / +57%, `test` +140% / +113%; 35–56% strok baru < 30 px), tetapi keputusannya berdasar penilaian visual Rio.
+- **Kriteria prototipe** (Keputusan setelah Tahap 2 butir 3) gagal pada "tanpa garis palsu yang mengganggu" dan "kedipan tidak lebih buruk dari base" → sesuai aturan yang ditetapkan sebelum run, T-701 ditutup dengan I0. Tafsiran "≥ 2/3 frame papan" (keraguan 7 Tahap 3) tidak perlu dikonfirmasi lagi.
+- **Cabang iterasi tidak dipilih** (mis. relabel sebelum kernel temporal, tepi kapsul yang dihaluskan, aturan radius lain), karena iterasi tidak menyentuh masalah (d): bentuk kapsul tetap sintetis.
+- **Hasil: I0.** D-009 / D-010 tidak berubah; tidak ada kode produksi; T-702–T-706 tidak dibuat. **Lengan baju panjang yang menempel badan tetap tanpa garis = BATAS YANG DIKETAHUI** (penyebab D-009: lengan baju `Upper_Clothing` → grup torso, kedalaman ≈ badan; "Klip3 (observasi)" → "Diagnosis 2" butir a).
+- **Kandidat:** **P1** (MediaPipe Pose Landmarker Heavy) **ditolak** (1b: (c) gagal jauh, confidence / getaran buruk, multi-orang di luar cakupan model card). **P2** (Sapiens2-pose 0.4B, crop per orang) **lolos (a) / (b) / (c) sebagai detektor titik** (fp32 3262 MiB, NaN 0; papan 1b 27 / 28 + papan 1c 7 / 7; (c) 20 / 20; konvensi kiri / kanan sama dengan seg 98,4%), **tetapi I1 ditolak secara visual.** **N** (Sapiens2-normal 0.4B) **tidak memisahkan lipatan** (AUC gabungan 0,683 [0,538–0,830] tanpa bobot).
+- **Ide yang diparkir: I2** (tepi kapsul ditempelkan ke tepi N). **Syarat membukanya lagi:** ada alasan baru yang menjawab masalah "kaku / generik" dan risiko lipatan (AUC N 0,68). I3 dan I4 tetap ditolak (Keputusan setelah Tahap 2).
+- **Pengecualian VRAM pose fp32 tidak berlaku**, karena tidak ada integrasi. CLAUDE.md tidak diubah.
+- **D-002:** ditambah satu baris konfirmasi (teks lama tidak diubah). T-501 / T-502 tetap BLOCKED; catatan bila dibuka lagi: P1 MediaPipe gagal multi-orang di T-701.
+- **Data yang disimpan** (ter-track, dibuat SEBELUM scratch dihapus):
+  - `scripts/t701_labels.json` (31 606 B):
+    - label papan 1b (28 + catatan 03, seed 701002) dan 1c (7 / 7, seed 701003), peta nomor → klip / frame, peta papan prototipe (seed 701004) + penilaian Rio;
+    - daftar sampel: klip3 20, `test` 8, frame N 46 / 20, adegan + cut klip3, jendela statis, 25 kandidat jendela prototipe klip3, skor jendela `test`;
+    - pin model: `.task` (URL, generation, md5, crc32c, sha256); pose dan normal (repo, commit, ukuran berkas, sha256); sumber indeks `keypoints308.py` (commit + sha256);
+    - tabel per frame 1b (28) dan 1c (20) + 17 titik lengan yang jatuh di bagian orang lain; metrik 1b / 1c;
+    - AUC N + skor 56 unit;
+    - ringkasan metrik prototipe (per varian × jendela, trek, radius, R2 → R1, kiri / kanan) + penilaian Rio.
+  - `scripts/t701_ref_points_1c.json` (75 427 B): referensi titik 1c fp32, 50 orang × titik 5–69 (x, y 2 desimal; skor 3 desimal) + bbox crop. Tanpa titik wajah / kepala: 0–4 dan 70–307 tidak pernah ditulis ke disk.
+  - Isi kedua berkas disusun oleh skrip baca-saja di folder scratchpad sesi (di luar repo), lalu ditulis lewat Write. Dicek byte-identik dengan keluaran skrip, dan dicek silang dengan scratch asli (peta papan, pin model, 56 unit, AUC; titik: selisih pembulatan maks 0,005 px, skor 0,0005).
+- **Model studi dihapus:** `models/pose_landmarker_heavy.task` (30 664 242 B) + cache HF `facebook/sapiens2-pose-0.4b` (1 702 780 676 B) dan `facebook/sapiens2-normal-0.4b` (1 813 484 313 B) = **3 546 929 231 B (3,30 GiB)**; C: bebas naik 3,30 GiB (23,85 → 27,16 GiB). Cache seg 0.8B (`196a627b…`), seg 0.4B (`449b3c53…`) dan DA-V2 Small (`5426e4f0…`) tidak disentuh: nama, ukuran dan mtime berkas snapshot sama sebelum / sesudah (`model.safetensors` 3 310 187 452 / 1 626 451 404 / 99 173 660 B), dan pemeriksaan cache milik pipeline (`ensure_cached`, offline) lolos untuk ketiganya. Folder kunci kosong di `.locks/` dan cache xet (±437 KiB) tidak disentuh. Bobot bisa diunduh ulang dari pin di `scripts/t701_labels.json` (`scripts/t701_study.py download`).
+- **Pembersihan (F4):** `T701-prompt.md` dan `work/t701_scratch/` dihapus (C: +396 MiB). 1395 berkas `depth_smooth` di salinan prototipe adalah hard link; berkas produksi tetap utuh (dibuktikan F1). `work/t701/` (ter-ignore, 87 MiB) dipertahankan sebagai arsip: papan 1b (28) + papan 1c (7) + bahan prototipe (4 MP4 + papan 12 + `PANDUAN.md`), daftar hash F1, `download.json`. C: bebas setelah penutupan 27,10 GiB dari 475,47 (sempat 27,54 GiB tepat setelah scratch dihapus; penurunan sesudahnya bukan dari T-701, karena langkah setelahnya hanya membaca).
+- **Skrip yang bergantung pada data scratch yang dihapus:**
+  - `scripts/t701_study.py` `samples1b`, `p1`, `p2`, `normal`, `metrics`, `board`, `p2c`, `metrics1c`, `board1c`: butuh `samples.json` / `samples_1b.json` / keluaran model di scratch. Bisa dibangun ulang berurutan (`samples` → `download` → `samples1b` → …); karena bobot sudah dihapus, `download` mengunduh ulang ±3,3 GiB.
+  - Seluruh `scripts/t701_proto.py`: `windows` butuh `samples_1b.json`, `pose` butuh `windows.json`, `lr` butuh `pose.json` + `p2c_fp32.json`, sisanya (`arm`, `render`, `vectorize`, `metrics`, `media`) butuh `proto/`.
+  - Mandiri: `t701_study.py hash` (hanya klip + `work/t701/`), `meta` dan `samples` (membuat scratch baru), `download` (mengunduh lagi).
+- **Hash F1 penutupan:** sha256 4 klip + 4 `qc_report.json` + `out/` = **7121 berkas identik dengan `after_1c`**. Dihitung setelah semua penghapusan, dengan fungsi hash `t701_study.py`, tanpa menulis daftar baru.
+- **Aturan tulis:** semua berkas repo (docs/04, docs/05, kedua JSON) lewat Edit / Write; penghapusan lewat `rm` atas permintaan Rio; skrip cek baca-saja di scratchpad sesi.
 
 ## Pitfall yang sudah diketahui
 
