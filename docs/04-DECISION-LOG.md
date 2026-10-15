@@ -2327,6 +2327,224 @@ Waktu `arm_hint` = lacak + haluskan (dibagi rata; klip3 0,13 ms / frame) + ukur 
 - **Hash F1 penutupan:** sha256 4 klip + 4 `qc_report.json` + `out/` = **7121 berkas identik dengan `after_1c`**. Dihitung setelah semua penghapusan, dengan fungsi hash `t701_study.py`, tanpa menulis daftar baru.
 - **Aturan tulis:** semua berkas repo (docs/04, docs/05, kedua JSON) lewat Edit / Write; penghapusan lewat `rm` atas permintaan Rio; skrip cek baca-saja di scratchpad sesi.
 
+### Keputusan T-305 induk Tahap 1 (uji klip baru), 2026-10-15
+
+Dicatat SEBELUM run. Konteks: semua kalibrasi sejauh ini berasal dari 3 klip (`test`, Klip2, klip3). Tahap ini menjalankan pipeline default pada 2–3 klip baru dari konten nyata Rio. Rio lalu memilih masalah yang paling mengganggu, sehingga task kalibrasi berikutnya dipilih berdasarkan data.
+
+**Keputusan Rio (final, 2026-10-15):**
+1. 2–3 klip baru, masing-masing ≤ 10 detik (≤ 240 frame setelah 24 fps), isi bervariasi, mewakili konten Rio, hak pakai jelas.
+2. Config default apa adanya; tanpa perubahan `src/`, `configs/`, `tests/`.
+3. Klip baru tidak boleh ter-commit (dipastikan ter-ignore).
+4. Metrik otomatis per klip, dibandingkan dengan `test`, Klip2, klip3 (klip lama dari data yang ada, tanpa run ulang): frame gagal QC + alasannya; cut terdeteksi; ukuran subjek (median % foreground peta stabil); jumlah orang (median blob besar QC dan median wajah V1 T-701); T_high / T_low; strok oklusi per frame; kelahiran strok per frame; frame tanpa oklusi %; waktu per stage; VRAM puncak.
+5. Bahan penilaian per klip: MP4 hasil + video berdampingan (foto | hasil), normal dan lambat 0,5×.
+6. Template penilaian Rio: 3 masalah paling mengganggu dari daftar (garis berkedip; lipatan baju; lengan menempel tak bergaris; tangan / kaki hilang; garis putus-putus; siluet salah; garis terlalu banyak; garis terlalu sedikit; gaya terlalu rapi; gaya terlalu kasar; lainnya) + detik kejadiannya, dan nilai 1–5 "siap dipakai untuk konten?".
+7. Hasil = daftar prioritas; Rio memilih task kalibrasi berikutnya.
+
+**Aturan:** semua berkas repo hanya lewat Edit / Write (tanpa `python -` / `python -c` penulis berkas, `cat >>`, `sed`, heredoc, `printf`, `echo >`, `Set-Content`; keluaran skrip dan pipeline yang dijalankan boleh); tanpa commit; tidak membuka PNG / MP4; penolakan classifier dilaporkan, tidak disiasati. GPU: satu klip pada satu waktu, mengikuti pengecekan VRAM pipeline (seg 0.8B butuh ≥ 3300 MiB bebas; bila kurang → berhenti, Rio menutup aplikasi lain); run terputus → resume, tidak mulai dari nol. **F1** `work/t305/`: sha256 `work/clips/{test,test_short,Klip2,klip3}/{frames,seg,depth,stable,contours,strokes}/` + 4 `qc_report.json` + berkas `out/` milik 4 klip lama, sebelum / sesudah identik; berkas baru di `out/` hanya boleh milik klip baru. Bahan penilaian `work/t305/nilai/`; scratch `work/t305_scratch/` bila perlu; skrip `scripts/t305_newclips.py` (memakai ulang alat yang ada: `tests/temporal_metrics.py`, fungsi hash / wajah V1 `scripts/t701_study.py`, kelahiran oklusi `scripts/t305d_stage3.py`).
+
+**Inventaris (4.1, CPU, sebelum run; ffprobe + hitung frame ffmpeg `fps=24`):** video baru di `samples/` selain `test`, `test_short`, Klip2, klip3: **klip4.mp4** (720 × 1280 9:16, 30 fps, video 9,067 s / format 9,159 s, H.264 + AAC, 1 906 677 B → **217 frame** di 24 fps) dan **klip5.mp4** (720 × 1280 9:16, **60 fps**, video 5,533 s / format 5,613 s, H.264 + AAC, 2 052 398 B → **133 frame**). `samples/person.jpg` = gambar, bukan video. Keduanya sudah ter-ignore (`git check-ignore -v`: `.gitignore:14:samples/*`) → `.gitignore` tidak diubah. Perkiraan GPU (±16,5 s / frame seg + depth): klip4 ≈ 60 menit, klip5 ≈ 37 menit (+ [3]–[6] ≈ 1,45 s / frame menurut klip3: ≈ 5 / 3 menit). Disk (acuan klip3 720 × 1280: `work/clips/klip3` 5,70 MB / frame, `out/svg/klip3` 0,42 MB / frame): klip4 ≈ 1,33 GB, klip5 ≈ 0,81 GB, bahan penilaian ≤ 0,2 GB; C: bebas 29,82 GiB → ≈ 27,6 GiB sesudahnya. Kondisi berhenti (klip baru < 2; klip > 10 s; C: < 10 GiB) tidak terpenuhi. Hak pakai dan "isi bervariasi / mewakili konten" = pernyataan Rio, tidak bisa saya periksa (tidak membuka video).
+
+### Hasil T-305 induk Tahap 1 (uji klip baru), 2026-10-15 — menunggu penilaian Rio
+
+**Run (4.2), config default apa adanya** (style `rough-sketch`, seg 0.8B fp16, DA-V2 Small fp32, kertas default, `export.audio` false → MP4 tanpa suara), lewat `scripts/t305_newclips.py run KLIP` (= `python -m rotoscope run samples/KLIP.mp4 --yes` + log + sampel `nvidia-smi` tiap 2 s → `work/t305/run/`):
+- **klip4, percobaan 1** (2026-10-15T04:16:34Z, dijalankan Claude Code di latar belakang): **dihentikan oleh Claude Code** (RAM sistem kritis saat sesi menunggu; bukan galat pipeline) di segment 61 / 217 (f0–f60 tersimpan). Pembungkus ikut terhenti, jadi tidak ada catatan `klip4.json` / `klip4_vram.csv` untuk percobaan ini; log-nya ada di `klip4.log` (baris 1–129).
+- **klip4, percobaan 2** (04:38:30Z, dijalankan Rio di jendela PowerShell terpisah dengan perintah yang sama): **resume** (segment "61 valid dilewati, 156 diproses"), rc 0, wall 3052,5 s.
+- **klip5** (05:51:21Z, dijalankan Rio di PowerShell terpisah): 1 percobaan, rc 0, wall 2427,2 s. Stage [2] mencetak PERINGATAN 6 / 133 frame gagal QC; run berlanjut sesuai desain.
+- Pengecekan VRAM pipeline (`torch.cuda.mem_get_info`): bebas sebelum muat 3313,7 MiB di semua percobaan (≥ 3300) → seg 0.8B, tanpa fallback 0.4B. Tidak ada OOM.
+
+**Waktu dan VRAM** (wall per stage dari baris "Waktu per stage" percobaan terakhir; s / frame = rata-rata `total_s` per frame dari `frames.jsonl` tiap stage, catatan terakhir per frame, termasuk percobaan 1 klip4; untuk klip lama = run terakhir tiap stage):
+
+| klip | wall [1] / [2] / [2c] / [3] / [4] / [5] / [6] (s) | s / frame [2] · [2c] · [3] · [4] · [5] | VRAM puncak seg / depth (reserved, torch) | `nvidia-smi` used puncak (semua proses, dari 4096) |
+|---|---|---|---|---|
+| test | — | 16,47 · 0,21 · 0,146 · 0,079 · 0,173 | 3276,0 / 424,0 MiB | — |
+| Klip2 | — | 16,35 · 0,207 · 0,120 · 0,063 · 0,082 | 3276,0 / 424,0 MiB | 3937 MiB ("Klip2 (observasi)", sampel 5 s) |
+| klip3 | — | 16,68 · 0,227 · 0,387 · 0,417 · 0,449 | 3276,0 / 424,0 MiB | 3913 MiB ("Klip3 (observasi)") |
+| klip4 | 1,5 / 2766,9 (156 f) / 61,2 / 83,6 / 52,8 / 60,1 / 25,3 | 17,53 · 0,230 · 0,367 · 0,218 · 0,273 | 3276,0 / 424,0 MiB | 3949 MiB (percobaan 2) |
+| klip5 | 0,7 / 2253,4 / 39,7 / 44,6 / 35,5 / 39,5 / 12,8 | 16,76 · 0,226 · 0,319 · 0,244 · 0,293 | 3276,0 / 424,0 MiB | 3953 MiB |
+
+Peak allocated seg / depth 3013,9 / 290,7 MiB di kelima klip. Perkiraan 4.1 vs nyata: klip4 ≈ 65 menit vs ≈ 68 menit (segment 3803,2 s jumlah per frame + 4,7 menit sisanya); klip5 ≈ 40 menit vs 40,5 menit.
+
+**Metrik (4.3)** (`scripts/t305_newclips.py metrics` → `work/t305/metrics.json`; klip lama dari data yang ada, tanpa run ulang; angka klip lama sama dengan catatan sebelumnya):
+
+| klip | frame (resolusi kerja) | QC gagal (alasan; frame) | cut terdeteksi (frame; skor) | fg median % [p5–p95] | blob besar / wajah V1 (median) | T_high / T_low | oklusi / frame (min–maks) | kelahiran oklusi / semua tipe per frame | frame tanpa oklusi | strok / frame |
+|---|---|---|---|---|---|---|---|---|---|---|
+| test | 283 (480 × 854) | 0 | 0 | 17,74 [10,76–20,17] | 1 / 1 | 0,02573 / 0,01120 | 0,816 (0–8) | 0,355 / 1,248 | 61,5% | 11,36 |
+| Klip2 | 122 (720 × 406) | 0 | 0 | 6,27 [6,08–6,61] | 0 / 2 | 0,07326 / 0,03313 | 0,090 (0–2) | 0,041 / 1,264 | 92,6% | 18,16 |
+| klip3 | 182 (720 × 1280) | 1 (big_blobs; f121) | 8 (49, 85, 126, 134, 146, 154, 166, 174; 0,065–0,090) | 37,82 [20,05–41,71] | 2 / 3 | 0,01394 / 0,00421 | 6,835 (2–16) | 2,575 / 13,525 | 0,0% | 45,42 |
+| **klip4** | 217 (720 × 1280) | 0 | 1 (209; 0,0613) | 28,21 [18,72–37,37] | 1 / 1 | 0,01262 / 0,00471 | 2,585 (0–8) | 1,227 / 5,981 | 4,1% | 18,37 |
+| **klip5** | 133 (720 × 1280) | 6 (big_blobs f40, 52–54; iou_prev f103–104) | 10 (92–96, 100–104; 0,071–0,109) | 27,42 [16,60–42,79] | 1 / 1 | 0,01187 / 0,00667 | 10,165 (0–33) | 4,682 / 14,924 | 3,8% | 31,98 |
+
+Definisi: fg = % piksel non-latar peta grup `stable/`; blob besar = `big_blobs` QC (komponen ≥ `blob_min` 5% luas frame); wajah V1 = komponen wajah T-701 1b yang centroid-nya di setengah atas bbox blob tubuh (`faces_v1_of`; wajah tanpa blob tetap dihitung); kelahiran oklusi = `t305d_stage3.births`; kelahiran semua tipe = (tipe, `track_id`) baru dibanding frame sebelumnya (definisi `t701_proto`, `tests/temporal_metrics.py`); skor cut = `stabilize.cut_scores` (ambang `cut_diff` 0,06). Rincian tambahan di `metrics.json`: histogram blob / wajah V1, strok per tipe, panjang shot, min `area_vs_median` / `iou_prev`.
+
+**Bahan penilaian (4.4)** `work/t305/nilai/` (dicek `ffprobe`, tanpa dibuka): `klip4_hasil.mp4` / `klip5_hasil.mp4` (salinan byte-identik `out/KLIP.mp4`, 1080 × 1920, 217 / 133 frame), `klip4_berdampingan.mp4` / `klip5_berdampingan.mp4` (1080 × 1146, kiri FOTO, kanan HASIL, bar bawah "detik X,XX (frame f / n−1)" = detik klip asli; 217 / 133 frame) dan `klip4_lambat_0.5x.mp4` / `klip5_lambat_0.5x.mp4` (tiap frame dua kali, 434 / 266 frame); semua h264 yuv420p 24 fps. `PANDUAN.md` (daftar masalah + template balasan + patokan nilai; ditulis lewat Write / Edit).
+
+**F1:** sha256 sebelum (7121 berkas, byte-identik dengan `work/t701/after_3_sha256.txt`) = sesudah: **7121 / 7121 identik**, 0 hilang, 0 berubah. Berkas baru di `out/` = 356, semuanya milik klip baru (klip4 220 = 217 SVG + penanda `.rotoscope-clip.json` + MP4 + `export.json`; klip5 136). `src/`, `configs/`, `tests/` tidak berubah (`git status`: hanya docs/04, docs/05, `scripts/t305_newclips.py`, `T305-prompt.md`). Klip baru dan semua keluaran ter-ignore (`samples/*`, `work/`, `out/`).
+
+**Disk:** `work/clips/klip4` 1 033 169 120 B, `work/clips/klip5` 799 371 880 B, `out/svg/klip4` 50 862 339 B, `out/svg/klip5` 41 814 175 B, `out/klip4.mp4` 5 569 817 B, `out/klip5.mp4` 4 391 564 B, `work/t305/` 27 969 164 B (bahan 26 176 413 B); total ±1,83 GiB. C: bebas 29,82 → 26,92 GiB; selisih ±1,07 GiB bukan dari berkas T-305 (sumber tidak saya periksa).
+
+**Pengamatan angka yang menonjol** (pengamatan, BUKAN penilaian visual; tidak ada video yang saya buka):
+1. **klip5 f92–f104 (detik 3,83–4,33): 10 "cut" berturut-turut**, skor 0,071–0,109 (sebagian di atas semua cut klip3); panjang shot [92, 1, 1, 1, 1, 4, 1, 1, 1, 1, 29] → 8 frame (f92–95, f100–103) tanpa penghalusan temporal sama sekali; f103–104 juga gagal QC `iou_prev` (0,49 / 0,48). Apakah ini cut sungguhan (montase / transisi / kilat) atau gerakan cepat / kamera goyang tidak bisa saya pastikan. Bila gerakan, ini positif palsu `cut_diff` 0,06 (bahan tinjauan `cut_diff` yang sudah dicatat di docs/05).
+2. **klip5 paling banyak garis:** 31,98 strok / frame, oklusi 10,17 / frame (maks 33 di f67, detik 2,79; f63–71 = 21–33), kelahiran oklusi 4,68 / frame (1,8× klip3) dan kelahiran semua tipe 14,92 / frame (tertinggi dari kelima klip).
+3. **klip5 siluet terpecah:** siluet 3,71 / frame (hanya 33 / 133 frame punya tepat 1; maks 12; f0–43 rata-rata 6,84) sementara blob besar median 1 (122 / 133 frame) → foreground terbagi jadi banyak potongan kecil (< 5% frame) atau ada benda / orang kecil lain. Wajah V1 0–4 per frame (0 di 41 frame; ≥ 2 wajah dalam satu blob di 59 frame); blob besar 2 di 11 frame (4 gagal QC transient). Jumlah orang klip5 tidak jelas dari angka.
+4. **klip4 paling "bersih" dari angka:** satu orang konsisten (blob besar 1 di 217 / 217 frame, wajah V1 1 di 216 / 217, tepat 1 siluet tiap frame), QC 0 gagal, oklusi 2,59 / frame, kelahiran 1,23 / 5,98 per frame. Satu cut di f209 (detik 8,71) dengan skor 0,0613, tepat di atas ambang (maks non-cut 0,0592) → mungkin positif palsu dekat ambang, mirip negatif klip3 yang < 1% di bawah 0,06.
+5. **T_high klip baru 0,0126 / 0,0119 ≈ klip3 (0,0139)**, jauh di bawah `test` (0,0257) dan Klip2 (0,0733); frame tanpa oklusi 4,1% / 3,8% (klip3 0%, `test` 61,5%). Ukuran subjek median 28,2% / 27,4% (antara `test` 17,7% dan klip3 37,8%); rentang klip5 lebar (16,1–57,8%).
+6. Waktu segment 16,8–17,5 s / frame dan VRAM puncak sama dengan klip lama; `nvidia-smi` puncak 3949 / 3953 dari 4096 MiB (sisa ±145 MiB untuk aplikasi lain selama segment).
+
+**Penyimpangan / keraguan:**
+1. Run klip4 terputus (dihentikan Claude Code karena RAM, bukan pipeline) lalu di-resume; percobaan 2 dan klip5 dijalankan Rio di jendela terpisah, bukan oleh Claude Code. Catatan `nvidia-smi` percobaan 1 tidak ada. Ingest ditulis ulang saat resume; segment menganggap 61 frame lama valid.
+2. Wajah V1: versi pertama skrip menghitung komponen wajah 1b mentah (klip3 median 4,5 karena kulit kaki berlabel `Face_Neck` dekat kaki); diperbaiki sebelum hasil ke wajah V1 terdaftar (`faces_v1_of`). Klip2 V1 = 2 di 111 / 122 frame (dua komponen wajah ±70 px terpisah, 107 frame tanpa blob tubuh karena fg terpecah < 5%): bisa 2 orang atau wajah terbelah; tidak diperiksa.
+3. `cut_metrics` (skor cut + panjang shot) ditambahkan ke skrip setelah run metrik pertama, di luar daftar 4.3, untuk membedakan cut sungguhan dari gerakan di klip5; memakai fungsi `stabilize` yang sama (cut hasil = cut stage [3] di kelima klip).
+4. VRAM bebas menurut `nvidia-smi` sebelum run 3064–3209 MiB (< 3300), menurut pengecekan pipeline (torch) 3313,7–3317,7 MiB; syarat yang dipakai = pengecekan pipeline.
+5. klip5 bersumber 60 fps → ingest mengambil 24 dari 60 frame per detik (gerakan cepat bisa terlihat meloncat; tidak diperiksa).
+6. `work/t305_scratch/` tersisa sebagai folder kosong (uji asap `media` pada Klip2; keluarannya sudah dihapus).
+
+**Langkah berikutnya:** Rio menilai klip4 dan klip5 dengan template di `work/t305/nilai/PANDUAN.md` (3 masalah paling mengganggu + detik, nilai 1–5) → daftar prioritas → Rio memilih task kalibrasi berikutnya.
+
+### Penilaian Rio Tahap 1 + keputusan Tahap 1b (2026-10-15)
+
+Dicatat SEBELUM analisis Tahap 1b.
+
+**Penilaian Rio (Tahap 1):**
+- **klip4:** bagus, nilai siap konten **5**.
+- **klip5:** nilai **1**, karena kualitas video rendah dan banyak orang dalam frame.
+
+**Usulan Rio:** (1) sisakan orang utama saja; (2) tingkatkan kualitas video; (3) perbaiki pencahayaan, supaya tidak ada "lingkaran di tengah muka".
+
+**Keputusan:**
+1. Diagnosis dulu (Q1 "lingkaran di muka", Q2 potongan garis), dari data yang sudah ada, tanpa run ulang [2] / [2c].
+2. Simulasi di salinan scratch (render [4]–[6], style default): V0 base, VF "isi lubang muka", S1 / S2 "orang utama otomatis" (k = 1 / 2, keduanya digabung dengan VF). Aturan persis dicatat SEBELUM render.
+3. Super-resolution dan perbaikan pencahayaan **TIDAK** di 1b (belum ada bukti bahwa itu penyebabnya).
+4. **Lingkup diagnosis:** klip5 f0–f91 (sebelum cut ke objek lain).
+
+**Label cut dari Rio (data label cut tambahan untuk peninjauan `cut_diff`, backlog):**
+- **klip5 f92–f104** = cut / transisi sungguhan ke objek lain (klip lupa dipotong) → 10 deteksi di f92–96 dan f100–104 **BUKAN positif palsu**.
+- **klip4 f209** = **BUKAN cut** → **positif palsu** `cut_diff` 0,06 (skor 0,0613; maks non-cut klip4 0,0592).
+- Bersama label klip3 (7 cut + f49 positif palsu yang diketahui, "Kalibrasi cut_diff (2026-10-10)"), ini bahan peninjauan `cut_diff` berikutnya. `tests/test_cut_diff.py` tidak diubah (aturan 1b: tanpa perubahan `tests/`); label baru hanya tercatat di sini dan di docs/05.
+
+**Aturan 1b:** CPU saja, tanpa GPU; klip asli hanya dibaca; simulasi hanya di `work/t305_scratch/`; tanpa perubahan `src/`, `configs/`, `tests/`; tanpa commit; semua berkas repo lewat Edit / Write (tanpa `python -` / `python -c` penulis berkas, `cat >>`, `sed`, heredoc, `printf`, `echo >`, `Set-Content`; keluaran skrip yang dijalankan boleh). **F1:** sha256 4 klip lama (`frames`, `seg`, `depth`, `stable`, `contours`, `strokes` + `qc_report.json`) + seluruh `work/clips/klip4` dan `work/clips/klip5` + `out/`, sebelum = sesudah. Bahan penilaian di `work/t305/nilai_1b/`.
+
+### Aturan simulasi Tahap 1b (dicatat SEBELUM render, 2026-10-15)
+
+Semua varian dihitung pada peta grup `stable/groups` (= masukan [4]); depth tidak diubah. Salinan scratch per varian `work/t305_scratch/1b/<VAR>/klip5/` = `meta.json` + `qc_report.json` + `stable/` (groups disalin, `depth_smooth` di-hard-link; pola `t701_proto.prepare`). Hanya f0–f91 yang diubah; f92–f132 apa adanya di semua varian. [4] dijalankan dengan `--limit 92` (ambang T_high / T_low tetap dihitung dari 133 frame, seperti produksi), [5] + [6] `--from 0 --limit 92` (preview), config default dengan `out_dir` scratch, style default `rough-sketch`.
+
+- **V0 (base):** peta grup tidak diubah. Pemeriksaan jalur scratch: contours / strokes V0 harus identik dengan produksi f0–f91.
+- **VF "isi lubang muka":** tiap komponen background 4-arah (konektivitas lubang [4]) yang tidak menyentuh tepi frame, dan yang SELURUH cincin 1 px di sekelilingnya (tetangga 8-arah, dilatasi 3×3 dikurangi komponen) berlabel grup face → diisi grup face. Tanpa batas ukuran. Ini juga dihitung di `test`, Klip2, klip3, klip4 (semua frame) dan klip5 (f0–f91): jumlah frame dan piksel yang berubah.
+- **S1 / S2 "orang utama otomatis"** (sesudah VF; per frame):
+  1. **Blob** = komponen foreground 8-arah dengan luas > `qc.blob_min` (5%) × luas frame. Komponen kecil ≥ 30 px (`ASSIGN_MIN_PX`, `klip3_diag.persons_of`) ikut blob terdekat **hanya bila jaraknya ≤ 10 px** (`ATTACH_MAX_PX`). Ini penyimpangan dari desain T-701 1c, yang menempelkan tanpa batas jarak. Alasannya: tanpa batas, potongan derau / teks / letterbox ikut orang terdekat dan tidak terbuang.
+  2. **Wajah** = komponen grup face 8-arah ≥ 0,1% luas frame (`FACE_MIN_FRAC` T-701). Wajah dimiliki blob yang memuat > 50% pikselnya. **Wajah V1** = wajah tanpa blob, atau wajah dengan centroid di setengah atas bbox blobnya (`faces_v1_of`).
+  3. **Orang** (`person_parts` T-701 1c):
+     - blob dengan ≤ 1 wajah V1 → satu orang = seluruh blob;
+     - blob dengan ≥ 2 wajah V1 → piksel blob dibagi ke centroid wajah V1 terdekat (Voronoi Euclidean; bila seri, wajah dengan urutan lebih kecil);
+     - wajah V1 tanpa blob → orang = komponen foreground yang memuat wajah itu;
+     - blob tanpa wajah tetap menjadi kandidat orang (orang tanpa wajah).
+     Definisi ini dihitung di peta `stable` (desain T-701 1c memakai argmax mentah), karena yang dibuang harus persis masukan [4].
+  4. **Skor** = luas orang × kedekatan ke tengah frame, dengan kedekatan = 1 − jarak centroid orang ke (W/2, H/2) dibagi setengah diagonal frame.
+  5. **Pelacakan antar frame:** penugasan optimal (Hungarian) antara orang di frame t dan orang di frame t − 1. Pasangan yang boleh:
+     - keduanya punya wajah V1 dan jarak centroid wajah ≤ 0,08 × H (102 px); biaya = jarak;
+     - salah satunya tanpa wajah, IoU masker ≥ 0,3; biaya = (1 − IoU) × 102.
+     Orang yang tidak terpasangkan mendapat id baru. Tanpa penjembatan celah.
+  6. **Pilihan:** per frame, k orang dengan skor tertinggi dipertahankan (S1: k = 1, S2: k = 2; seri → id lebih kecil). Semua piksel lain → background. Frame tanpa kandidat orang = frame kosong ("tanpa orang terpilih").
+  7. **Ganti identitas** = himpunan id terpilih di frame t ≠ frame t − 1. Dilaporkan per frame, dengan keterangan apakah id lama masih ada (tukar peringkat) atau hilang (pelacakan putus).
+- **Metrik per varian** (klip5 f0–f91):
+  - strok / frame, siluet / frame, kelahiran strok / frame (semua tipe, definisi `t701_proto`, dan oklusi, `t305d_stage3.births`);
+  - porsi panjang strok per kelas Q2: kelas komponen V0 di titik strok (`orang_utama` / `orang_lain` / `derau`);
+  - frame tanpa orang terpilih.
+
+### Hasil Tahap 1b (diagnosis klip5), 2026-10-15 — menunggu penilaian Rio
+
+Skrip `scripts/t305_1b.py` (baru, lewat Write / Edit): `hash`, `q1`, `q2`, `vfscan`, `prepare`, `render`, `prepare_vf`, `metrics`, `media`. Keluaran analisis di `work/t305/1b/` (`q1.json`, `q2.json`, `vfscan.json`, `metrics.json`, `media.json`, F1), salinan di `work/t305_scratch/1b/`. CPU saja, tanpa GPU.
+
+**Q1 "lingkaran di muka"** (strok melingkar yang dikelilingi grup face). Strok melingkar = tertutup, atau terbuka dengan panjang ≥ 15 px dan jarak ujung ≤ 0,2 × panjang. Dikelilingi face = ≥ 50% cincin luar 1–4 px berlabel face di `stable/`. Siluet luar tidak dihitung.
+
+| klip | frame | strok melingkar di muka (total; per frame) | frame dengan ≥ 1 | per tipe | luas median (min–maks) px | isi (kelas seg mentah, % piksel) |
+|---|---|---|---|---|---|---|
+| test | 283 | 0 | 0 | — | — | — |
+| Klip2 | 122 | 0 | 0 | — | — | — |
+| klip3 | 182 | 7; 0,038 | 7 (3,8%) | group_boundary 7 (face\|right_leg 3, face\|left_arm 2, face\|torso 1, face\|left_leg 1) | 32 (23–3361) | Left_Hand 91,2, Face_Neck 3,5, Right_Shoe 3,3 |
+| klip4 | 217 | 2; 0,009 | 2 (0,9%) | group_boundary 2 (face\|left_arm, face\|torso) | 76,5 (26–127) | Left_Hand 80,4, Apparel 13,7, Face_Neck 5,9 |
+| **klip5 f0–91** | 92 | **39; 0,424** | **29 (31,5%)** | **silhouette_hole 23**, group_boundary 16 (face\|torso 11, hair\|face 5) | lubang **768 (274–2564)**; batas grup 74 | **Background 75,8**, Face_Neck 18,0, Apparel 3,9, Hair 1,7 |
+
+- **Temuan:** "lingkaran di muka" klip5 = **`silhouette_hole`**: seg mentah melabeli sebagian muka sebagai **Background** (60–97% isi lubang), sehingga terbentuk lubang foreground ≥ `min_hole_area` 200 px yang digambar sebagai strok tertutup di dalam muka.
+- 23 lubang, 1–2 per frame, di f0–5, 11–13, 18–21, 25, 28–30 (17 frame; detik 0,00–1,25).
+- Lubang seperti ini tidak ada di keempat klip lain. Di sana yang ada hanya simpul batas grup kecil: tangan / kaki / baju yang bersentuhan dengan piksel Face_Neck; di klip3 sebagian besar kaki berlabel face, yang sudah diketahui.
+- Batas grup melingkar klip5 kecil (median 74 px): hair\|face 5 (rambut di dalam muka) dan face\|torso 11 (Apparel / Face_Neck).
+
+**Q2 komponen siluet klip5 f0–91.** Komponen = foreground 8-arah peta `stable` ≥ `min_region_area` 800 px; jumlahnya = jumlah strok silhouette di 92 / 92 frame (4,57 / frame). Kelas per frame, tanpa pelacakan:
+- **orang** = punya wajah V1 atau luas ≥ 5%;
+- **orang utama** = orang dengan skor luas × kedekatan ke tengah tertinggi;
+- **orang lain** = orang selebihnya;
+- **derau** = kecil (< 5%) tanpa wajah.
+
+| kelas | per frame (maks) | luas median % frame [min–maks] | menyentuh tepi frame | punya wajah V1 | porsi panjang strok |
+|---|---|---|---|---|---|
+| orang utama | 1,00 (1) | 19,7 [10,3–55,2] | 64,1% (kiri 50, kanan 32 komponen) | 78,3% | **68,5%** |
+| orang lain | 0,25 (3); ada di 18 frame | 5,3 [0,11–10,1] | 43,5% | 39,1% | 5,5% |
+| derau | **3,32 (11)** | 0,50 [0,09–4,86] | 26,2% | 0% | **26,0%** |
+
+- **Orang lain umumnya MENYATU dengan orang utama dalam satu blob:** blob orang utama memuat ≥ 2 wajah V1 di **50 / 92 frame**. Histogram wajah V1 per frame: 0: 20, 1: 17, 2: 45, 3: 5, 4: 5.
+- **klip5 adalah video letterbox** (profil baris frames/ f0–91):
+  - hitam y 0–217 dan 1010–1279;
+  - kotak teks statis y 218–347;
+  - video asli y 348–1009 (720 × 662).
+- **Derau menurut zona:** 242 komponen di konten, **47 di pita hitam bawah** (pita horizontal y ≈ 1019–1110, di bawah tepi video), **16 di kotak teks** (huruf terdeteksi sebagai bagian tubuh). Panjang strok per zona: konten 92,6%, hitam 6,5%, teks 0,9%.
+- "Menyentuh tepi" di tabel = tepi frame; di klip letterbox ini tepi atas / bawah video asli (y 348 / 1009) bukan tepi frame.
+
+**VF di klip lain** (`vfscan`, semua frame):
+- `test` 0, Klip2 0, klip4 0 frame berubah.
+- **klip3 1 frame (f97, 1 piksel)**. Setelah [4]–[6] seluruh klip: strok contours, PNG strokes dan MP4 **identik byte** dengan produksi. T_high berubah di digit bermakna ke-7 (0,013941797 → 0,013941790).
+- Video cek `klip3_base_vs_VF` tetap dibuat (frame ditahan 2 s).
+
+**VF di klip5:** 27 frame berubah (0–3, 6, 10–13, 15, 18–25, 28–31, 38, 45, 48, 63–64), 38 wilayah, 16 179 px. **Menutup 18 dari 23 lubang Q1.** 5 lubang tidak diisi karena cincinnya juga menyentuh torso (12–47 px cincin), sesuai aturan "seluruhnya dikelilingi face": f4–f5 (lubang yang sama dengan f0–f3 yang diisi) dan f28–f30. Sisanya (f6, 15, 22–24, 31, 38, 45, 48, 63–64) = lubang < 200 px yang memang tidak digambar.
+
+**S1 / S2:**
+- Kandidat orang 1,99 per frame. Tidak ada frame tanpa orang terpilih.
+- **S1, 5 pergantian id** (penyebab dan lompatan posisi wajah):
+
+  | frame (detik) | penyebab | lompatan | tafsiran |
+  |---|---|---|---|
+  | f12 (0,50) | tukar peringkat | 27 px | kemungkinan orang yang sama |
+  | f54 (2,25) | pelacakan putus | 234 px | pindah ke orang di kiri |
+  | f57 (2,38) | tukar peringkat | 203 px | kembali ke tengah |
+  | f59 (2,46) | pelacakan putus | 50 px | kemungkinan orang yang sama |
+  | f69 (2,88) | pelacakan putus | 44 px | kemungkinan orang yang sama |
+
+  Jadi pergantian ORANG yang kemungkinan nyata: **f54–f56** (3 frame). Id terpilih: 3 (42 frame), 22 (23), 2 (12), 19 (10), 12 (3), 17 (2).
+- **S2: 18 pergantian** (6, 11–12, 14, 28, 36, 54, 56–57, 59–61, 64–65, 68–69, 79–80). Orang kedua berganti / hilang-muncul; 14 id terpakai.
+
+**Metrik per varian** (klip5 f0–f91; [4] dengan ambang dari 133 frame):
+
+| varian | strok / frame | siluet / frame | lubang / frame | oklusi / frame | kelahiran semua / oklusi per frame | panjang strok / frame (px) | porsi panjang utama / lain / derau | T_high |
+|---|---|---|---|---|---|---|---|---|
+| V0 | 36,11 | 4,57 | 2,21 | 9,86 | 17,87 / 5,06 | 8671 | 68,5 / 5,5 / 26,0% | 0,011866 |
+| VF | 35,91 | 4,57 | 2,01 | 9,86 | 17,82 / 5,06 | 8645 | 68,4 / 5,5 / 26,0% | 0,011857 |
+| S1 | 21,40 | 1,42 | 1,12 | 8,00 | 11,58 / 4,24 | 5044 | 92,6 / 0 / 7,4% | 0,013760 |
+| S2 | 27,10 | 1,65 | 1,61 | 9,24 | 14,31 / 4,81 | 6415 | 88,7 / 4,3 / 7,0% | 0,012662 |
+
+- Frame tanpa orang terpilih S1 / S2: 0 / 0; frame tanpa strok: 0 di semua varian.
+- **Jalur scratch:** V0 = produksi di 92 / 92 frame (contours JSON dan PNG strokes byte-identik).
+- **Catatan porsi kelas:** kelas berasal dari komponen V0. Orang lain yang menyatu dalam blob orang utama ikut dihitung "orang utama", jadi pembuangannya oleh Voronoi di S1 tidak terlihat di kolom "lain".
+- Derau 7,4% di S1 = potongan ≥ 800 px yang menempel ≤ 10 px ke blob orang terpilih.
+
+**Bahan (4)** `work/t305/nilai_1b/` (dicek `ffprobe`, tidak dibuka; h264 yuv420p 24 fps):
+- `klip5_A.mp4` (FOTO | V0 | VF, 1644 × 1146, 92 frame) + `klip5_A_lambat_0.5x.mp4` (184 frame);
+- `klip5_B.mp4` (FOTO | S1 | S2) + `klip5_B_lambat_0.5x.mp4`;
+- `klip3_base_vs_VF.mp4` (1092 × 1146, 48 frame) + lambat (96 frame);
+- `PANDUAN.md` (4 pertanyaan + template).
+
+Panel V0–S2 = MP4 preview [6] (kertas default); bar bawah = detik klip asli.
+
+**F1:** sha256 4 klip lama + seluruh `work/clips/klip4`, `klip5` + 6 `qc_report.json` + `out/`: **10 653 / 10 653 identik** (0 hilang, 0 tambahan, 0 berubah). `src/`, `configs/`, `tests/` tidak berubah. Disk: scratch ±438 MB nyata (+ 714 hard link `depth_smooth`, 1,32 GB terhitung ganda oleh Explorer, bukan ruang baru), `work/t305/1b` 2,6 MB, bahan 14,9 MB. C: bebas 26,92 → 24,30 GiB; ±2,2 GiB dari selisih itu bukan berkas 1b (sumber tidak diperiksa).
+
+**Penyimpangan / keraguan:**
+1. **ATTACH_MAX_PX 10** menyimpang dari T-701 1c (tempel tanpa batas). Dicatat sebelum render. Akibatnya bagian orang utama yang terpisah > 10 px (mis. tangan terlepas) ikut terbuang di S1 / S2.
+2. Orang / wajah dihitung di peta `stable`, bukan argmax mentah seperti T-701 1c.
+3. S dipilih ulang per frame. Ini sesuai aturan, tetapi orang kedua di S2 tidak stabil. Pemilihan berbasis jejak (skor per id sepanjang klip, histeresis) belum diuji.
+4. Aturan VF "seluruhnya dikelilingi" membiarkan 5 lubang (f4–5, f28–30). Lubang f0–f3 diisi tetapi f4–f5 tidak, jadi di VF lingkaran bisa tampak muncul sesaat di detik 0,17–0,21.
+5. Ambang [4] dihitung dari 133 frame, termasuk f92–f132 (objek lain) yang tidak diubah di semua varian. Pada klip yang dipotong di f91, T_high akan sedikit berbeda.
+6. "Kualitas video rendah" tidak diukur langsung (super-resolution / pencahayaan di luar 1b). Yang terukur: letterbox dengan video asli 720 × 662 dan kotak teks statis. Derau di pita hitam / teks (63 dari 305 komponen) adalah artefak tata letak, bukan orang.
+7. Klasifikasi Q2 per frame tanpa pelacakan; "orang utama" Q2 dan S1 bisa berbeda di frame yang sama.
+8. Label cut baru dicatat di docs/04 / docs/05 saja (`tests/test_cut_diff.py` tidak boleh diubah di 1b).
+
 ## Pitfall yang sudah diketahui
 
 ### P-001 — Temporal flicker / boiling 🔴 RISIKO TERTINGGI
