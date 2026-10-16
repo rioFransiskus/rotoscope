@@ -34,6 +34,14 @@ segment → depth → stabilize → vectorize → stylize → export); per stage
 depth, stabilize, vectorize, stylize, export); unduh model: `python -m rotoscope download` (bagian "CLI" di docs/01). Hasil GPU
 (`--restart-from ingest|segment|depth`) hanya dihapus dengan `--yes` — itu MENJALANKAN GPU; vectorize / stylize / export ber-restart
 tanpa `--yes`. Skenario uji destruktif / pre-flight hanya lewat stage palsu atau `--restart-from vectorize`.
+Pilih target (T-604; alat CLI, BUKAN stage — `run` tidak berubah, konsumen pertama T-605): `python -m rotoscope pick <video> [--frame N] [--dry-run]`
+→ `work/clips/<klip>/target/points.json` (`rotoscope-target-points/1`: koordinat frame kerja, per frame `frame_pixel_sha256` = sha256
+PIKSEL RGB + ukuran, bukan byte PNG; frame berubah = basi → pick ulang; isi lama → `points.prev.json`; `--dry-run` → `target/pick_dryrun/`).
+`meta.json` belum ada → [1] ingest dulu (CPU). Kontrol: kiri = target, kanan = bukan target, tarik = kotak (satu per target per frame,
+menggantikan), N target berikutnya (berputar; id global antar frame), U batal aksi terakhir (titik / kotak / R), R kosongkan frame,
+Enter / S simpan (peringatan bila target tanpa klik kanan; frame kosong + entri lama = hapus setelah Enter kedua), Esc / X keluar
+(konfirmasi bila ada perubahan). Target kosong tidak disimpan. Beberapa frame = satu berkas. Proses DPI-aware, gambar diskalakan
+sendiri (s ≤ 1, `WINDOW_AUTOSIZE`); konstanta UI di modul, bukan YAML. Kode: `src/rotoscope/pick.py`; kontrak: docs/01 "`pick.py`".
 Preset (T-406): `--style clean-line` (nama = `configs/styles/<nama>.yaml`, relatif ke root project, peka huruf besar-kecil; atau path YAML) atau kunci `style:` di
 `configs/default.yaml` (flag menang; default `rough-sketch`). Satu fungsi `config.resolve_style` untuk semua stage. Strokes satu folder per klip → ganti style = [5] dihitung ulang.
 Supaya tiap style punya MP4 + `out/svg/` sendiri: `export.filename: "{source}_{style}.mp4"` (tanpa `{style}` style kedua menimpa dan export mencetak `PERINGATAN`).

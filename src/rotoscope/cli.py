@@ -5,6 +5,7 @@
                                     [--restart-from ingest|segment|depth|stabilize|vectorize|stylize|export [--yes]]
     python -m rotoscope ingest|segment|depth|stabilize|vectorize|stylize|export <video> [flag stage ...]
     python -m rotoscope download [--config PATH] [--seg-model 0.8b|0.4b]
+    python -m rotoscope pick <video> [--frame N] [--config PATH] [--dry-run]
 
 Satu video = satu folder kerja `<paths.work_dir>/clips/<nama video disanitasi>/` (nama disanitasi dengan fungsi
 yang sama dengan `{source}` di export.filename); `paths.out_dir` tidak berubah. Folder itu diteruskan ke tiap stage
@@ -14,6 +15,7 @@ Prinsip #3 docs/01: stage GPU ([2] segment, [2c] depth) selalu proses sendiri (s
 diteruskan apa adanya) dan proses induk TIDAK meng-import torch / menyentuh CUDA. Stage CPU (ingest, stabilize,
 vectorize, export) dipanggil in-process lewat main(argv) stage-nya, jadi flag stage tidak diparse ulang di sini.
 [4] vectorize dan [5] stylize masuk urutan `run` (T-203b; --style diteruskan ke stylize dan, sejak T-404a, ke export untuk kertas bertekstur).
+`pick` (T-604) BUKAN stage: jendela klik target → <klip>/target/points.json (pick.py); tidak masuk urutan `run`.
 
 Exit code: 0 sukses | 1 prasyarat gagal (config, pre-flight, VRAM, identitas, ...) | 2 salah pakai argumen |
 3 OOM di stage GPU | 130 dihentikan (Ctrl+C). Kode stage yang gagal dikembalikan apa adanya.
@@ -37,6 +39,7 @@ from rotoscope import depth as depth_stage
 from rotoscope import export as export_stage
 from rotoscope import ingest as ingest_stage
 from rotoscope import paper
+from rotoscope import pick as pick_mod
 from rotoscope import segment as segment_stage
 from rotoscope import stabilize as stabilize_stage
 from rotoscope import stylize as stylize_stage
@@ -600,6 +603,23 @@ def cmd_download(a: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def cmd_pick(a: argparse.Namespace) -> int:
+    """`pick <video> [--frame N] [--dry-run]` (T-604): jendela klik target → <klip>/target/points.json. BUKAN stage; `run`
+    tidak berubah. `meta.json` belum ada → [1] ingest dulu (argumen sama dengan `run`); sudah ada → frames/ tidak disentuh."""
+    if a.frame < 0:
+        raise CliError(f"--frame harus ≥ 0, dapat {a.frame}", EXIT_USAGE)
+    cfg = load_cfg(a.config)
+    ctx = Ctx(video=a.video, cfg=cfg, work_dir=clip_work_dir(cfg, a.video), config=a.config)
+    preflight_video(a.video, ctx.work_dir)
+    if _read_meta(ctx.work_dir) is None:
+        print(f"frames/ belum ada di {ctx.work_dir} — [1] ingest dijalankan dulu (CPU)", flush=True)
+        rc = run_stage("ingest", stage_args("ingest", ctx), ctx)
+        if rc != EXIT_OK:
+            print(f"ERROR: [1] ingest gagal (exit {rc}) — pick tidak dibuka", file=sys.stderr)
+            return rc
+    return pick_mod.run_pick(ctx.work_dir, a.frame, video=str(a.video), dry_run_only=a.dry_run)
+
+
 # ── Argparse ───────────────────────────────────────
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog=PROG, description="Rotoscope Animation Builder — video → animasi sketsa")
@@ -651,6 +671,18 @@ def build_parser() -> argparse.ArgumentParser:
     d.add_argument("--config", type=Path, default=None)
     d.add_argument("--seg-model", choices=("0.8b", "0.4b"), default=None)
     d.set_defaults(func=cmd_download)
+
+    k = sub.add_parser("pick", help="T-604: jendela klik target (bukan stage) → <klip>/target/points.json",
+                       description="Jendela klik target untuk satu frame (T-604; BUKAN stage, tidak masuk urutan run): "
+                                   "klik kiri = target, klik kanan = bukan target, tarik = kotak, N / U / R, Enter / S = "
+                                   "simpan, Esc = keluar. frames/ belum ada → [1] ingest dulu (CPU).")
+    k.add_argument("video", type=Path, help="video sumber (menentukan folder kerja klip)")
+    k.add_argument("--frame", type=int, default=0, help="frame yang diklik (angka di frame_%%05d.png; default 0)")
+    k.add_argument("--config", type=Path, default=None)
+    k.add_argument("--dry-run", action="store_true",
+                   help="tanpa jendela: kanvas → <klip>/target/pick_dryrun/frame_%%05d.png + tata letak; "
+                        "points.json tidak disentuh")
+    k.set_defaults(func=cmd_pick)
     return p
 
 

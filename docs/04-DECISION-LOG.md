@@ -2738,6 +2738,211 @@ Dicatat sebelum data dipindah dan scratch dihapus. Tanpa GPU; tanpa perubahan `s
 - **F1:** hash 6 klip + 6 `qc_report.json` + `out/` = 10 657 berkas; `before_tutup` (sebelum data dipindah / scratch dihapus) dan `after_tutup` (sesudahnya) **keduanya byte-identik dengan `after_1b1`** (daftar hash sama byte per byte; termasuk setelah run GPU Rio). `scripts/t602_study.py hash` menerima label `before_tutup` / `after_tutup` (pembanding `after_1b1`).
 - **Tidak dikerjakan di penutupan:** `T305-prompt.md` (ter-commit) tetap ada; sesuai keputusan 1b no. 6, berkas itu di-`git rm` saat T-305 induk ditutup.
 
+### Keputusan T-604 (CLI pick), 2026-10-15 — Tahap 1 berjalan
+
+Dicatat SEBELUM kode ditulis. **Konteks:** T-602 (DONE) membuktikan SAM 2.1 tiny bisa memisahkan target dari klik manual (klip3 f85–f108 bersih). Masker klip5 rusak; klik Rio di sana 19 kiri + 0 kanan (tanpa klik negatif). Alat klik prototipe = `scripts/t602_study.py pick`; T-604 menjadikannya fitur produksi berupa perintah CLI. Stage pipeline baru (isolasi) = T-605; masker dipakai di T-606.
+
+**Keputusan Rio (final, 2026-10-15):**
+1. **Perintah** `python -m rotoscope pick <video> [--frame N]`. Bila frame belum ada, [1] ingest dijalankan dulu (CPU).
+2. **Kontrol:** klik kiri = target; klik kanan = bukan target; tarik mouse = kotak target (satu kotak per target per frame; kotak baru menggantikan yang lama); N = target berikutnya; U = batal klik terakhir; R = ulang frame ini; Enter / S = simpan; Esc = keluar tanpa simpan. Panel petunjuk berbahasa Indonesia; gambar diskalakan agar muat di layar (1920 × 1080, skala Windows 125%).
+3. **Saat menyimpan**, bila ada target tanpa klik kanan sama sekali → peringatan (tidak memblokir).
+4. **Beberapa frame** boleh di-pick (mis. `--frame 64`) untuk koreksi: titik digabung ke berkas yang sama, per frame; id target konsisten antar frame; membuka frame yang sudah punya titik menampilkan titik lama untuk diedit.
+5. **Penyimpanan** `work/clips/<klip>/target/points.json`: format berversi; koordinat frame kerja; tiap frame terikat sha256 frame. Bila frame berubah (ingest ulang) → pesan jelas untuk pick ulang.
+6. **Kontrak:** perintah + format baru dicatat di docs/01 dan CLAUDE.md. Belum ada stage pipeline baru (T-605).
+7. **Uji:** test logika tanpa GUI (pemetaan koordinat dan skala, format / validasi, state undo / reset / kotak / target, sha256, gabung frame) + `--dry-run` render ke PNG. Rio mencoba UI langsung di Tahap 3.
+8. **docs/05:** T-604, T-605, T-606 dipindah dari Phase 6 ke Phase 7 "Cakupan lanjutan", lalu papan direkonsiliasi (total tetap 34/49; dilaporkan per Phase).
+
+**Lingkup.** DALAM: modul baru di `src/rotoscope/`; subperintah CLI; test; docs/01, docs/04, docs/05, CLAUDE.md (docs/02 bila ada parameter YAML); skrip sekali pakai opsional (`scripts/`) untuk mengonversi titik T-602 (`scripts/t602_points.json`) ke format baru, supaya T-605 bisa diuji tanpa klik ulang. LUAR: SAM / isolasi (T-605); penerapan masker (T-606); pratinjau masker di jendela pick; crop / letterbox; perubahan stage [1]–[6] selain memanggil ingest yang sudah ada.
+**Aturan:** semua berkas repo hanya lewat Edit / Write (tanpa `python -` / `python -c` penulis berkas, `cat >>`, `sed`, heredoc, `printf`, `echo >`, `Set-Content`); tanpa commit; tidak membuka PNG / MP4; penolakan classifier dilaporkan, tidak disiasati; `run` tetap byte-identik (pick tidak mengubah perilaku `run`); suite penuh lolos; mutation check untuk logika inti (pemetaan koordinat, validasi sha256, gabung frame). **F1** `work/t604/`: sha256 berkas yang SUDAH ADA di `work/clips/*` (6 klip, 6 `qc_report.json`) + `out/`, sebelum = sesudah; folder baru `target/` boleh muncul. **F2** scratch `work/t604_scratch/` bila perlu (ter-ignore lewat `work/`). **F3** `scripts/t604_*.py` hanya alat sekali pakai. **F4** `T604-prompt.md` + scratch dihapus di akhir Tahap 4.
+**Tahap:** 1 rancangan (CPU, baca-saja) → BERHENTI + laporan → 2–3 implementasi + test + dry-run (setelah persetujuan), lalu Rio mencoba `pick` klip5 f0 + f64 dan klip3 f85 (mudah dipakai? titik + kotak tersimpan benar? peringatan muncul?) → 4 docs final + F4.
+
+### Rancangan T-604 Tahap 1 (2026-10-15) — usulan Claude Code; disetujui Rio 2026-10-16 dengan perubahan (lihat "Keputusan T-604 setelah Tahap 1")
+
+CPU, baca-saja terhadap klip; tanpa perubahan `src/` / `configs/` / `tests/`. Berkas repo yang berubah: docs/04, docs/05, alat F1 baru `scripts/t604_hash.py` (F3). Acuan: prototipe `scripts/t602_study.py pick` (`Picker`, `screen_physical`, `points_doc`, `load_points`). Probe DPI = dua skrip baca-saja di folder scratchpad sesi (di luar repo; hanya mencetak, tanpa jendela).
+
+**R1 Modul + CLI.**
+- **Modul baru `src/rotoscope/pick.py`** (nama = fungsi, seperti `ingest.py`; BUKAN stage pipeline, tanpa entry point `python -m rotoscope.pick`). Dua lapis: (a) logika murni tanpa jendela — `View` (skala + pemetaan koordinat), `PickState` (state machine), format / validasi / gabung `points.json`, `render_canvas` (kanvas numpy digambar dengan `cv2`, tanpa jendela); (b) lapis tipis Windows / GUI — `ensure_dpi_aware`, `work_area`, loop `cv2.namedWindow` / `imshow` / `setMouseCallback` / `waitKeyEx`. Tanpa dependency baru (GUI WIN32UI `opencv-contrib-python` 5.0.0; `ctypes` stdlib); tidak meng-import torch.
+- **`cli.py`: subperintah `pick <video> [--frame N] [--config PATH] [--dry-run]`.** Urutan: `load_cfg` → folder kerja `clip_work_dir` → `preflight_video` (video ada; folder bukan milik klip lain) → bila **`meta.json` tidak ada**: [1] ingest in-process (`run_stage("ingest", [video, --work-dir, …])`, argumen sama dengan `run`) → `pick.run_pick(…)`. Bila `meta.json` ada, ingest TIDAK dipanggil (pick tidak pernah menulis `frames/` / `meta.json`). `--frame` default 0 (= angka di `frame_%05d.png`), 0 ≤ N < `frame_count`. `run` dan subperintah lain tidak berubah; pick bukan bagian urutan `run`; tidak ada stage yang membaca `target/` sampai T-605.
+- **`--dry-run`:** tanpa jendela; kanvas yang akan tampil (frame + titik lama frame itu + panel) → `target/pick_dryrun/frame_%05d.png`; cetak tata letak (skala, ukuran gambar / kanvas, muat di area kerja, uji bolak-balik koordinat) + status berkas titik per frame. `points.json` tidak disentuh.
+- **Exit code:** 0 (tersimpan / tanpa perubahan / dibatalkan / dry-run) | 1 (prasyarat: video, klip lain, ingest gagal, frame di luar klip / hilang, `points.json` rusak / milik klip lain, jendela diskalakan sistem, gagal tulis) | 2 (argumen) | 130 (Ctrl+C; tidak disimpan).
+
+**R2 Format** `work/clips/<klip>/target/points.json` = `rotoscope-target-points/1`, ditulis atomik (`stage_common.write_json_atomic`); isi lama disalin ke `points.prev.json` sebelum ditimpa (cadangan satu tingkat). Contoh (angka ilustrasi; sha256 f0 = frame klip5 sekarang):
+
+```json
+{
+  "format": "rotoscope-target-points/1",
+  "clip": {"meta_sha256": "<sha256 byte meta.json>", "source_path": "C:\\…\\klip5.mp4"},
+  "frame_size": {"width": 720, "height": 1280},
+  "coords": "piksel frame kerja frames/ (x ke kanan, y ke bawah; pusat piksel kiri-atas = 0, 0); label 1 = target, 0 = bukan target (konvensi SAM); box = [x0, y0, x1, y1] dengan x0 < x1, y0 < y1",
+  "frames": [
+    {
+      "frame_index": 0,
+      "frame_file": "frame_00000.png",
+      "frame_sha256": "9e280faacd6ce993caddfafa130bfdddb11fa589a919563787e85ed09904122a",
+      "updated_utc": "2026-10-16T08:00:00+00:00",
+      "display": {"scale": 0.7531, "screen_wh": [1920, 1080], "dpi_aware": true},
+      "targets": [
+        {"id": 1,
+         "points": [{"x": 343.0, "y": 407.0, "label": 1}, {"x": 152.0, "y": 637.0, "label": 1}, {"x": 612.4, "y": 500.9, "label": 0}],
+         "box": [140.0, 352.5, 498.7, 1003.2]},
+        {"id": 2, "points": [{"x": 80.0, "y": 700.0, "label": 1}], "box": null}
+      ]
+    },
+    {
+      "frame_index": 64,
+      "frame_file": "frame_00064.png",
+      "frame_sha256": "<sha256 byte frame_00064.png>",
+      "updated_utc": "2026-10-16T08:05:00+00:00",
+      "display": {"scale": 0.7531, "screen_wh": [1920, 1080], "dpi_aware": true},
+      "targets": [{"id": 1, "points": [{"x": 301.5, "y": 420.0, "label": 1}], "box": null}]
+    }
+  ],
+  "tool": "python -m rotoscope pick"
+}
+```
+
+- Koordinat dibulatkan 0,1 px; urutan titik = urutan klik; `frames` urut `frame_index`, satu entri per frame; `targets` urut `id` (bulat ≥ 1; SATU identitas untuk semua frame). Tanpa daftar target tingkat atas (diturunkan dari `frames`, jadi tidak bisa tidak konsisten). `clip` = identitas T-108 saat disimpan. `frame_sha256` = sha256 BYTE berkas PNG (sama dengan prototipe T-602 dan cara pipeline meng-hash berkas).
+- **Konversi T-602 (opsional, `scripts/t604_convert_t602.py`):** `t602-points/1` → format ini (obj_id → id, label sama, koordinat sudah koordinat frame penuh; tanpa kotak) → `work/t604/t602_converted/{klip5,klip3}.points.json`, divalidasi dengan validator pick (sha256 frame harus cocok). TIDAK dipasang otomatis ke `target/` (uji UI Tahap 3 mulai bersih; pemasangan diputuskan di T-605). Titik klip3 T-602 (skala 0,675) dihitung `dx / s` tanpa konvensi pusat piksel → −0,24 px terhadap rumus R5; dibiarkan apa adanya.
+
+**R3 Validasi** (`load_points`, dipakai pick dan kelak T-605):
+- **Fatal** (pick menolak membuka, exit 1, berkas tidak ditimpa): JSON rusak; `format` bukan `rotoscope-target-points/<n>` (`t602-points/1` → saran skrip konversi; n > 1 → "dibuat versi lebih baru"); skema: tipe, label ∉ {0, 1}, koordinat bukan bilangan hingga / di luar frame, kotak bukan 4 angka / terbalik / di luar frame, `frame_index` ganda, `id` ganda dalam satu frame, id < 1, target tanpa titik dan tanpa kotak, target hanya klik kanan tanpa kotak, frame tanpa target; `clip.source_path` ≠ `meta.json` (milik klip lain).
+- **Status per frame:** **ok** (berkas frame ada, sha256 sama) | **basi** (sha256 berbeda, mis. ingest ulang mengubah isi; atau `frame_size` berbeda) | **hilang** (indeks ≥ `frame_count` / berkas tidak ada). `meta_sha256` berbeda saja = peringatan; keputusan tetap per frame lewat sha256.
+- Membuka frame **basi**: titik lama TIDAK dimuat (koordinat mungkin tidak cocok), pesan di panel + terminal; menyimpan menggantinya. Frame basi lain dicantumkan dalam peringatan saat membuka dan saat menyimpan; pick tidak menghapusnya diam-diam.
+
+**R4 Kontrol + state machine** (`PickState`, satu frame per sesi, Python murni, diuji dengan event sintetis):
+- **Data:** `targets {id: {points, box}}`, `active`, `history` (aksi: tambah titik | pasang kotak (menyimpan kotak lama) | reset (menyimpan snapshot)), `mode` (normal | tekan-kiri | tarik | konfirmasi-hapus), `msg`.
+- **Mouse** (hanya di area gambar; klik di panel diabaikan): kiri DITEKAN → tekan-kiri; GERAK dengan tombol kiri ≥ 6 px tampilan dari titik tekan → tarik (kotak karet tampil); kiri DILEPAS → (tarik) kotak target aktif, MENGGANTIKAN kotak lama | (tekan-kiri) titik label 1 di posisi tekan. Tombol dilepas di luar jendela (Win32 OpenCV tidak menangkap mouse) → GERAK pertama tanpa tombol kiri menyelesaikan kotak di posisi terakhir yang terlihat. Kanan DITEKAN → titik label 0.
+- **Tombol** (huruf besar / kecil sama): **N** → target berikutnya, berputar 1 … (id terbesar yang dikenal + 1) → 1; id dikenal = id di frame lain berkas + id berisi di frame ini (kembali ke target 1 tetap bisa; pindah dari target kosong tidak membuat apa pun). **U** → batalkan aksi terakhir (titik dihapus / kotak lama kembali / reset kembali); titik lama yang dimuat masuk riwayat dengan urutan simpanan (id naik, titik urut klik, kotak terakhir), jadi U juga bisa menghapusnya satu per satu; riwayat kosong → pesan. **R** → kosongkan frame ini (bisa di-U). **Enter / S** → target hanya klik kanan tanpa kotak → pesan, jendela tetap terbuka; frame kosong + entri lama ada → konfirmasi-hapus ("Enter / S lagi = hapus frame ini dari points.json; tombol lain = batal"); frame kosong tanpa entri → "belum ada titik"; tidak ada perubahan → tutup tanpa menulis; selain itu SIMPAN + tutup. **Esc** / tombol X jendela → keluar tanpa simpan.
+- **Peringatan keputusan 3:** target tanpa klik kanan ditandai `(!)` di panel selama mengklik dan dicetak di terminal setelah simpan (tidak memblokir).
+- **Simpan** = baca ulang `points.json` dari disk (bukan salinan saat dibuka) → validasi → ganti / hapus SATU entri frame ini, frame lain apa adanya; sha256 frame dihitung ulang saat simpan — berbeda dengan saat dibuka → tidak disimpan + pesan.
+- **Panel** (ASCII, font Hershey): judul; klip + frame N (rentang klip) + skala; target aktif + warna; daftar kontrol; jumlah per target di frame ini (mis. `1 hijau: 5 kiri, 2 kanan, kotak (!)`); target di frame lain berkas (mis. `di berkas: 1 (f0, f64), 2 (f0)`); pesan terakhir. Warna tetap per id (hijau, biru, kuning, ungu, oranye, toska, sama dengan prototipe) → target 1 selalu hijau di semua frame. Nama klip panjang dipotong.
+
+**R5 Skala + DPI Windows** (diperiksa baca-saja, tanpa membuka jendela):
+- **Probe** `venv` `python.exe`: default **DPI-unaware** (`GetProcessDpiAwareness` = 0): layar 1536 × 864, area kerja 1536 × 816, DPI 96 (virtual). Setelah `SetProcessDpiAwareness(2)` (per-monitor): layar 1920 × 1080, area kerja 1920 × 1020 (taskbar 60 px), DPI 120 (= 125%). Panggilan berhasil walau `rotoscope.cli` sudah di-import (cv2 + semua stage, 0,74 s, tanpa torch). Panggilan KEDUA mengembalikan HRESULT `E_ACCESSDENIED` (0x80070005) TANPA exception → `try/except` prototipe tidak mendeteksi kegagalan; produksi mengecek hasil lewat `GetProcessDpiAwareness`.
+- **Apakah 125% membuat klik meleset?** Dengan backend WIN32UI + `WINDOW_AUTOSIZE`: **tidak**. Unaware → Windows memperbesar bitmap jendela 1,25× DAN menerjemahkan koordinat mouse untuk jendela yang sama (konsisten, tetapi buram; 1 px logis = 1,25 px fisik). Aware → gambar 1:1, koordinat fisik. Yang BISA membuat meleset: (a) gambar diskalakan jendela sedangkan koordinat tidak (`WINDOW_NORMAL` + ubah ukuran; backend Qt dengan skala high-DPI sendiri); (b) bias setengah piksel di rumus pemetaan (prototipe `dx / s`: −0,24 px di s 0,675; kecil); (c) kanvas lebih besar dari layar → jendela terpotong / sebagian di luar layar (tidak bergeser, tetapi tidak bisa diklik). Bukti tidak langsung: klik Rio di klip3 T-602 (s 0,675, layar fisik 1920 × 1080) menghasilkan masker bersih.
+- **Pencegahan:** (1) `SetProcessDpiAwareness(2)` di awal `pick`, sebelum jendela apa pun, lalu dicek; gagal → lanjut di koordinat logis (tetap benar, lebih buram) + catatan di terminal, `display.dpi_aware` false; (2) ukuran layar = area kerja (`SystemParametersInfoW(SPI_GETWORKAREA)`) di ruang koordinat proses yang sama; (3) gambar diskalakan sendiri (`cv2.resize` `INTER_AREA`), `WINDOW_AUTOSIZE` (tanpa ubah ukuran), s ≤ 1 (tanpa upscale); (4) jendela dipindah ke pojok kiri-atas area kerja (`cv2.moveWindow`) supaya penempatan bertingkat Windows tidak mendorong bagian bawah ke balik taskbar; (5) **penjaga:** setelah `imshow` pertama, ukuran `cv2.getWindowImageRect` harus = ukuran kanvas, selain itu jendela ditutup + exit 1 sebelum klik apa pun; area gambar keluar dari area kerja → peringatan; (6) rumus pusat piksel + clamp ke frame (di bawah); (7) `display` (skala, layar, dpi_aware) disimpan per frame untuk diagnosis.
+- **Rumus:** batas kanvas = area kerja − (16, 56) px (bingkai ±8 px per sisi + judul ±31 px di 125% + margin); s = min(1, H_maks / H, (W_maks − 400) / W) (panel 400 px); gambar dw = round(W · s), dh = round(H · s); sx = dw / W, sy = dh / H (dipakai pemetaan, supaya tepi gambar tepat). Tampilan → frame: x = (dx + 0,5) / sx − 0,5, y = (dy + 0,5) / sy − 0,5, clamp ke [0, W − 1] × [0, H − 1], bulat 0,1. Frame → tampilan: dx = round((x + 0,5) · sx − 0,5). Kanvas = (dw + 400) × max(dh, 600). **Layar Rio (aware):** batas 1904 × 964 → frame 720 × 1280: s = 0,7531, gambar 542 × 964, kanvas 942 × 964 (prototipe: s 0,675, 486 × 864); 1 px tampilan ≈ 1,33 px frame. Unaware (cadangan): s 0,594, gambar 428 × 760 logis (±535 × 950 fisik, buram).
+- **Konstanta UI di modul, bukan YAML:** lebar panel 400, tinggi panel min 600, cadangan bingkai 16 × 56, ambang tarik 6 px tampilan, s maks 1,0, warna target. Tidak memengaruhi keluaran pipeline → tanpa parameter YAML, docs/02 tidak berubah.
+
+**R6 Multi-frame + id target.** Satu sesi = satu frame; `--frame 64` membuka frame itu dengan titik lamanya (bila status ok); simpan mengganti entri frame itu saja. Id target global: target 1 di f0 = target 1 di f64 (warna sama); panel menampilkan id yang sudah ada di frame lain. Target yang tidak punya titik / kotak di frame mana pun tidak ada lagi. Frame dikosongkan (R) lalu disimpan dengan konfirmasi → entri frame dihapus; entri terakhir dihapus → `frames: []`.
+
+**R7 Pesan (contoh, bahasa Indonesia):** frame di luar klip → "frame 300 di luar klip klip5 (133 frame: 0–132)"; frame hilang padahal `meta.json` ada → "frame_00064.png hilang / tidak terbaca di …/frames — jalankan python -m rotoscope ingest <video> (menulis ulang frames/; titik pada frame yang isinya berubah menjadi basi)"; ingest otomatis → "frames/ belum ada — [1] ingest dijalankan dulu (CPU)"; `points.json` rusak → "<path> tidak valid: frame 64 target 2 titik #3 di luar frame (x 800,0 ≥ 720) — perbaiki atau pindahkan berkas itu; pick tidak menimpanya"; format T-602 → "format t602-points/1 (studi T-602) — konversi dengan scripts/t604_convert_t602.py"; milik klip lain → "points.json milik klip lain (<source_path lama>)"; meta berubah → "PERINGATAN: meta.json berubah sejak titik disimpan — frame dicek satu per satu lewat sha256"; frame basi → "PERINGATAN: titik frame 0, 64 dibuat pada versi frame lain (sha256 berbeda; mis. ingest diulang) — tidak dipakai; pick ulang: python -m rotoscope pick <video> --frame 0 (lalu --frame 64)"; frame berubah selama sesi → "frame 64 berubah selama pick — tidak disimpan; jalankan pick lagi"; jendela diskalakan → "area gambar w × h ≠ kanvas W × H (diskalakan sistem?) — klik bisa meleset; pick dihentikan, tidak ada yang disimpan"; tanpa GUI / desktop → "OpenCV tidak bisa membuka jendela (<error>) — pakai --dry-run untuk memeriksa tampilan"; simpan → "Tersimpan: …/target/points.json — frame 64: target 1: 5 kiri, 2 kanan, kotak; frame lain: 0 (ok)" + "PERINGATAN: target 1 tanpa klik kanan (bukan target) — klik kanan di orang / benda yang menempel membantu SAM memisahkan target (T-602 klip5: 0 klik kanan, masker rusak). Tetap disimpan."; Esc → "Dibatalkan — points.json tidak berubah."
+
+**R8 Test** `tests/test_pick.py` (tanpa GUI; jendela dipalsukan bila perlu): (1) `fit_scale` di area kerja aware / unaware, frame potret / lanskap / kecil (tanpa upscale), kanvas muat; (2) tampilan → frame → tampilan = identitas untuk SETIAP piksel tampilan (beberapa ukuran ganjil); frame → tampilan → frame galat ≤ 0,5 / s; (3) nilai pusat piksel tepat (s 0,5: dx 0 → 0,5, dx 1 → 2,5) + clamp sudut + klik di panel diabaikan; (4) kotak dari tarik ke segala arah dinormalisasi + clamp; tarik < 6 px = klik; (5) klik kiri / kanan ke target aktif; (6) kotak kedua menggantikan, U mengembalikan kotak lama; (7) urutan U campuran + U riwayat kosong; (8) R lalu U mengembalikan; (9) siklus N dengan id dikenal {1, 3}; (10) validasi simpan: hanya klik kanan → ditolak; hanya kotak → boleh; frame kosong tanpa / dengan entri (konfirmasi, tombol lain membatalkan); tanpa perubahan → tidak menulis; (11) peringatan target tanpa klik kanan (tidak memblokir); (12) muat frame lama: titik + kotak + urutan riwayat; (13) urutan event mouse sintetis lewat callback (termasuk tombol dilepas di luar jendela); (14) tulis → baca = sama; pembulatan 0,1; (15) setiap galat validasi R3 dengan pesannya; (16) sha256: ok / basi / hilang; frame basi tidak dimuat; (17) gabung: simpan f64 ke berkas berisi f0 → entri f0 utuh, urut; berkas diubah sesi lain di antara buka dan simpan → perubahan itu tetap; hapus entri; entri terakhir; (18) id konsisten antar frame; (19) frame berubah selama sesi → tidak disimpan, berkas utuh; (20) `points.prev.json` = isi lama; (21) cli: tanpa `meta.json` → ingest dipanggil sekali lalu pick; dengan `meta.json` → ingest TIDAK dipanggil; klip lain → exit 1 tanpa apa pun; `--frame` di luar klip / negatif / frame hilang → pesan + exit; (22) `--dry-run` menulis PNG, `points.json` tidak dibuat / diubah, fungsi jendela tidak dipanggil; (23) `render_canvas` ukuran benar + teks panel terlebar ≤ lebar panel; (24) DPI gagal (ctypes dipalsukan: `E_ACCESSDENIED`, awareness 0) → lanjut tanpa exception; penjaga jendela: ukuran beda → galat, keluar layar → peringatan; (25) ingest ulang video sintetis dua kali → `frames/` byte-identik (asumsi sha256 R2; `run` SELALU ingest ulang); (26) cli tidak meng-import torch (test lama) + `run` palsu tidak membuat `target/`. **Mutasi** (`scripts/t604_mutations.py`, F3; tiap mutasi harus membuat ≥ 1 test gagal): pusat piksel dibuang (rumus prototipe); `s` dipakai alih-alih sx / sy; tanpa clamp; cek sha256 selalu ok; sha256 frame salah indeks; gabung menimpa seluruh `frames`; gabung memakai salinan saat dibuka; kotak ditambah alih-alih diganti; U setelah kotak pengganti tidak mengembalikan kotak lama; N tanpa putaran; label 2 / titik di luar frame diterima; peringatan tanpa klik kanan terbalik; ingest dipanggil walau `meta.json` ada; frame basi dimuat; hapus entri tanpa konfirmasi; ambang tarik diabaikan.
+
+**R9 Kontrak docs/01 + CLAUDE.md:** teks usulan ada di laporan Tahap 1 (baris tabel CLI + bagian "`pick` — klik target (T-604; bukan stage)" di docs/01, pohon repo + layout `target/`; satu paragraf "Pilih target" di CLAUDE.md setelah baris "Cara pakai"); diterapkan bersama kode di Tahap 2, difinalkan di Tahap 4.
+
+**F1** (`scripts/t604_hash.py`, format daftar sama dengan T-602): `before` = 10 657 berkas (6 `qc_report.json`), daftar byte-identik dengan `work/t602/after_tutup_sha256.txt` (sha256 daftar `d4d85d5d…`).
+
+**Penyimpangan / keraguan:**
+1. **Tanpa crop:** klip5 (letterbox) tampil utuh, s 0,7531 (T-602: crop R2 → s 1,0) → subjek tampil lebih kecil. Crop di luar lingkup (backlog "potong letterbox / durasi").
+2. **sha256 byte PNG:** update ffmpeg bisa mengubah byte PNG tanpa mengubah piksel → titik ditandai basi (aman: pick ulang, bukan hasil salah; sama dengan batas (d) identitas klip). Determinisme byte `frames/` antar ingest ulang belum diuji di repo (hanya `meta.json`), padahal `run` SELALU ingest ulang → test (25) di Tahap 2; bila gagal → usul ganti ke sha256 piksel (keputusan Rio).
+3. **Konstanta UI tanpa YAML** (aturan keras 3 menyebut "threshold"): ambang tarik 6 px dan tata letak = UI, tidak memengaruhi keluaran pipeline → usul konstanta modul.
+4. **Tambahan di luar keputusan Rio** (mohon setuju / tolak): U membatalkan aksi terakhir (titik, kotak, atau R), bukan hanya klik; N berputar dan boleh meninggalkan target kosong (prototipe menolak N bila target belum punya klik kiri); hapus entri frame lewat R + Enter dua kali; `points.prev.json`; PNG `--dry-run` di `target/pick_dryrun/`; exit 0 saat dibatalkan; "tanpa perubahan" tidak menulis berkas.
+5. **Belum diuji dengan jendela nyata** (Tahap 1 tidak membuka jendela): penjaga `getWindowImageRect`, `moveWindow`, fokus keyboard saat jendela terbuka (panel memuat petunjuk "klik jendela dulu bila tombol tidak bereaksi"). Uji klik sintetis (`SendInput`) akan menggerakkan kursor Rio → tidak diusulkan; cukup uji Rio di Tahap 3.
+6. Konversi T-602 tidak dipasang ke `target/` (R2).
+7. `T305-prompt.md` masih ter-commit (dicatat di T-602; tidak disentuh).
+
+### Keputusan T-604 setelah Tahap 1 (2026-10-16) — Tahap 2–3 dimulai
+
+Dicatat SEBELUM kode ditulis. Rancangan Tahap 1 (R1–R9 di atas) disetujui Rio dengan perubahan berikut:
+1. **Semua tambahan Claude Code disetujui** (keraguan Tahap 1 no. 4): U membatalkan kotak dan R (bukan hanya klik); N berputar (boleh meninggalkan target kosong); hapus entri frame lewat R + Enter / S dua kali; cadangan `points.prev.json`; PNG `--dry-run` di `target/pick_dryrun/`; exit 0 saat batal; simpan tanpa perubahan tidak menulis berkas.
+2. **Sidik frame = sha256 PIKSEL**, bukan byte PNG: array RGB uint8 hasil decode + lebar / tinggi. Nama field **`frame_pixel_sha256`** (menggantikan `frame_sha256` di R2 / R3 / R8). Alasan (keraguan Tahap 1 no. 2): byte PNG bisa berubah (versi ffmpeg, kompresi) tanpa perubahan piksel, padahal `run` selalu ingest ulang.
+3. **Esc saat ada perubahan yang belum disimpan → konfirmasi** (Esc dua kali); tombol X jendela diperlakukan sama. Tanpa perubahan → langsung keluar. (Mengganti "Esc / tombol X → keluar tanpa simpan" di R4.)
+4. **Target tanpa titik dan tanpa kotak tidak disimpan** (mis. target yang dibuka dengan N lalu ditinggal kosong, atau semua titiknya di-U).
+5. Konstanta UI tetap di modul, bukan YAML (keraguan no. 3; docs/02 tidak berubah).
+6. Konversi titik T-602 tetap di `work/t604/`, tidak dipasang ke `target/` (keraguan no. 6).
+7. **Zoom ditunda**; diputuskan setelah Rio mencoba UI (Tahap 3).
+
+**Tahap 2 (implementasi):** R1–R9 + butir 1–7: `src/rotoscope/pick.py` + subperintah `pick`; `tests/test_pick.py` = 26 kelompok Tahap 1 (disesuaikan) + sha256 piksel stabil walau byte PNG berbeda (PNG yang sama dikodekan ulang dengan kompresi lain) + Esc / X dengan dan tanpa perubahan + target kosong tidak tersimpan; `scripts/t604_mutations.py` = 16 mutasi Tahap 1 + 3 baru (hash dari byte PNG; Esc tanpa konfirmasi; target kosong ikut tersimpan), tiap mutan harus menggagalkan ≥ 1 test; suite penuh; `run` tidak membuat `target/` dan tetap byte-identik; teks docs/01 + CLAUDE.md Tahap 1 diterapkan (sidik frame = sha256 piksel).
+**Tahap 3 (persiapan uji Rio):** `pick --dry-run` klip5 f0 + f64 dan klip3 f85 (tata letak, skala, ukuran kanvas, status frame); konversi `scripts/t602_points.json` → `work/t604/t602_converted/`, divalidasi dengan pemuat modul; `work/t604/PANDUAN_UJI.md` (perintah, langkah uji, template jawaban). **F1:** berkas lama di 6 klip + 6 `qc_report.json` + `out/` identik sebelum dan sesudah; `target/` hanya boleh berisi `pick_dryrun/`. Tanpa commit; berhenti setelah laporan (Tahap 4 belum).
+
+### Hasil T-604 Tahap 2–3 (2026-10-16) — implementasi + persiapan uji; menunggu uji Rio
+
+CPU saja; tanpa GPU / unduhan / dependency baru / parameter YAML (docs/02 tidak berubah); tanpa commit.
+- **Berkas.** Baru: `src/rotoscope/pick.py` (logika murni `View` / `PickState` / validasi / gabung / `render_canvas` + lapis GUI `ensure_dpi_aware` / `probe_display` / `CvGui`), `tests/test_pick.py`, `scripts/t604_mutations.py`, `scripts/t604_convert_t602.py` (F3). Diubah: `src/rotoscope/cli.py` (subperintah `pick` + `cmd_pick`; `run`, `stage_args`, stage lain tidak berubah), docs/01 (baris tabel CLI, catatan di bawah diagram, bagian "`pick.py`", pohon repo), CLAUDE.md (paragraf "Pilih target"), `scripts/t604_hash.py` (melapor berkas `target/` di luar `pick_dryrun/`).
+- **Implementasi = R1–R9 + keputusan 2026-10-16.** Rincian yang tidak tertulis di rancangan (penyimpangan kecil, mohon dicek):
+  1. `frame_size` `points.json` ≠ `meta.json` → **fatal** (pick menolak membuka, berkas tidak ditimpa, pesan: pindahkan / hapus lalu pick ulang), bukan "basi per frame" seperti R3: menyimpan dengan `frame_size` baru akan membuat koordinat lama salah tafsir / gagal validasi.
+  2. Kotak dengan sisi < 6 px tampilan (tarik panjang tetapi tipis) diabaikan dengan pesan.
+  3. Saat konfirmasi (hapus / keluar), tombol lain membatalkan konfirmasi lalu dijalankan seperti biasa (N / U / R); Esc saat konfirmasi-hapus hanya membatalkan; klik mouse juga membatalkan konfirmasi.
+  4. Tombol X dengan perubahan: WIN32UI menghancurkan jendela, jadi jendela **dibuka lagi** dengan pesan konfirmasi; X / Esc kedua = keluar tanpa simpan.
+  5. Format: kunci tingkat atas `frame_hash` (deskripsi sidik) dan `display.work_area_wh` ditambahkan ke contoh R2. Sidik = sha256(`b"rgb8 <W>x<H>\n"` + piksel RGB uint8 dari `stage_common.read_rgb`).
+  6. Peringatan tanpa klik kanan: `(!)` di panel selama mengklik + PERINGATAN di terminal setelah simpan (jendela tertutup saat simpan).
+  7. Panel: blok saran dibuang dulu bila tidak muat; di kanvas 600 px dengan sangat banyak target + pesan, bagian bawah bisa terpotong (batas di docs/01).
+- **Test** `tests/test_pick.py`: 80 test = 26 kelompok Tahap 1 (disesuaikan: sidik piksel; Esc / X) + (27) sidik piksel stabil walau PNG dikodekan ulang dengan kompresi lain (byte berbeda, sidik sama, titik tetap dimuat dan bisa disimpan; satu nilai piksel berubah → sidik berubah; ukuran ikut di-hash) + (28) Esc / X dengan dan tanpa perubahan (state + GUI palsu: tanpa perubahan langsung keluar; dengan perubahan konfirmasi, tombol lain lanjut, Enter saat konfirmasi simpan; X → jendela dibuka lagi) + (29) target kosong tidak tersimpan. Test `run`: argv stage `run` sama dengan / tanpa `points.json`, `run` tidak membuat `target/`; rantai CPU nyata (stabilize → vectorize → stylize → export; ingest + GPU palsu; klip sintetis 4 frame) → `points.json` ditulis + keluaran CPU dihapus → `run` lagi = keluaran isi byte-identik (stable/, contours/, strokes/, MP4, SVG; manifest / log berstempel waktu dikecualikan, `clip_stats.json` tanpa kunci `*_utc`), `points.json` tidak disentuh. Batas: klip sintetis tanpa kontur (strok 0, strokes / MP4 = kertas saja); tidak ada `run` nyata (GPU) pada klip produksi. Ingest ulang video sintetis (ffmpeg) → sidik piksel semua frame sama dan titik tetap `ok`. **Suite penuh: 1378 lolos, 2 skip (test GPU nyata, `ROTOSCOPE_GPU_TESTS`), 0 gagal** (491 s).
+- **Mutasi** (`scripts/t604_mutations.py`; mutasi = penggantian teks pada salinan sumber DI MEMORI, satu proses per mutasi, kode di disk tidak diubah; kontrol = sumber asli di-exec dengan cara yang sama → 80 lolos): **19 / 19 mutan menggagalkan ≥ 1 test** — pusat piksel dibuang (2 test gagal), `s` alih-alih sx / sy (2), tanpa clamp (1), sidik selalu ok (1), sidik dari indeks salah (2), gabung menimpa seluruh frames (6), gabung memakai salinan saat dibuka (1), kotak kedua digabung ke kotak lama (1), U tidak mengembalikan kotak lama (1), N tanpa putaran (2), label 2 / titik di luar frame diterima (3), peringatan terbalik (2), ingest walau `meta.json` ada (2), frame basi dimuat (1), hapus tanpa konfirmasi (1), ambang tarik diabaikan (1), **sidik dari byte PNG (1), Esc / X tanpa konfirmasi (2), target kosong ikut tersimpan (1)**. Hasil: `work/t604/mutations.json`.
+- **Dry-run** (perintah Rio + `--dry-run`, proses DPI-aware sungguhan): klip5 f0, klip5 f64, klip3 f85 sama: layar 1920 × 1080, area kerja 1920 × 1020, DPI 120, DPI-aware ya; s 0,7531 → gambar 542 × 964, kanvas 942 × 964 (batas 1904 × 964) → muat; teks panel terlebar 191 px (ruang 372; diukur juga dari piksel kanvas: teks di x 13–380 dari panel 400), bawah panel y 469 / 964; bolak-balik koordinat identitas untuk tiap piksel tampilan, galat frame → tampilan → frame maks 0,7 px (batas 0,714); `points.json` belum ada (tanpa status frame). PNG di `work/clips/{klip5,klip3}/target/pick_dryrun/` (tidak dibuka).
+- **Uji asap jendela NYATA** (skrip di folder scratchpad sesi, di luar repo; klip sintetis 720 × 1280 di scratchpad; pesan Windows `PostMessage` dikirim ke jendela milik proses itu sendiri — kursor / keyboard Rio tidak disentuh, jendela tampil ±5 s): penjaga lolos (area gambar = kanvas 942 × 964, tidak keluar area kerja); klik kiri / kanan dan tarik (MOUSEMOVE dengan `MK_LBUTTON` → kotak) tersimpan tepat sesuai rumus (titik tampilan (100, 200) → frame (133,0, 265,7); kotak (50, 60)–(150, 260) → [66,6, 79,8, 199,4, 345,4]); N → target 2; Esc dengan perubahan → konfirmasi, spasi → lanjut; `WM_CLOSE` (= X) → jendela dibuka lagi; Enter → simpan + PERINGATAN target 2; buka ulang → titik lama dimuat (status ok), Esc langsung keluar, berkas tidak berubah; X tanpa perubahan → keluar. Tidak menguji: mouse / keyboard fisik, fokus keyboard, tombol dilepas di luar jendela.
+- **Konversi T-602** (`scripts/t604_convert_t602.py` → `work/t604/t602_converted/`): klip5 f0 (19 kiri, 0 kanan; 3399 B) dan klip3 f85 (15 kiri, 4 kanan; 3404 B); sha256 byte frame = `frame_sha256` T-602 (frame tidak berubah) → sidik piksel dihitung; dibaca ulang dengan `load_points` + `check_doc_matches_clip` + status: **ok / ok**; titik identik dengan sumber (urutan, koordinat, label). TIDAK dipasang ke `target/`.
+- **Panduan uji Rio:** `work/t604/PANDUAN_UJI.md` (perintah persis, langkah uji, template jawaban).
+- **F1** (`scripts/t604_hash.py`): `before_t23` = 10 657 berkas (6 `qc_report.json`), daftar byte-identik dengan `before` / `after` Tahap 1 (sha256 daftar `d4d85d5d…`); `after_t23` = 10 660: berkas lama hilang 0, berubah 0; tambahan hanya `target/pick_dryrun/` (klip5 `frame_00000.png`, `frame_00064.png`; klip3 `frame_00085.png`); `target/` di luar `pick_dryrun/` 0; tambahan lain 0.
+- **Keraguan:** (1) panel memakai font Hershey skala 0,45–0,65 (tinggi huruf ±14 px pada 0,5) — mungkin kecil di layar Rio; dinilai saat uji; (2) zoom ditunda (no. 7) — klip5 1 px tampilan ≈ 1,33 px frame; (3) uji `run` byte-identik memakai klip sintetis tanpa kontur, bukan klip produksi; (4) uji asap jendela memakai pesan Windows tiruan, bukan input fisik; (5) `T305-prompt.md` masih ter-commit (tidak disentuh).
+
+### Keputusan akhir T-604 (2026-10-17) — DONE
+
+Dicatat saat penutupan. Tanpa GPU; tanpa perubahan `src/` / `configs/` / `tests/` / CLAUDE.md di Tahap 4. docs/01 hanya diubah pada butir zoom di "Batas yang diketahui".
+
+- **Hasil uji Rio** dengan mouse dan keyboard fisik, layar 1920 × 1080 skala 125%. Perintah dan template diambil dari `work/t604/PANDUAN_UJI.md` (klip5 f0 + f64, klip3 f85). Semua butir dijawab **"ya"**:
+  - jendela muat dan tidak buram;
+  - titik muncul tepat di tempat klik;
+  - kotak bekerja;
+  - N / U / R / Enter / Esc bekerja (tidak ada yang disebut gagal);
+  - peringatan "tanpa klik kanan" muncul;
+  - titik lama tampil saat frame dibuka ulang;
+  - huruf panel terbaca. Ini menjawab keraguan Tahap 2–3 no. 1.
+- **Koreksi jawaban:** Rio sempat salah mengirim jawaban. Butir "titik lama tampil saat dibuka ulang" terkirim sebagai "tidak", disertai perintah "perbaikan buka ulang"; Rio lalu mengoreksinya menjadi "ya" dan membatalkan perintah perbaikan. **Yang berlaku: "ya"**; perintah perbaikan tidak dikerjakan. Berkas Rio konsisten dengan jawaban itu: ketiga frame berstatus `ok`, syarat titik lama dimuat saat frame dibuka ulang.
+- **Zoom TIDAK diperlukan (Rio) → ditutup.** Ini menutup keputusan setelah Tahap 1 no. 7. docs/01 "Batas yang diketahui" diperbarui.
+- **Status T-604: DONE.** Semua syarat Done-when terpenuhi:
+  - test logika + mutasi 19 / 19 (Tahap 2);
+  - `--dry-run`;
+  - suite penuh;
+  - `run` byte-identik;
+  - F1;
+  - uji Rio;
+  - kontrak di docs/01 + CLAUDE.md.
+
+  Tidak ada perubahan kode sejak Tahap 2–3. `tests/test_pick.py` dijalankan ulang di Tahap 4.
+- **Titik Rio (bahan T-605), divalidasi BACA-SAJA** dengan pemuat modul (`load_points` + `check_doc_matches_clip` + `frame_statuses`). Skripnya ada di folder scratchpad sesi, di luar repo. sha256 berkas sebelum = sesudah. Tidak ada berkas titik yang diubah.
+
+  | Klip / frame | Status | Target | Klik kiri | Klik kanan | Kotak [x0, y0, x1, y1] (px frame) | Disimpan (UTC) |
+  |---|---|---|---|---|---|---|
+  | klip5 f0 | ok | 1 (id 1) | 11 | 30 | [105,1, 407,8, 520,9, 1014,6] | 2026-10-16 17:23:14 |
+  | klip5 f64 | ok | 1 (id 1) | 8 | **0** | [1,5, 353,4, 718,8, 1023,9] | 2026-10-16 17:24:12 |
+  | klip3 f85 | ok | 1 (id 1) | 16 | **0** | tidak ada | 2026-10-16 17:25:24 |
+
+  - **Target tanpa klik kanan:** klip5 f64 target 1 dan klip3 f85 target 1. Peringatan muncul saat simpan (jawaban Rio) dan tidak memblokir.
+  - **Berkas klip5:**
+    - `points.json` 7 143 B, sha256 `7f6619f9…`, berisi f0 + f64;
+    - `points.prev.json` 5 655 B, sha256 `2c630c1c…`, berisi f0 saja: cadangan yang dibuat saat f64 disimpan.
+  - **Berkas klip3:** `points.json` 2 930 B, sha256 `e27d669d…`; tidak ada `points.prev.json` karena hanya satu kali simpan.
+  - **Isi umum:**
+    - `frame_size` 720 × 1280;
+    - `meta_sha256` sama dengan `meta.json` sekarang;
+    - `display` di semua frame: s 0,7531, layar 1920 × 1080, area kerja 1920 × 1020, DPI-aware.
+  - **Catatan untuk T-605** (fakta, belum diuji dengan SAM):
+    - Kotak klip5 f64 hampir selebar frame: x 1,5–718,8 dari 720 px; y 353,4–1023,9, kira-kira setinggi area aktif letterbox y 344–1011.
+    - f64 adalah frame tempat luas masker T-602 melompat.
+    - Dibanding klik T-602: klip5 f0 sekarang punya 30 klik kanan + kotak (T-602: 19 kiri, 0 kanan, tanpa kotak). klip3 f85 sekarang 16 kiri, 0 kanan, tanpa kotak (T-602: 15 kiri, 4 kanan).
+  - Berkas titik dipakai T-605 apa adanya.
+- **Artefak uji dihapus:** `target/pick_dryrun/` klip5 (2 PNG, 936 265 B) dan klip3 (1 PNG, 834 914 B). `target/` sekarang hanya berisi berkas titik.
+- **F4:**
+  - `T604-prompt.md` (4 605 B, tidak ter-track) dihapus.
+  - `work/t604_scratch/` tidak pernah dibuat. Scratch Tahap 2–3 berada di folder scratchpad sesi, di luar repo.
+  - **`work/t604/` dipertahankan sebagai arsip:** `PANDUAN_UJI.md`, `t602_converted/` (konversi T-602 + `ringkasan.json`), daftar hash F1 + `f1_*.json`, `mutations.json`.
+- **F1** (`scripts/t604_hash.py`; kini juga melaporkan `pick_dryrun/` yang hilang dan berkas `target/` selain `points(.prev).json`):
+  - `before_t4` (sebelum penghapusan): 10 663 berkas = 10 657 berkas lama + 6 di `target/` (3 PNG dry-run + 3 berkas titik).
+  - `after_t4`: 10 660 berkas, termasuk 6 `qc_report.json`.
+  - **`after_t4` vs F1 penutupan T-602** (= `before` T-604, 10 657 berkas): hilang 0, berubah 0, tambahan lain 0. Tambahan hanya `klip5/target/points.json`, `klip5/target/points.prev.json`, `klip3/target/points.json`.
+  - **`after_t4` vs `before_t4`:** yang hilang hanya 3 PNG `pick_dryrun/`; berubah 0, termasuk berkas titik Rio.
+- **Skrip F3 yang tersisa:**
+  - `t604_hash.py` — mandiri;
+  - `t604_mutations.py` — mandiri; butuh `tests/test_pick.py`;
+  - `t604_convert_t602.py` — mandiri; menulis ke `work/t604/t602_converted/`.
+
+  Skrip uji asap jendela dan skrip validasi titik ada di folder scratchpad sesi; keduanya tidak disimpan di repo.
+- **Task berikutnya: T-605** ([1b] isolasi target dengan SAM 2.1 tiny). Bahannya berkas titik di atas.
+- **Tidak dikerjakan:** `T305-prompt.md` (ter-commit) tetap ada. Berkas itu di-`git rm` saat T-305 induk ditutup (keputusan T-602 1b no. 6).
+
 ## Pitfall yang sudah diketahui
 
 ### P-001 — Temporal flicker / boiling 🔴 RISIKO TERTINGGI

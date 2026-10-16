@@ -30,6 +30,8 @@ Path stage di bawah (`frames/`, `seg/`, `depth/`, `stable/`, …) relatif terhad
 `<paths.work_dir>/clips/<nama video>/` (default `work/clips/<nama>/`; satu video = satu folder, lihat "CLI"),
 dan `out/` = `paths.out_dir` (default `out/`, tidak per klip). `paths.work_dir` boleh diarahkan ke drive lain —
 data antara ±1–5 GB per klip (lihat anggaran disk).
+Di luar pipeline: `python -m rotoscope pick` (T-604, BUKAN stage) menulis `target/points.json` (+ `target/points.prev.json`,
+`target/pick_dryrun/`) di folder kerja klip; tidak ada stage yang membacanya sampai T-605 (lihat "`pick.py`").
 
 ## Prinsip (D-010)
 
@@ -111,6 +113,7 @@ internal yang dipanggil cli, bukan cara pakai utama.
 | `run <video>` | ingest → segment → depth → stabilize → vectorize → stylize → export (T-203b); flag `--config --style --seg-model --limit --restart-from --yes`; **T-204:** `--preview N [--from K]` (jendela K..K+N-1, tanpa GPU; lihat "`run --preview`" di bawah) |
 | `ingest\|segment\|depth\|stabilize\|vectorize\|stylize\|export <video> [flag stage]` | satu stage; sisa argumen diteruskan apa adanya ke `main(argv)` stage (flag stage tidak diparse ulang di cli). `vectorize` (T-201a, T-201b): flag `--restart --limit` (`--limit N` tetap membaca SEMUA frame untuk ambang per klip, `clip_stats.json`), CPU in-process, `--restart` tanpa `--yes`. `stylize` (T-203a; `--from` T-204): flag `--style PATH --restart --limit [--from K]`, CPU in-process, `--restart` tanpa `--yes` (hanya menghapus `strokes/`). Keduanya (dan `export`) juga bagian urutan `run` sejak T-203b |
 | `download [--config P] [--seg-model 0.8b\|0.4b]` | unduh checkpoint (online, sekali jalan): Sapiens2-seg (default **0.8b**; `--seg-model 0.4b` = fallback) **dan** Depth Anything V2 Small + model card. Subprocess mewarisi environment; **tidak** memaksa `HF_HUB_OFFLINE=1` (run biasa offline) |
+| `pick <video> [--frame N] [--config P] [--dry-run]` | **T-604:** jendela klik target (BUKAN stage, tidak masuk urutan `run`) → `target/points.json`. `meta.json` belum ada → [1] ingest dulu (CPU, argumen sama dengan `run`); sudah ada → `frames/` tidak disentuh. Lihat "`pick.py`" di bawah |
 
 - **Folder kerja per klip:** `<paths.work_dir>/clips/<stem>/`; `stem` = nama video disanitasi dengan fungsi yang sama
   dengan `{source}` di `export.filename` (`export.sanitize_source_name`). Layout `clips/` memisahkan data klip dari
@@ -1027,6 +1030,82 @@ dengan aturan tetap)*:
   lolos tipis — metrik itu BUKAN penjaga regresi crf (PSNR + MAE tinta + selisih maks yang menangkap crf 23); (4) identitas klip
   tidak melihat isi file video (batas T-108); (5) `--preview N` = T-204.
 
+### `pick.py` — klik target (T-604; alat CLI, BUKAN stage, CPU)
+- **Peran:** pengguna mengklik target di satu frame → titik + kotak per target, bahan isolasi target (T-605, SAM 2.1 tiny). Bukan
+  stage: tidak masuk urutan `run`, tidak ada stage yang membaca `target/` sampai T-605; keluaran `run` byte-identik dengan atau
+  tanpa `target/` (test).
+- **In:** `meta.json` + `frames/frame_%05d.png`. `meta.json` belum ada → cli menjalankan [1] ingest dulu (argumen sama dengan
+  `run`); sudah ada → `frames/` / `meta.json` tidak disentuh. **Out:** `target/points.json` (+ `target/points.prev.json` = isi
+  sebelum simpan terakhir, cadangan satu tingkat); `--dry-run` → `target/pick_dryrun/frame_%05d.png` (kanvas yang akan tampil).
+- **CLI:** `python -m rotoscope pick <video> [--frame N] [--config P] [--dry-run]`; `--frame` = angka di `frame_%05d.png`
+  (default 0), harus di rentang klip. Satu sesi = satu frame; beberapa frame = beberapa sesi ke berkas yang sama. Exit 0
+  (tersimpan / tanpa perubahan / dibatalkan / dry-run) | 1 (prasyarat: video, klip lain, ingest gagal, frame di luar klip / hilang,
+  `points.json` rusak / milik klip lain / ukuran frame lain, jendela diskalakan sistem, OpenCV tanpa jendela, frame berubah selama
+  sesi, gagal tulis) | 2 (argumen, mis. `--frame` < 0) | 130 (Ctrl+C; tidak disimpan).
+- **Kontrol** (panel petunjuk Indonesia di kanan gambar; huruf besar / kecil sama):
+  - klik kiri = titik target (label 1) pada target aktif; klik kanan = titik bukan target (label 0); tarik kiri ≥ 6 px tampilan =
+    kotak target (satu per target per frame, kotak baru menggantikan; sisi < 6 px → diabaikan). Klik di panel diabaikan; tombol
+    dilepas di luar jendela → gerak pertama tanpa tombol menyelesaikan kotak.
+  - **N** = target berikutnya, berputar 1 … (id terbesar yang dikenal + 1) → 1 (dikenal = id di frame lain berkas + id berisi di
+    frame ini). Warna tetap per id (1 hijau, 2 biru, 3 kuning, 4 ungu, 5 oranye, 6 toska).
+  - **U** = batalkan aksi terakhir (titik, kotak — kotak lama kembali — atau R); titik lama yang dimuat ikut riwayat (id naik, titik
+    urut klik, kotak terakhir). **R** = kosongkan frame ini (bisa di-U).
+  - **Enter / S** = simpan + tutup. Target hanya klik kanan tanpa kotak → ditolak (jendela tetap terbuka); frame kosong + entri lama
+    → konfirmasi (Enter / S lagi = hapus entri frame itu; tombol lain = batal); tanpa perubahan → tutup tanpa menulis. Target tanpa
+    titik dan tanpa kotak tidak disimpan. Target tanpa klik kanan → `(!)` di panel + PERINGATAN di terminal setelah simpan (tidak
+    memblokir).
+  - **Esc / tombol X jendela**: tanpa perubahan → keluar; dengan perubahan belum disimpan → konfirmasi (Esc / X kedua = keluar tanpa
+    simpan; Enter / S = simpan; tombol lain = lanjut; setelah X jendela dibuka lagi untuk konfirmasi).
+- **Format `points.json` = `rotoscope-target-points/1`** (tulis atomik, `indent` 2):
+
+  ```json
+  {"format": "rotoscope-target-points/1",
+   "clip": {"meta_sha256": "<sha256 byte meta.json saat simpan>", "source_path": "C:\\…\\klip5.mp4"},
+   "frame_size": {"width": 720, "height": 1280},
+   "coords": "piksel frame kerja frames/ (…; pusat piksel kiri-atas = 0, 0); label 1 = target, 0 = bukan target (konvensi SAM); box = [x0, y0, x1, y1] …",
+   "frame_hash": "frame_pixel_sha256 = sha256(b'rgb8 <W>x<H>\\n' + piksel RGB uint8 …) - sidik piksel, bukan byte PNG",
+   "frames": [
+    {"frame_index": 0, "frame_file": "frame_00000.png", "frame_pixel_sha256": "<64 hex>", "updated_utc": "2026-10-16T08:00:00+00:00",
+     "display": {"scale": 0.7531, "screen_wh": [1920, 1080], "work_area_wh": [1920, 1020], "dpi_aware": true},
+     "targets": [{"id": 1, "points": [{"x": 343.0, "y": 407.0, "label": 1}, {"x": 612.4, "y": 500.9, "label": 0}],
+                  "box": [140.0, 352.5, 498.7, 1003.2]},
+                 {"id": 2, "points": [{"x": 80.0, "y": 700.0, "label": 1}], "box": null}]}],
+   "tool": "python -m rotoscope pick"}
+  ```
+
+  Koordinat = piksel frame kerja (x kanan, y bawah, pusat piksel kiri-atas = 0, 0), dibulatkan 0,1, 0 ≤ x ≤ W − 1; urutan titik =
+  urutan klik. `frames` urut `frame_index`, satu entri per frame; `targets` urut `id` (bulat ≥ 1, SATU identitas untuk semua frame:
+  target 1 di f0 = target 1 di f64). Tanpa daftar target tingkat atas. `clip` = identitas T-108 saat simpan. `display` hanya
+  diagnosis (tidak divalidasi).
+- **Sidik frame `frame_pixel_sha256`** = sha256(`b"rgb8 <W>x<H>\n"` + byte piksel RGB uint8 hasil decode `stage_common.read_rgb`,
+  baris demi baris). Sidik PIKSEL, bukan byte PNG (keputusan Rio 2026-10-16): kompresi PNG lain / ingest ulang dengan piksel sama →
+  titik tetap berlaku (diuji: PNG dikodekan ulang, ingest ulang video sintetis).
+- **Validasi** (`load_points`, dipakai pick dan kelak T-605). Fatal → pick menolak membuka (exit 1) dan TIDAK menimpa berkas: JSON
+  rusak; `format` asing (`t602-points/1` → saran `scripts/t604_convert_t602.py`; versi > 1 → "versi lebih baru"); skema (label ∉
+  {0, 1}, koordinat bukan bilangan hingga / di luar frame, kotak bukan 4 angka / terbalik / di luar frame, `frame_index` / `id`
+  ganda, id < 1, `frame_file` ≠ indeks, sidik bukan 64 hex, frame tanpa target, target tanpa titik dan tanpa kotak, target hanya
+  klik kanan tanpa kotak); `clip.source_path` ≠ `meta.json` (klip lain); `frame_size` ≠ `meta.json` (semua titik basi → pindahkan
+  / hapus berkas). **Status per frame:** `ok` (sidik sama) | `basi` (sidik berbeda: isi frame berubah) | `hilang` (indeks di luar
+  klip / berkas tidak terbaca). Frame ini basi → titik lama TIDAK dimuat (pesan di panel + terminal), simpan menggantinya; frame
+  lain basi / hilang → peringatan + perintah pick ulang saat buka dan simpan (tidak dihapus diam-diam). `meta_sha256` berbeda saja =
+  peringatan.
+- **Simpan:** `points.json` DIBACA ULANG dari disk → divalidasi → ganti / hapus SATU entri frame ini (frame lain apa adanya;
+  perubahan sesi lain di antara buka dan simpan tetap ada) → sidik frame dihitung ulang (berbeda dengan saat dibuka → tidak
+  disimpan, exit 1) → isi lama disalin ke `points.prev.json` → tulis atomik. Entri terakhir dihapus → `frames: []`.
+- **Tampilan / DPI Windows:** proses dibuat DPI-aware per monitor (`SetProcessDpiAwareness(2)`; hasil DICEK lewat
+  `GetProcessDpiAwareness` karena panggilan kedua gagal tanpa exception; gagal → koordinat logis, klik tetap tepat, gambar lebih
+  buram, `display.dpi_aware` false). Batas kanvas = area kerja (`SPI_GETWORKAREA`, tanpa taskbar) − (16, 56) px bingkai jendela;
+  s = min(1, H_maks / H, (W_maks − 400) / W); gambar dw = round(W · s), dh = round(H · s) (half-up, `INTER_AREA`); pemetaan
+  memakai sx = dw / W, sy = dh / H: tampilan → frame x = (dx + 0,5) / sx − 0,5 (clamp [0, W − 1], bulat 0,1), frame → tampilan
+  dx = floor((x + 0,5) · sx); kanvas = (dw + 400) × max(dh, 600). `WINDOW_AUTOSIZE` (tanpa ubah ukuran), jendela di pojok kiri-atas
+  area kerja; **penjaga:** ukuran `getWindowImageRect` ≠ kanvas → berhenti sebelum klik apa pun (exit 1); keluar area kerja →
+  peringatan. Layar 1920 × 1080 skala 125% (aware, area kerja 1920 × 1020): frame 720 × 1280 → s 0,7531, gambar 542 × 964, kanvas
+  942 × 964; 1 px tampilan ≈ 1,33 px frame. Konstanta UI (panel 400, tinggi min 600, cadangan 16 × 56, tarik 6 px, s maks 1, warna)
+  = konstanta modul, BUKAN YAML (tidak memengaruhi keluaran pipeline; docs/02 tidak berubah).
+- **Batas yang diketahui:** tanpa zoom (tidak diperlukan; diputuskan Rio setelah uji 2026-10-17); tanpa crop letterbox (klip5 tampil utuh, s 0,75);
+  satu frame per sesi; panel di kanvas pendek (600 px) dengan sangat banyak target + pesan bisa terpotong di bawah (blok saran dibuang
+  dulu); belum diuji di multi-monitor / skala Windows selain 125%; teks panel ASCII (font Hershey).
+
 ### Anggaran disk per klip (360 frame, *est.*)
 
 | stage | disk |
@@ -1092,6 +1171,7 @@ rotoscope/
 │   ├── ingest.py  segment.py  depth.py  fallback_pose.py (ditunda)
 │   ├── stabilize.py  vectorize.py  stylize.py  export.py
 │   ├── config.py  cli.py  __main__.py   # python -m rotoscope (T-104b)
+│   ├── pick.py           # `pick` (T-604): jendela klik target → <klip>/target/points.json (bukan stage)
 │   ├── stage_common.py   # helper bersama stage: tulis atomik + retry, frames.jsonl, daftar frame,
 │   │                     # error/exit code; khusus GPU: offline/revision/cache HF, VRAM, OOM (T-105)
 │   └── data/sapiens2_classes.json   # nama 29 kelas (data paket)
