@@ -1,9 +1,9 @@
 """CLI final (T-104b): `python -m rotoscope <subperintah>`.
 
-    python -m rotoscope run <video> [--config PATH] [--style PATH] [--seg-model 0.8b|0.4b] [--limit N]
+    python -m rotoscope run <video> [--config PATH] [--style PATH] [--seg-model 0.8b|0.4b] [--limit N] [--yes]
                                     [--preview N [--from K]]
-                                    [--restart-from ingest|segment|depth|stabilize|vectorize|stylize|export [--yes]]
-    python -m rotoscope ingest|segment|depth|stabilize|vectorize|stylize|export <video> [flag stage ...]
+                                    [--restart-from ingest|isolate|segment|depth|stabilize|vectorize|stylize|export [--yes]]
+    python -m rotoscope ingest|isolate|segment|depth|stabilize|vectorize|stylize|export <video> [flag stage ...]
     python -m rotoscope download [--config PATH] [--seg-model 0.8b|0.4b]
     python -m rotoscope pick <video> [--frame N] [--config PATH] [--dry-run]
 
@@ -11,11 +11,14 @@ Satu video = satu folder kerja `<paths.work_dir>/clips/<nama video disanitasi>/`
 yang sama dengan `{source}` di export.filename); `paths.out_dir` tidak berubah. Folder itu diteruskan ke tiap stage
 lewat `--work-dir` (menang atas config) — tanpa menulis YAML.
 
-Prinsip #3 docs/01: stage GPU ([2] segment, [2c] depth) selalu proses sendiri (subprocess; stdout/stderr
+Prinsip #3 docs/01: stage GPU ([1b] isolate, [2] segment, [2c] depth) selalu proses sendiri (subprocess; stdout/stderr
 diteruskan apa adanya) dan proses induk TIDAK meng-import torch / menyentuh CUDA. Stage CPU (ingest, stabilize,
 vectorize, export) dipanggil in-process lewat main(argv) stage-nya, jadi flag stage tidak diparse ulang di sini.
 [4] vectorize dan [5] stylize masuk urutan `run` (T-203b; --style diteruskan ke stylize dan, sejak T-404a, ke export untuk kertas bertekstur).
 `pick` (T-604) BUKAN stage: jendela klik target → <klip>/target/points.json (pick.py); tidak masuk urutan `run`.
+[1b] isolate (T-605, D-011) OPT-IN: subprocess hanya bila <klip>/target/points.json ada; tanpa itu `run` tidak membuat
+subprocess dan tidak menulis apa pun (isolate/ lama dihapus in-process dengan pesan). --yes wajib setiap kali [1b] memakai GPU
+(diteruskan ke stage); --limit tidak berlaku untuk [1b].
 
 Exit code: 0 sukses | 1 prasyarat gagal (config, pre-flight, VRAM, identitas, ...) | 2 salah pakai argumen |
 3 OOM di stage GPU | 130 dihentikan (Ctrl+C). Kode stage yang gagal dikembalikan apa adanya.
@@ -38,6 +41,7 @@ from pathlib import Path
 from rotoscope import depth as depth_stage
 from rotoscope import export as export_stage
 from rotoscope import ingest as ingest_stage
+from rotoscope import isolate as isolate_stage
 from rotoscope import paper
 from rotoscope import pick as pick_mod
 from rotoscope import segment as segment_stage
@@ -60,23 +64,24 @@ EXIT_INTERRUPTED = 130
 
 CLIPS_DIRNAME = "clips"
 PROG = "python -m rotoscope"
-STAGES = ("ingest", "segment", "depth", "stabilize", "vectorize", "stylize", "export")      # urutan run
-GPU_STAGES = ("segment", "depth")
-LABELS = {"ingest": "[1] ingest", "segment": "[2] segment", "depth": "[2c] depth",
+STAGES = ("ingest", "isolate", "segment", "depth", "stabilize", "vectorize", "stylize", "export")      # urutan run
+GPU_STAGES = ("isolate", "segment", "depth")
+LABELS = {"ingest": "[1] ingest", "isolate": "[1b] isolate", "segment": "[2] segment", "depth": "[2c] depth",
           "stabilize": "[3] stabilize", "vectorize": "[4] vectorize", "stylize": "[5] stylize",
           "export": "[6] export"}
-MODULES = {"segment": "rotoscope.segment", "depth": "rotoscope.depth"}
+MODULES = {"isolate": "rotoscope.isolate", "segment": "rotoscope.segment", "depth": "rotoscope.depth"}
 
-# Graf dependensi: ingest → {segment, depth} → stabilize → vectorize → stylize → export; depth TIDAK bergantung
-# pada segment. --restart-from X = stage X (+ semua stage hilir kalau X = ingest) dijalankan dengan --restart.
-# Hilir CPU yang basi dihitung ulang otomatis oleh stage-nya (prinsip #4); cli tidak menghapusnya. ingest selalu
-# menulis ulang.
-RESTART_SCOPE = {"ingest": ("segment", "depth", "stabilize", "vectorize", "stylize", "export"),
-                 "segment": ("segment",), "depth": ("depth",), "stabilize": ("stabilize",),
+# Graf dependensi: ingest → {isolate, segment, depth} → stabilize → vectorize → stylize → export; depth TIDAK bergantung
+# pada segment; dalam T-605 tidak ada stage yang membaca isolate/ (T-606). --restart-from X = stage X (+ semua stage hilir
+# kalau X = ingest) dijalankan dengan --restart. Hilir CPU yang basi dihitung ulang otomatis oleh stage-nya (prinsip #4);
+# cli tidak menghapusnya. ingest selalu menulis ulang.
+RESTART_SCOPE = {"ingest": ("isolate", "segment", "depth", "stabilize", "vectorize", "stylize", "export"),
+                 "isolate": ("isolate",), "segment": ("segment",), "depth": ("depth",), "stabilize": ("stabilize",),
                  "vectorize": ("vectorize",), "stylize": ("stylize",), "export": ("export",)}
 
-# Hanya untuk pesan konfirmasi (estimasi waktu GPU per frame; terukur T-102b / T-105, GTX 1650 Ti).
-GPU_SECONDS_PER_FRAME = {"segment": {"0.8b": 16.5, "0.4b": 8.0}, "depth": 0.19}
+# Hanya untuk pesan konfirmasi (estimasi waktu GPU per frame; terukur T-102b / T-105 / T-602, GTX 1650 Ti).
+GPU_SECONDS_PER_FRAME = {"segment": {"0.8b": 16.5, "0.4b": 8.0}, "depth": 0.19,
+                         "isolate": isolate_stage.SECONDS_PER_FRAME_ESTIMATE}
 QC_INDEX_LIMIT = 10
 TERMINATE_TIMEOUT_S = 10
 
@@ -105,6 +110,7 @@ class Ctx:
     seg_model: str | None = None
     limit: int | None = None
     restart: tuple[str, ...] = ()         # stage yang dijalankan dengan --restart
+    yes: bool = False                     # T-605: diteruskan ke [1b] (izin memakai GPU); stage lain tidak menerimanya
     state: dict = field(default_factory=dict)   # {"stage": nama stage yang sedang jalan}
 
 
@@ -214,9 +220,9 @@ def _tree_stats(paths: Sequence[Path]) -> tuple[int, int]:
 
 def _targets(stage: str, ctx: Ctx) -> list[Path]:
     w = ctx.work_dir
-    return {"segment": [w / "seg", w / QC_REPORT_FILENAME], "depth": [w / "depth"],
-            "stabilize": [w / "stable"], "vectorize": [w / "contours"], "stylize": [w / "strokes"],
-            "export": []}[stage]
+    return {"isolate": [w / isolate_stage.ISOLATE_DIRNAME], "segment": [w / "seg", w / QC_REPORT_FILENAME],
+            "depth": [w / "depth"], "stabilize": [w / "stable"], "vectorize": [w / "contours"],
+            "stylize": [w / "strokes"], "export": []}[stage]
 
 
 def deletion_preview(stages: Sequence[str], ctx: Ctx) -> str:
@@ -228,7 +234,14 @@ def deletion_preview(stages: Sequence[str], ctx: Ctx) -> str:
         n, size = _tree_stats(_targets(st, ctx))
         names = ", ".join(p.name for p in _targets(st, ctx))
         est = ""
-        if st in GPU_STAGES and n_frames:
+        if st == "isolate":                  # opt-in: hanya adegan berklik → batas atas; tanpa titik = tanpa GPU
+            if n_frames and isolate_stage.points_present(ctx.work_dir):
+                per = GPU_SECONDS_PER_FRAME[st]
+                total_s += per * n_frames
+                est = f", ulang ≤ {per * n_frames / 60:.1f} mnt GPU (≤ {n_frames} frame × {per} s; hanya adegan berklik)"
+            else:
+                est = ", tanpa target/points.json → tidak dihitung ulang"
+        elif st in GPU_STAGES and n_frames:
             per = GPU_SECONDS_PER_FRAME[st][model] if st == "segment" else GPU_SECONDS_PER_FRAME[st]
             total_s += per * n_frames
             est = f", ulang ≈ {per * n_frames / 60:.1f} mnt GPU ({n_frames} frame × {per} s)"
@@ -298,6 +311,8 @@ def stage_args(stage: str, ctx: Ctx) -> list[str]:
         a += ["--style", str(ctx.style)]
     if stage in ctx.restart:
         a.append("--restart")
+    if stage == "isolate":                  # T-605: --yes = izin GPU; --limit tidak berlaku (masker selalu seluruh klip)
+        return a + (["--yes"] if ctx.yes else [])
     if ctx.limit is not None:
         a += ["--limit", str(ctx.limit)]
     return a
@@ -509,7 +524,7 @@ def cmd_run(a: argparse.Namespace) -> int:
     cfg = load_cfg(a.config, a.seg_model)
     video = a.video
     ctx = Ctx(video=video, cfg=cfg, work_dir=clip_work_dir(cfg, video), config=a.config,
-              seg_model=a.seg_model, limit=a.limit, restart=RESTART_SCOPE.get(a.restart_from, ()))
+              seg_model=a.seg_model, limit=a.limit, restart=RESTART_SCOPE.get(a.restart_from, ()), yes=a.yes)
     # Pre-flight CPU-only — sebelum penghapusan, ingest, atau subprocess apa pun
     preflight_video(video, ctx.work_dir)
     spath, label = pick_style(a.style, cfg)
@@ -527,10 +542,19 @@ def cmd_run(a: argparse.Namespace) -> int:
         for stage in STAGES:
             print(f"\n=== {LABELS[stage]} ===", flush=True)
             t0 = time.perf_counter()
+            if stage == "isolate" and not isolate_stage.points_present(ctx.work_dir):
+                ctx.state["stage"] = stage           # opt-in: tanpa subprocess; isolate/ lama (bila ada) dihapus
+                isolate_stage.skip_without_points(ctx.work_dir)
+                timings.append((stage, time.perf_counter() - t0))
+                continue
+            if stage == "isolate" and ctx.limit is not None:
+                print(f"[1b] --limit {ctx.limit} tidak berlaku untuk [1b]: masker selalu seluruh klip", flush=True)
             rc = run_stage(stage, stage_args(stage, ctx), ctx)
             timings.append((stage, time.perf_counter() - t0))
             if rc != EXIT_OK:
-                print(f"\nERROR: run berhenti di stage {LABELS[stage]} (exit {rc}). {_resume_hint(a.restart_from)}",
+                hint = (" Lihat pesan [1b] di atas (mis. butuh --yes untuk GPU, atau titik basi → pick ulang)."
+                        if stage == "isolate" else "")
+                print(f"\nERROR: run berhenti di stage {LABELS[stage]} (exit {rc}).{hint} {_resume_hint(a.restart_from)}",
                       file=sys.stderr)
                 return rc
             if stage == "segment" and (w := qc_warning(ctx.work_dir)):
@@ -583,17 +607,20 @@ def cmd_stage(a: argparse.Namespace) -> int:
         args += ["--seg-model", known.seg_model]
     if known.restart:
         args.append("--restart")
+    if stage == "isolate" and known.yes:      # T-605: [1b] menerima --yes (izin GPU); segment / depth tidak
+        args.append("--yes")
     rc = run_stage(stage, [*args, *rest], ctx)
     return rc
 
 
 def cmd_download(a: argparse.Namespace) -> int:
     """Unduh checkpoint (online): Sapiens2-seg (default 0.8b; --seg-model 0.4b = fallback) + Depth Anything V2
-    Small + model card-nya. Subprocess mewarisi environment apa adanya — TIDAK memaksa HF_HUB_OFFLINE=1
-    (run biasa offline; unduhan butuh online)."""
+    Small + SAM 2.1 hiera tiny ([1b], T-605) + model card-nya. Subprocess mewarisi environment apa adanya — TIDAK memaksa
+    HF_HUB_OFFLINE=1 (run biasa offline; unduhan butuh online)."""
     load_cfg(a.config, a.seg_model)  # config tidak valid → berhenti sebelum mengunduh
     common = ["--download"] + (["--config", str(a.config)] if a.config is not None else [])
-    plan = {"segment": common + (["--seg-model", a.seg_model] if a.seg_model else []), "depth": common}
+    plan = {"segment": common + (["--seg-model", a.seg_model] if a.seg_model else []), "depth": common,
+            "isolate": common}
     for stage, args in plan.items():
         print(f"=== download {LABELS[stage]} ===", flush=True)
         rc = run_stage(stage, args)
@@ -625,7 +652,8 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog=PROG, description="Rotoscope Animation Builder — video → animasi sketsa")
     sub = p.add_subparsers(dest="cmd", required=True, metavar="<subperintah>")
 
-    r = sub.add_parser("run", help="ingest → segment → depth → stabilize → vectorize → stylize → export untuk satu video")
+    r = sub.add_parser("run", help="ingest → isolate (hanya bila target/points.json ada) → segment → depth → stabilize → "
+                                   "vectorize → stylize → export untuk satu video")
     r.add_argument("video", type=Path)
     r.add_argument("--config", type=Path, default=None)
     r.add_argument("--style", type=str, default=None,
@@ -633,22 +661,26 @@ def build_parser() -> argparse.ArgumentParser:
                         "style: stage [5] stylize (garis) dan [6] export (kertas bertekstur / vignette). Default: kunci `style` di config")
     r.add_argument("--seg-model", choices=("0.8b", "0.4b"), default=None,
                    help="model segmentasi untuk SELURUH klip (tidak pernah fallback otomatis)")
-    r.add_argument("--limit", type=int, default=None, help="hanya N frame pertama (export → <nama>.limitN.mp4)")
+    r.add_argument("--limit", type=int, default=None,
+                   help="hanya N frame pertama (export → <nama>.limitN.mp4); tidak berlaku untuk [1b] isolate")
     r.add_argument("--preview", type=int, default=None, metavar="N",
                    help="render jendela N frame (K..K+N-1, K = --from, default 0) → out/<nama>.preview_K-<K+N-1>.mp4; "
                         "tanpa GPU: seg/ dan depth/ harus sudah valid untuk jendela")
     r.add_argument("--from", dest="start", type=int, default=None, metavar="K",
                    help="frame awal jendela --preview (hanya bersama --preview)")
     r.add_argument("--restart-from", choices=STAGES, default=None,
-                   help="hapus hasil stage ini lalu jalankan ulang (ingest = semua stage; segment / depth = hanya "
+                   help="hapus hasil stage ini lalu jalankan ulang (ingest = semua stage; isolate / segment / depth = hanya "
                         "stage itu — depth tidak bergantung pada segment). Stage GPU wajib --yes; vectorize / "
                         "stylize / export tanpa --yes")
-    r.add_argument("--yes", action="store_true", help="setujui penghapusan hasil stage GPU")
+    r.add_argument("--yes", action="store_true",
+                   help="setujui penghapusan hasil stage GPU; [1b] isolate: izin memakai GPU (hitung baru / basi)")
     r.add_argument("--adopt", action="store_true", help=argparse.SUPPRESS)
     r.add_argument("--qc-only", action="store_true", help=argparse.SUPPRESS)
     r.set_defaults(func=cmd_run)
 
     for stage, text in (("ingest", "[1] video → frames/ + meta.json"),
+                        ("isolate", "[1b] SAM 2.1 tiny: masker target dari target/points.json (GPU, proses sendiri; opt-in); "
+                                    "flag: --yes (wajib bila GPU dipakai) --restart --dry-run"),
                         ("segment", "[2] Sapiens2-seg (GPU, proses sendiri); flag: --seg-model --restart --yes "
                                     "--limit --qc-only --adopt"),
                         ("depth", "[2c] Depth Anything V2 Small (GPU, proses sendiri); flag: --restart --yes "
@@ -666,8 +698,9 @@ def build_parser() -> argparse.ArgumentParser:
         s.set_defaults(func=cmd_stage, stage=stage)
 
     d = sub.add_parser("download", help="unduh checkpoint (online, sekali jalan)",
-                       description="Mengunduh Sapiens2-seg (default 0.8b; --seg-model 0.4b untuk fallback) dan "
-                                   "Depth Anything V2 Small + model card-nya ke cache Hugging Face.")
+                       description="Mengunduh Sapiens2-seg (default 0.8b; --seg-model 0.4b untuk fallback), "
+                                   "Depth Anything V2 Small, dan SAM 2.1 hiera tiny ([1b]) + model card-nya ke cache "
+                                   "Hugging Face.")
     d.add_argument("--config", type=Path, default=None)
     d.add_argument("--seg-model", choices=("0.8b", "0.4b"), default=None)
     d.set_defaults(func=cmd_download)

@@ -39,6 +39,8 @@ GTX 1650 Ti punya tepat 4 GB, dikurangi alokasi display Windows. Memory bank SAM
 tumbuh seiring panjang video → risiko OOM tinggi.
 **Catatan:** CC 7.5 memenuhi syarat SAM 2 (butuh 7.0+), jadi secara hardware kompatibel —
 hanya VRAM yang jadi kendala.
+**Status (2026-10-17, D-011):** SAM 2.1 hiera tiny kini dipakai sebagai stage produksi OPT-IN [1b] isolate (T-605). Perkiraan
+"~4 GB" di atas tidak berlaku untuk jalur `transformers` dengan frame + state di CPU: terukur 892 MiB reserved (T-602, 92 frame).
 **Anggaran VRAM (T-102c, 2026-09-29, D-009)** — peak PyTorch reserved; GTX 1650 Ti 4096 MiB, di luar
 proses ±260–690 MiB (display Windows):
 
@@ -2942,6 +2944,621 @@ Dicatat saat penutupan. Tanpa GPU; tanpa perubahan `src/` / `configs/` / `tests/
   Skrip uji asap jendela dan skrip validasi titik ada di folder scratchpad sesi; keduanya tidak disimpan di repo.
 - **Task berikutnya: T-605** ([1b] isolasi target dengan SAM 2.1 tiny). Bahannya berkas titik di atas.
 - **Tidak dikerjakan:** `T305-prompt.md` (ter-commit) tetap ada. Berkas itu di-`git rm` saat T-305 induk ditutup (keputusan T-602 1b no. 6).
+
+### Keputusan T-605 ([1b] isolasi target, SAM 2.1 tiny), 2026-10-17 — Tahap 1 berjalan
+
+Dicatat SEBELUM kode produksi ditulis. **Konteks:**
+- **T-602 (DONE):** SAM 2.1 tiny lewat `transformers` 5.17.0 `Sam2VideoModel`, tanpa dependency baru; kode + bobot Apache-2.0; pin `de431c40…` (sudah di cache HF). fp32: 892 MiB reserved, puncak `nvidia-smi` 2370 MiB, 0,67 s / frame, RAM proses 3,7–4,8 GiB; fp16 lebih lambat. Masker klip3 f85–108 bersih; masker klip5 f0 rusak (saat itu tanpa klik kanan). Data: `scripts/t602_data.json`, `scripts/t602_points.json`.
+- **T-604 (DONE):** `python -m rotoscope pick` → `work/clips/<klip>/target/points.json` (`rotoscope-target-points/1`, `frame_pixel_sha256`). Titik Rio: klip5 f0 11 kiri / 30 kanan + kotak; klip5 f64 8 kiri / 0 kanan + kotak hampir selebar frame; klip3 f85 16 kiri / 0 kanan.
+- T-605 hanya MENGHASILKAN masker. Pemakaiannya di T-606.
+
+**Keputusan Rio (final, 2026-10-17):**
+1. **Lingkup:** hanya menghasilkan masker per frame. Keluaran [2]–[6] tidak berubah.
+2. **Stage [1b] setelah [1], sebelum [2]:** berjalan hanya bila `target/points.json` ada; tanpa itu dilewati, byte-identik; GPU, jadi butuh `--yes` seperti [2].
+3. **Cut:** masker hanya mengikuti target di dalam adegan (shot) yang punya klik. Adegan lain tanpa klik ditandai "tanpa target".
+4. **Bila terputus:** diulang per klip, bukan per frame (SAM membawa memori antar frame; ±2 menit untuk 182 frame).
+5. **Model** `facebook/sam2.1-hiera-tiny` pin `de431c40…` di YAML; fp32; cek VRAM bebas ≥ 2000 MiB; satu precision per klip.
+6. **Basi:** masker dihitung ulang bila titik, frame, model, atau parameter berubah.
+7. **Kotak terlalu besar** (mis. klip5 f64): diukur di Tahap 3. Bila merusak masker, tambahkan peringatan di pick (task lanjutan kecil).
+8. **Salin `points.json` klip5 dan klip3** ke berkas ter-track di `scripts/` (titik Rio sekarang hanya ada di `work/`, yang tidak ikut git).
+9. **Penilaian (ditetapkan sekarang):** video pratinjau masker klip3 dan klip5. Lolos bila Rio menilai masker mengikuti target yang benar di ≥ 90% frame di adegan yang diklik.
+10. **Kontrak:** catat keputusan arsitektur baru **D-011** (stage [1b] opt-in; D-009 model seg tidak berubah; D-010 fallback pose tetap ditunda) + teks docs/01 + CLAUDE.md.
+
+**Lingkup Tahap 1 (CPU, baca-saja, TANPA GPU):** (1) deteksi adegan untuk [1b] — sinyal cut [3] (`cut_diff`) dicek: RGB frame → rancang pemakaian ulang fungsi yang sama; bukan RGB → rancang deteksi dari RGB lalu UKUR kecocokannya dengan cut [3] + label (klip3 7 cut, f85 / f126 / f154 dikonfirmasi Rio; klip5 f92–104 cut sungguhan; klip4 f209 positif palsu); (2) rancangan propagasi (semua titik / kotak per adegan dimasukkan dulu; maju dari frame klik paling awal sampai akhir adegan, mundur sampai awal adegan; banyak target; klik di frame lain = koreksi; API `transformers`, tanpa bf16); (3) format keluaran `work/clips/<klip>/isolate/` (peta label PNG uint8 atau alasan format lain; status per frame target / kosong / tanpa_prompt; manifest + contoh JSON); (4) basi + `run` / `--restart-from` / `--preview` + subperintah `isolate` + parameter YAML (→ docs/02); (5) rencana cek determinisme (diukur di Tahap 3); (6) test tanpa GPU dengan SAM tiruan + daftar mutasi; (7) salinan titik Rio → `scripts/t605_points_rio.json` (lewat Write; byte-identik isi); (8) rencana Tahap 3 (run nyata dari PowerShell Rio, varian klip3 dengan titik T-602 hasil konversi di scratch, video pratinjau, metrik, template penilaian); teks usulan D-011 + docs/01 + CLAUDE.md. **LUAR:** pemakaian masker (T-606); crop letterbox / durasi (backlog); perubahan [2]–[6].
+**Aturan:** semua berkas repo hanya lewat Edit / Write (tanpa `python -` / `python -c` penulis berkas, `cat >>`, `sed`, heredoc, `printf`, `echo >`, `Set-Content`); tanpa commit; tidak membuka PNG / MP4; penolakan classifier dilaporkan, tidak disiasati; run GPU panjang dijalankan Rio dari PowerShell terpisah. **F1** `work/t605/`: hash berkas lama di 6 klip + 6 `qc_report.json` + `out/` + `target/points.json` (klip3, klip5), sebelum = sesudah. **F2** scratch `work/t605_scratch/` (ter-ignore lewat `work/`). **F3** `scripts/t605_*.py`. **F4** `T605-prompt.md` + scratch dihapus di akhir Tahap 4.
+**Tahap:** 1 rancangan (CPU, baca-saja) → BERHENTI + laporan → 2 implementasi + test + mutasi (setelah persetujuan) → 3 run nyata Rio + pratinjau + penilaian → 4 docs final + F4. docs/05: T-605 `WIP` (Tahap 1); papan tidak berubah (35/49).
+
+### Rancangan T-605 Tahap 1 (2026-10-17) — usulan Claude Code; menunggu persetujuan Rio
+
+CPU, baca-saja terhadap klip; TANPA GPU; tanpa perubahan `src/` / `configs/` / `tests/` / CLAUDE.md / docs/01 / docs/02 (teks usulan kontrak ada di laporan Tahap 1; diterapkan bersama kode di Tahap 2, karena `tests/test_config.py` mengunci docs/02 = default kode). Berkas repo yang berubah: docs/04, docs/05; baru: `scripts/t605_hash.py` (F1), `scripts/t605_scenes.py` (ukur adegan), `scripts/t605_points_check.py` (cek salinan titik), `scripts/t605_points_rio.json` (salinan titik). Kode `transformers` 5.17.0 terpasang (`models/sam2_video/`) dibaca; bobot tidak dimuat. Satu probe CPU memuat processor saja (offline, dari cache HF) untuk membandingkan praproses.
+
+**R1 Deteksi adegan.**
+- **Sinyal cut [3] = RGB frame**, bukan data seg: `stabilize.build_plan` → `frame_thumb` (`frames/*.png` didecode abu-abu, diperkecil ke lebar 48 px `INTER_AREA`) → `cut_scores` (rata-rata |selisih| thumbnail berurutan / 255) → `detect_cuts` (skor > `stabilize.temporal.cut_diff` 0,06; 0 = mati) → `shot_bounds`.
+- **Rancangan:** [1b] memanggil keempat fungsi itu APA ADANYA (`from rotoscope import stabilize`; stabilize.py tidak diubah) dengan ambang yang SAMA, `stabilize.temporal.cut_diff`. Jadi adegan [1b] = adegan [3] persis. [1b] tetap memakai cut walau `stabilize.temporal.enabled` false; `cut_diff` 0 → seluruh klip satu adegan. Tanpa parameter cut baru (alternatif: `isolate.cut_diff` sendiri — keraguan no. 2).
+- **Diukur** (`scripts/t605_scenes.py` → `work/t605/scenes.json`; fungsi produksi, `cut_diff` 0,06 dari `configs/default.yaml`). Di 6 / 6 klip, cut hasil ukur = `temporal.cut_frames` di `stable/manifest.json` (cut [3] produksi):
+
+  | klip (frame) | terdeteksi (skor) | label Rio | cocok / tidak cocok | adegan |
+  |---|---|---|---|---|
+  | test (283) | – | tanpa cut | cocok | 1: [0–282] |
+  | test_short (119) | – | tanpa cut | cocok | 1: [0–118] |
+  | Klip2 (122) | – | tanpa cut | cocok | 1: [0–121] |
+  | klip3 (182) | f49 (0,0652), f85 (0,0718), f126 (0,0785), f134 (0,0813), f146 (0,0889), f154 (0,0767), f166 (0,0897), f174 (0,0860) | 7 cut: f85, f126, f134, f146, f154, f166, f174; f49 = FP diketahui | TP 7 / 7 (termasuk f85, f126, f154 yang dikonfirmasi Rio), FN 0; FP 1 = f49 (diketahui) | 9: [0–48] [49–84] [85–125] [126–133] [134–145] [146–153] [154–165] [166–173] [174–181] |
+  | klip4 (217) | f209 (0,0613) | tanpa cut; f209 = FP | FP 1 = f209 (diketahui) | 2: [0–208] [209–216] |
+  | klip5 (133) | f92 (0,0961), f93 (0,0846), f94 (0,0912), f95 (0,0865), f96 (0,1089), f100 (0,0817), f101 (0,0711), f102 (0,0771), f103 (0,0962), f104 (0,0832) | f92–f104 = transisi sungguhan | TP 10 (semuanya di f92–104), FN 0, FP 0 | 11: [0–91], f92, f93, f94, f95, [96–99], f100, f101, f102, f103, [104–132] |
+
+- **Klik → adegan dilacak:** klip3 klik f85 → adegan [85–125] (41 frame), 141 frame tanpa_prompt. klip5 klik f0 + f64 → adegan [0–91] (92 frame), 41 frame tanpa_prompt (f92–132). Di kedua klip frame klik paling awal = awal adegan → propagasi mundur TIDAK terjadi pada data Rio (lihat R8 varian V-d).
+- **Margin dekat ambang:** klip3 **f114** skor 0,05999 (0,02% di bawah 0,06) berada DI DALAM adegan berklik [85–125]. Bila suatu saat terdeteksi (mis. frame sedikit berubah setelah ingest dengan ffmpeg lain), f114–125 menjadi tanpa_prompt. klip5 **f64** (frame klik koreksi Rio) skor 0,0584 (2,7% di bawah); bila terdeteksi, adegan terbelah [0–63] | [64–91], tetapi keduanya tetap punya klik. klip4 f209 tidak relevan (klip4 tanpa titik).
+- **Biaya kesalahan cut di [1b] berbeda dari [3]:**
+  - cut positif palsu di adegan berklik → pelacakan BERHENTI di sana; frame sesudahnya tanpa_prompt. Ini gagal aman (tidak ada masker salah). Perbaikan: klik tambahan `pick --frame <awal adegan>`;
+  - cut terlewat → SAM melacak menembus cut ke adegan lain. Ini gagal diam-diam (masker bisa menempel ke objek lain).
+
+  Jadi ambang [1b] sebaiknya tidak lebih tinggi dari [3]; sama dengan [3] = usulan. [1b] mencetak daftar adegan berklik / tanpa klik, plus saran klik bila adegan tanpa klik bersebelahan dengan adegan berklik.
+
+**R2 Propagasi.**
+- **Satu sesi SAM per (adegan, target)**, dijalankan berurutan; sesi dilepas (`del`, `gc.collect`, `torch.cuda.empty_cache`) sebelum sesi berikutnya. Alasan dari kode `transformers` 5.17.0 terpasang:
+  - (a) target yang belum punya frame kondisi di sesi membuat propagasi gagal (`ValueError: maskmem_features in conditioning outputs cannot be empty`, `_gather_memory_frame_outputs`). Dalam sesi gabungan, target yang klik pertamanya lebih lambat daripada frame klik paling awal adegan akan gagal;
+  - (b) SAM melacak tiap objek terpisah (memori per objek), jadi sesi per target tidak mengubah cara kerja model; biayanya: fitur gambar dihitung ulang per target (cache fitur 1 frame);
+  - (c) VRAM dan RAM per sesi terbatas pada satu target.
+
+  Bila semua target diklik di frame yang sama, hasilnya setara dengan sesi gabungan.
+- **Per sesi** (frame adegan = indeks lokal 0..L−1):
+  1. `processor.init_video_session(video=None, inference_device="cuda", inference_state_device="cpu", processing_device="cpu", video_storage_device="cpu", dtype=torch.float32)`.
+  2. Frame dibaca dari disk saat dibutuhkan (lihat "Frame malas").
+  3. **Semua frame klik target ini di adegan itu dimasukkan dulu**, urut naik. Per frame: `processor.add_inputs_to_inference_session(inference_session=s, frame_idx=k, obj_ids=[id], input_points=[[[[x, y], …]]], input_labels=[[[1, 0, …]]], input_boxes=[[[x0, y0, x1, y1]]] (bila ada), original_size=(H, W))`, lalu langsung `model(inference_session=s, frame_idx=k)`. Hasilnya frame kondisi. Langsung dijalankan karena `obj_with_new_inputs` ditimpa tiap panggilan dan dikosongkan saat frame kondisi dihitung: input frame kedua yang belum dijalankan akan diabaikan diam-diam.
+  4. **Maju:** `model.propagate_in_video_iterator(s, start_frame_idx=a, reverse=False)`, dari klik paling awal a sampai akhir adegan. Frame kondisi lain dipakai dari cache (koreksi).
+  5. **Mundur:** `propagate_in_video_iterator(s, start_frame_idx=a, reverse=True)`, dari a−1 sampai awal adegan (frame a dari cache; a = 0 → dilewati).
+  6. Tiap frame dihitung tepat SATU kali (frame kondisi di langkah 3, sisanya di 4 / 5); urutan tetap (maju lalu mundur) → deterministik.
+- **Memori model** (kode terpasang, mode offline): semua frame kondisi (`max_cond_frame_num` −1) + 6 frame terdekat yang sudah dilacak + pointer objek ≤ min(L, 16) frame. Pass mundur memakai hasil pass maju sebagai memori (perilaku resmi SAM 2).
+- **Koreksi = klik di frame lain dalam adegan yang sama** → frame itu ikut jadi frame kondisi. Mask frame itu dihitung dari kliknya sendiri (tanpa memori), lalu dipakai sebagai memori oleh frame lain. Klik di adegan lain = sesi lain.
+- **Titik / kotak:** koordinat `points.json` diteruskan apa adanya, sama dengan T-602. Konvensi indeks piksel = konvensi klik SAM; selisih konvensi pusat piksel ±0,2 px di ruang 1024, diabaikan. Kotak = titik label 2 / 3 yang ditaruh di depan titik klik oleh processor (`clear_old_inputs` True wajib). Satu target per panggilan, jadi target dengan kotak dan tanpa kotak tidak bercampur dalam satu tensor.
+- **Frame malas:** `session.processed_frames` diisi objek mapping (`__len__` = L, `__getitem__(k)` = baca `frames/` → `processor(images=rgb).pixel_values[0]` fp32 di CPU). Praproses ini dicek SAMA PERSIS dengan `video_processor` dan `init_video_session(video=…)` (selisih maks 0,0 pada klip3 f85): resize bilinear 1024 × 1024 tanpa menjaga rasio + normalisasi ImageNet. RAM tidak menyimpan semua frame (T-602 streaming: 12,6 MB / frame di RAM). Satu adegan 360 frame = 4,5 GB bila disimpan. **Risiko:** atribut `processed_frames` adalah bagian dalam `transformers` (versi di-pin 5.17.0); dijaga test kontrak (R6). Cadangan tanpa bagian dalam: `init_video_session(video=frames adegan)` + cek RAM per panjang adegan.
+- **Keluaran per frame:** `processor.post_process_masks([out.pred_masks], original_sizes=[[H, W]], binarize=False)[0]` → logit float32 (H, W) ukuran frame kerja (GPU → CPU). Target = logit > `isolate.mask_threshold` (default 0, konvensi SAM). Skor objek (`object_score_logits`) ≤ 0 → SAM sendiri mengosongkan masker. Skor + luas dicatat per frame.
+- **Presisi:** fp32 (keputusan no. 5; fp16 lebih lambat di GTX 1650 Ti, T-602); `isolate.precision` fp16 tetap bisa dipilih; bf16 ditolak saat config dimuat (P-005). Satu proses = satu dtype untuk seluruh klip.
+- **VRAM / RAM** (dari kode + angka T-602):
+  - `maskmem_features` / `maskmem_pos_enc` disimpan di GPU (tidak lewat `store_output`) → VRAM ±2 MiB / frame / target (T-602: reserved 892 MiB di 92 frame; adegan 360 frame ≈ 1,4 GiB);
+  - `high_res_masks` + `pred_masks` disimpan di CPU → RAM ±4,3 MiB / frame / target;
+  - basis proses ±1,5–2,5 GiB.
+
+  Cek sebelum load: VRAM bebas ≥ `isolate.vram_min_free_mib` (2000) dan RAM bebas ≥ `isolate.ram_min_free_mib` (4096; `GlobalMemoryStatusEx` lewat `ctypes`, tanpa dependency). Kurang → berhenti dengan pesan, sebelum model dimuat.
+- **Perbedaan dari T-602:** T-602 memakai mode streaming (hanya maju, satu frame klik, frame klip5 dicrop letterbox R2). [1b] memakai mode offline (`propagate_in_video_iterator`), karena butuh mundur + beberapa frame kondisi, dan frame utuh tanpa crop (crop = backlog). Pengaruh kedua perbedaan pada kualitas masker belum diukur (Tahap 3).
+
+**R3 Format keluaran** `work/clips/<klip>/isolate/`:
+- **`labels/frame_%05d.png`** — peta label uint8 1 kanal, ukuran frame kerja: 0 = bukan target, k = id target (1–255; id > 255 → [1b] menolak dengan pesan). Ditulis HANYA untuk frame di adegan berklik (status target / kosong). Frame tanpa_prompt tidak punya PNG, supaya konsumen (T-606) tidak bisa salah membaca "tanpa klik" sebagai "masker kosong".
+  - Aturan piksel: target k bila logit_k > ambang (dibandingkan dalam float32). Tumpang tindih beberapa target → logit terbesar menang (disimpan float16 per target selama run); seri → id terkecil.
+  - Alasan PNG uint8: lossless, ±5–20 KB / frame (masker biner), dibaca `cv2` tanpa dependency; satu berkas per frame = pola `stable/groups`.
+  - Ditolak: npz logit per target (±1,8 MB / frame / target, tidak dibutuhkan T-606); npz bitmask per target (menyimpan tumpang tindih, tetapi format baru untuk konsumen; bisa ditambah kelak tanpa mengubah PNG).
+- **`frames.jsonl`** — satu baris per frame klip (urut indeks) + `run_start` / `run_end`:
+
+  ```json
+  {"event": "frame", "frame": "frame_00064.png", "index": 64, "shot": [0, 91], "status": "target", "pixel_sha256": "5a28cbe6…", "targets": {"1": {"kind": "klik", "area_px": 250682, "score_logit": 5.21}}}
+  {"event": "frame", "frame": "frame_00092.png", "index": 92, "shot": [92, 92], "status": "tanpa_prompt", "pixel_sha256": "…", "targets": {}}
+  ```
+
+  `status`: `target` (≥ 1 piksel target) | `kosong` (adegan berklik, 0 piksel target) | `tanpa_prompt` (adegan tanpa klik). `kind` per target: `klik` (frame kondisi) | `maju` | `mundur`.
+- **`manifest.json`** ditulis TERAKHIR. Contoh lengkap (klip5; angka run = ilustrasi):
+
+  ```json
+  {
+    "stage": "isolate",
+    "format": "rotoscope-isolate/1",
+    "clip": {"meta_sha256": "a3b4e9919916157b68cc43d837f81151de4745bcf74db5b57a6edd55ddb13c91", "source_path": "C:\\projects\\rotoscope\\samples\\klip5.mp4"},
+    "frame_size": {"width": 720, "height": 1280},
+    "frame_count": 133,
+    "key": {
+      "contract": "T-605",
+      "points_sha256": "7f6619f9aa077ba671f0de920a2ad82726ab324a2058af719936521a938b1144",
+      "frames_pixel_sha256": "<sha256 atas 133 baris '<frame_pixel_sha256>\\n' urut indeks>",
+      "model": {"model_id": "facebook/sam2.1-hiera-tiny", "revision": "de431c4043854a71d8101e17995dfe596bf101a5", "license": "apache-2.0"},
+      "precision": "fp32",
+      "params": {"mask_threshold": 0.0, "cut_diff": 0.06},
+      "libs": {"torch": "2.7.1+cu118", "transformers": "5.17.0"}
+    },
+    "key_sha256": "<sha256 JSON kanonik 'key'>",
+    "processor": {"class": "Sam2VideoProcessor", "size": {"height": 1024, "width": 1024}, "resample": "bilinear", "keep_aspect_ratio": false, "image_mean": [0.485, 0.456, 0.406], "image_std": [0.229, 0.224, 0.225]},
+    "mode": "offline; satu sesi per (adegan, target); frame klik dimasukkan dulu (urut naik, langsung dihitung), lalu maju dari klik paling awal sampai akhir adegan, lalu mundur sampai awal adegan",
+    "scenes": {"cut_frames": [92, 93, 94, 95, 96, 100, 101, 102, 103, 104],
+               "shots": [[0, 91], [92, 92], [93, 93], [94, 94], [95, 95], [96, 99], [100, 100], [101, 101], [102, 102], [103, 103], [104, 132]]},
+    "jobs": [
+      {"shot": [0, 91], "target": 1, "prompt_frames": [0, 64], "start": 0, "forward": [0, 91], "reverse": null,
+       "prompts": [{"frame": 0, "n_pos": 11, "n_neg": 30, "box": [105.1, 407.8, 520.9, 1014.6]},
+                   {"frame": 64, "n_pos": 8, "n_neg": 0, "box": [1.5, 353.4, 718.8, 1023.9]}],
+       "n_infer": 92, "infer_s": 61.8}
+    ],
+    "targets": [1],
+    "frames": {"target": 92, "kosong": 0, "tanpa_prompt": 41, "kosong_ranges": [], "tanpa_prompt_ranges": [[92, 132]]},
+    "output": {
+      "labels": "labels/frame_%05d.png: uint8 1 kanal, 0 = bukan target, k = id target; HANYA frame di adegan berklik (status target / kosong)",
+      "rule": "target k bila logit_k > mask_threshold (float32); tumpang tindih -> logit terbesar, seri -> id terkecil",
+      "status": "frames.jsonl: target | kosong | tanpa_prompt (tanpa PNG)"
+    },
+    "run": {
+      "started_utc": "2026-10-18T03:10:02+00:00", "finished_utc": "2026-10-18T03:11:20+00:00", "wall_s": 78.4,
+      "key_s": 2.4, "scenes_s": 1.7, "load_s": 0.6,
+      "infer_s": {"n": 92, "p50": 0.67, "max": 8.1, "total": 61.8},
+      "vram": {"free_before_load_mib": 3313.7, "total_mib": 4096.0, "max_reserved_mib": 892.0, "max_allocated_mib": 571.7},
+      "ram": {"free_before_mib": 7230, "peak_process_gib": 3.4},
+      "device": "NVIDIA GeForce GTX 1650 Ti",
+      "nonfinite_frames": []
+    },
+    "created_utc": "2026-10-18T03:11:20+00:00"
+  }
+  ```
+
+- **Tulis atomik per klip:** semua berkas ditulis ke `isolate.partial/`. Setelah selesai: `isolate/` → `isolate.old/`, `isolate.partial/` → `isolate/`, `isolate.old/` dihapus. Run terputus (Ctrl+C / OOM / galat) → `isolate/` lama tetap utuh. `isolate.partial/` / `isolate.old/` sisa dihapus di awal run berikutnya (bukan hasil).
+
+**R4 Basi + `run` + CLI + YAML.**
+- **Kunci basi** = `key` di manifest:
+  - sha256 byte `points.json`;
+  - sidik piksel SEMUA frame (`pick.frame_pixel_sha256`, digabung urut indeks; terukur 3,8 s klip3, 2,4 s klip5);
+  - model id + revision + lisensi;
+  - precision;
+  - `mask_threshold` + `cut_diff`;
+  - versi torch / transformers (dibaca dengan `importlib.metadata`, tanpa import);
+  - string kontrak `T-605`.
+
+  BUKAN kunci (tidak mengubah hasil): `vram_min_free_mib`, `ram_min_free_mib`.
+- **Up-to-date** = manifest ada + `key` sama + `clip` sama + semua PNG yang diharapkan ada, terbaca, uint8, ukuran frame, tanpa PNG lebih → "[1b] up-to-date, dilewati". Tanpa torch / GPU; ±3–5 s.
+- **Basi** (kunci beda, PNG hilang / rusak, `clip` beda) → seluruh klip **dihitung ulang otomatis** (keputusan no. 6), dengan peringatan yang menyebut field yang berubah. Tanpa `--yes`: hasil basi tidak berlaku untuk input sekarang, dan biayanya ≤ ±2 menit GPU. Ini PENGECUALIAN dari prinsip 4 docs/01 (stage GPU menolak + `--restart`) — keraguan no. 1.
+- **Terputus** → diulang per klip (keputusan no. 4).
+- **Validasi titik** (`pick.load_points` + `check_doc_matches_clip` + `frame_statuses`):
+  - semua frame klik harus `ok`. `basi` / `hilang` / berkas rusak / milik klip lain / ukuran frame lain → exit 1 + perintah `pick --frame N` (atau pindahkan `points.json`);
+  - `frames: []` → hasil tanpa GPU: semua frame tanpa_prompt, model tidak dimuat.
+- **Tanpa `points.json`** → [1b] dilewati: tidak ada subprocess, tidak ada berkas yang ditulis, keluaran pipeline byte-identik. Bila `isolate/` lama masih ada → PERINGATAN (masker lama tidak berlaku); dihapus hanya dengan `isolate --restart --yes`.
+- **`run`:**
+  - urutan `ingest → isolate → segment → depth → stabilize → vectorize → stylize → export`;
+  - [1b] = stage GPU (`GPU_STAGES`), subprocess `python -m rotoscope.isolate --work-dir <klip> [--config P] [--restart]`. Proses induk tetap tanpa torch;
+  - `--limit N` TIDAK diteruskan ke [1b] (selalu seluruh klip, per klip; pesan satu baris) — keraguan no. 4;
+  - `--seg-model` / `--style` tidak berlaku untuk [1b].
+- **`--restart-from`:**
+  - `isolate` → hanya [1b], butuh `--yes` (hasil GPU), pratinjau penghapusan memakai estimasi 0,67 s / frame;
+  - `ingest` → mencakup `isolate`;
+  - `segment` / `depth` / CPU → tidak menyentuh `isolate/`.
+
+  Dalam T-605 tidak ada stage hilir yang membaca `isolate/`.
+- **`--preview`:** tidak berubah — tidak menjalankan dan tidak memeriksa [1b] (masker belum dipakai); byte-identik.
+- **Subperintah** `python -m rotoscope isolate <video> [--config P] [--restart --yes] [--dry-run]`:
+  - `--restart` tanpa `--yes` → exit 1, tidak ada yang terhapus;
+  - `--dry-run` (tambahan usulan Claude Code) → CPU saja, tanpa torch: status (up-to-date / basi + field / belum ada), adegan berklik + tanpa klik, job per target (frame klik, maju / mundur), estimasi waktu GPU;
+  - modul: `python -m rotoscope.isolate [--config] [--work-dir] [--restart] [--dry-run] [--download]`;
+  - exit 0 / 1 / 3 (OOM) / 130.
+- **`download`:** + [1b] (`snapshot_download` pin, 6 berkas jalur `transformers` seperti T-602, cek lisensi README apache-2.0).
+- **YAML baru** (`configs/default.yaml`, section `isolate:`; docs/02 diperbarui di Tahap 2):
+
+  | kunci | default | rentang / aturan | masuk kunci basi |
+  |---|---|---|---|
+  | `isolate.model_id` | `"facebook/sam2.1-hiera-tiny"` | wajib diawali `facebook/sam2.1-hiera-`; lisensi README = apache-2.0 dicek saat load | ya |
+  | `isolate.revision` | `"de431c4043854a71d8101e17995dfe596bf101a5"` | `null` atau string; runtime wajib commit hash 40-hex (seperti `depth.revision`) | ya |
+  | `isolate.precision` | `"fp32"` | `"fp32"` / `"fp16"` (`bf16` ditolak, P-005) | ya |
+  | `isolate.vram_min_free_mib` | `2000` | int 0–4096 | tidak |
+  | `isolate.ram_min_free_mib` | `4096` | int 0–65536 | tidak |
+  | `isolate.mask_threshold` | `0.0` | float −10 … 10 (logit) | ya |
+
+  Ambang cut = `stabilize.temporal.cut_diff` yang sudah ada (masuk kunci basi [1b]).
+
+**R5 Determinisme** (diukur di Tahap 3, belum diukur):
+- Rencana: varian V-a (salinan scratch klip3 dengan frame + titik yang sama) dijalankan setelah run produksi klip3, lalu dibandingkan dengan `isolate/` produksi.
+- Yang dibandingkan:
+  - (1) PNG `labels/` byte-identik per frame;
+  - (2) bila tidak: piksel berbeda per frame, IoU per target, status per frame, skor objek.
+- Usulan toleransi bila tidak byte-identik:
+  - status per frame sama di semua frame;
+  - IoU per target per frame ≥ 0,995;
+  - piksel berbeda ≤ 0,1% luas masker.
+
+  Lebih dari itu → coba `torch.use_deterministic_algorithms(True)` + `CUBLAS_WORKSPACE_CONFIG=:4096:8` + `cudnn.benchmark` False (diatur di proses [1b] sebelum CUDA init), lalu ukur ulang waktu.
+- Tidak ada randomness di [1b] (tanpa sampling); sumber beda yang mungkin hanya kernel GPU (cuDNN / cuBLAS).
+
+**R6 Test + mutasi** (`tests/test_isolate.py` + tambahan di `tests/test_cli.py`, `tests/test_config.py`). SAM tiruan: backend palsu, protokol sama dengan backend nyata (`describe` / `open` / `track` / `close`). Backend palsu mencatat panggilan (frame kondisi, urutan frame, prompt) dan membuat logit sintetis deterministik (lingkaran di sekitar titik positif pertama; nilai per target bisa diatur untuk uji tumpang tindih).
+- **Adegan:**
+  - (1) klip sintetis dengan cut (dua blok abu-abu, selisih > ambang) → adegan = `stabilize.shot_bounds`, dan cut = `stabilize.build_plan` pada klip yang sama;
+  - (2) `cut_diff` 0 → satu adegan.
+- **Perakitan prompt:**
+  - (3) klik di dua adegan → dua job;
+  - (4) dua frame klik dalam satu adegan → satu job, frame kondisi urut naik, `start` = paling awal;
+  - (5) target 2 hanya diklik di frame belakang → job-nya mulai di frame itu, frame sebelumnya 0 untuk target 2;
+  - (6) titik + label + kotak diteruskan apa adanya; tanpa kotak → None.
+- **Propagasi:**
+  - (7) urutan = frame kondisi, lalu maju a..akhir, lalu mundur a−1..awal; tiap frame tepat sekali;
+  - (8) klik di frame pertama adegan → tanpa mundur; klik di frame terakhir → maju 1 frame.
+- **Peta label:**
+  - (9) ambang ketat `>`;
+  - (10) tumpang tindih → logit terbesar, seri → id terkecil;
+  - (11) nilai uint8 = id; id 256 → galat;
+  - (12) PNG tulis → baca = sama.
+- **Status:**
+  - (13) frame tanpa_prompt tanpa PNG;
+  - (14) masker kosong di adegan berklik → `kosong` + PNG nol;
+  - (15) `target`.
+- **Basi:**
+  - (16) kunci berubah bila: byte titik, satu piksel frame mana pun, model id, revision, precision, `mask_threshold`, `cut_diff`, kontrak; TIDAK berubah bila `vram_min_free_mib` / `ram_min_free_mib` berubah;
+  - (17) up-to-date → backend tidak dibuat / dibuka, berkas tidak disentuh;
+  - (18) basi → dihitung ulang otomatis + peringatan;
+  - (19) terputus (backend palsu melempar KeyboardInterrupt / OOM di tengah) → `isolate/` lama utuh; sisa `isolate.partial/` dibersihkan di run berikutnya;
+  - (20) satu PNG dihapus / rusak → dihitung ulang.
+- **Titik:**
+  - (21) tanpa `points.json` → exit 0, `isolate/` tidak dibuat, backend tidak dibuat;
+  - (22) `frames: []` → manifest semua tanpa_prompt, backend tidak dibuka;
+  - (23) frame klik basi / hilang → exit 1 + perintah pick;
+  - (24) titik klip lain / rusak → exit 1.
+- **Manifest:** (25) semua field R3 ada; `key_sha256` = sha256 kanonik `key`.
+- **VRAM / RAM** (torch / ctypes palsu): (26) di bawah ambang → galat + pesan; tepat di ambang → lolos.
+- **CLI:**
+  - (27) `STAGES` = ingest, isolate, segment, …; `GPU_STAGES` memuat isolate;
+  - (28) `run` tanpa titik → subprocess [1b] TIDAK dibuat, argv stage lain sama persis dengan sebelum T-605;
+  - (29) `run` dengan titik → subprocess `rotoscope.isolate` dengan `--work-dir` (+ `--config`), tanpa `--limit`;
+  - (30) `isolate --restart` tanpa `--yes` → exit 1, tidak ada yang terhapus; dengan `--yes` → terhapus;
+  - (31) `--restart-from isolate` butuh `--yes`; `--restart-from ingest` mencakup isolate;
+  - (32) `download` memanggil [1b];
+  - (33) proses induk tidak meng-import torch (test lama diperluas);
+  - (34) rantai CPU nyata (klip sintetis; ingest + GPU palsu): keluaran dengan `points.json` + [1b] palsu = tanpa `points.json` (byte-identik; perluasan test T-604);
+  - (35) `--dry-run` tanpa torch, tanpa menulis.
+- **Config:** (36) default kode = `default.yaml` = blok docs/02; validasi rentang (bf16, model_id, ambang).
+- **Model nyata, skip default:**
+  - (37) GPU (`ROTOSCOPE_GPU_TESTS=1`): klip sintetis 8 frame (kotak bergerak), klik di f3 → masker mengikuti kotak maju + mundur (IoU > 0,8); field VRAM terisi;
+  - (38) kontrak CPU dengan bobot nyata (cache; usul `ROTOSCOPE_SAM_CPU_TESTS=1`, ±20 s): frame malas + 2 frame kondisi + kotak + maju / mundur jalan di kelas sesi asli.
+- **Mutasi** (`scripts/t605_mutations.py`, pola T-604: penggantian teks pada salinan sumber di memori, satu proses per mutasi; tiap mutan harus menggagalkan ≥ 1 test):
+  1. cut diabaikan (satu adegan);
+  2. ambang cut dibaca dari tempat lain / dibalik (`>=`);
+  3. tanpa propagasi mundur;
+  4. mundur mulai dari a (frame a dihitung dua kali) / dari awal adegan;
+  5. prompt adegan lain bocor ke job;
+  6. hanya frame klik paling awal yang dipakai (koreksi diabaikan);
+  7. frame kondisi tidak langsung dihitung (semua input ditambah dulu, lalu satu kali hitung);
+  8. kotak dibuang;
+  9. label 0 / 1 tertukar atau titik negatif dibuang;
+  10. tumpang tindih → id terbesar menang;
+  11. ambang `>=`;
+  12. tanpa_prompt diberi PNG;
+  13. kosong ditandai target;
+  14–17. kunci basi tanpa: titik / sidik frame / revision / `mask_threshold`;
+  18. `vram_min_free_mib` ikut kunci;
+  19. tanpa `points.json` tetap membuat `isolate/`;
+  20. tulis langsung ke `isolate/` (tanpa `isolate.partial/`);
+  21. hasil basi dianggap valid;
+  22. frame klik basi diterima;
+  23. id > 255 diterima;
+  24. `isolate --restart` tanpa `--yes` menghapus;
+  25. `--restart-from ingest` tanpa isolate;
+  26. cek VRAM `>` alih-alih `>=`;
+  27. indeks lokal ↔ indeks frame bergeser satu.
+
+**R7 Salinan titik Rio:** `scripts/t605_points_rio.json` (7 639 B, format `t605-points-rio/1`; ditulis lewat Write).
+- Per klip: path sumber, ukuran, sha256 berkas asli, dan `doc` = isi utuh `rotoscope-target-points/1`.
+- **Dicek** `scripts/t605_points_check.py`: `json.dumps(doc, indent=2, ensure_ascii=False)` UTF-8 = byte berkas asli (klip3 2 930 / 2 930 B, klip5 7 143 / 7 143 B); ukuran + sha256 cocok; `pick.validate_doc` lolos; status frame klip3 {85: ok}, klip5 {0: ok, 64: ok}.
+- `points.prev.json` klip5 (hanya f0) tidak disalin.
+
+**R8 Rencana Tahap 3** (setelah Tahap 2 + suite lolos):
+- **F1 `before_t3`.**
+- **Run Rio** (PowerShell terpisah, venv aktif, di root repo):
+  1. `python -m rotoscope run samples\klip3.mp4`
+  2. `python -m rotoscope run samples\klip5.mp4`
+  3. `python scripts\t605_tahap3.py gpu`
+
+  Perintah 3 menjalankan varian scratch BERURUTAN, satu model di GPU; sampel `nvidia-smi` tiap 2 s; log `work/t605/run_tahap3.log`. Varian:
+  - **V-a** `klip3_ulang` (titik Rio sama; determinisme R5);
+  - **V-b** `klip3_t602` (titik T-602 hasil konversi `work/t604/t602_converted/klip3.points.json`: 15 kiri + 4 kanan; pengaruh klik negatif);
+  - **V-c** `klip5_tanpa_kotak64` (kotak f64 dibuang, titik f64 tetap; keputusan no. 7) — usulan tambahan;
+  - **V-d** `klip5_f64saja` (hanya klik f64 → propagasi mundur f64 → f0 teruji di data nyata) — usulan tambahan, opsional.
+
+  Salinan scratch `work/t605_scratch/<varian>/`: `frames/` di-hard-link, `meta.json` disalin, `target/points.json` ditulis skrip (`t605_tahap3.py siapkan`, CPU, dijalankan Claude Code sebelumnya); [1b] = `python -m rotoscope.isolate --work-dir …`.
+- **Perkiraan:**
+  - run klip3 ≈ 1,5 menit: SAM 41 frame ≈ 30 s + muat + cek resume segment / depth 21–28 s per stage;
+  - run klip5 ≈ 2–2,5 menit: SAM 92 frame ≈ 65 s;
+  - varian ≈ 0,7–1,3 menit masing-masing;
+  - total ≈ 6–9 menit GPU.
+- **Bahan penilaian** (`python scripts/t605_tahap3.py nilai`, CPU, Claude Code) → `work/t605/nilai/`:
+  - per adegan berklik: foto + garis tepi masker (warna per id target) + bar detik / frame / status / luas %, normal dan lambat 0,5×: `klip3_f085-125{,_lambat}.mp4`, `klip5_f000-091{,_lambat}.mp4`;
+  - perbandingan berdampingan: klip3 Rio | V-b; klip5 produksi | V-c (| V-d);
+  - satu video ringkas per klip (seluruh klip, label "TANPA TARGET" di frame tanpa_prompt);
+  - `PANDUAN.md` berisi perintah, cara menilai, dan template.
+- **Metrik** (`work/t605/metrik.json`):
+  - luas masker per frame (px, % frame);
+  - IoU t vs t−1 per target (median, min, frame < 0,8);
+  - lompatan luas |Δ| / luas > 20% (daftar frame; perhatikan klip5 f63 → f64 dan skor < 1 di f65–72 dari T-602);
+  - skor objek per frame (≤ 0 = kosong);
+  - frame tanpa_prompt (jumlah + rentang);
+  - waktu per frame / total;
+  - VRAM `max_memory_reserved` / `allocated` + puncak `nvidia-smi`;
+  - RAM puncak proses;
+  - determinisme (R5);
+  - IoU varian vs produksi per frame;
+  - f64: luas masker / luas kotak di produksi vs V-c.
+- **Template penilaian Rio** (per video adegan berklik):
+  - "rentang frame SALAH (target salah / bocor ke orang lain / sebagian besar hilang): …" → % benar = 1 − salah / frame adegan; lolos bila ≥ 90% (keputusan no. 9) di klip3 DAN klip5;
+  - "kotak f64 klip5 merusak masker? (ya / tidak; varian yang lebih baik)" → keputusan no. 7;
+  - "pengaruh klik kanan klip3 (Rio vs T-602): lebih baik / sama / lebih buruk";
+  - catatan bebas.
+- **F1 `after_t3`:** berkas lama identik; tambahan hanya `work/clips/{klip3,klip5}/isolate/` (+ scratch / `work/t605/`). `run` tidak boleh mengubah `frames/`, `seg/`, …, `out/`.
+
+**R9 Kontrak:** teks usulan D-011 + docs/01 (diagram, prinsip 3 / 4, tabel CLI, tabel `--restart-from`, bagian "[1b] `isolate.py`", pohon repo, anggaran) + CLAUDE.md (baris tabel modul 1b, aturan keras 1 / 6, "Cara pakai", paragraf "Pilih target") ada di laporan Tahap 1. Diterapkan bersama kode di Tahap 2, difinalkan di Tahap 4.
+
+**F1** (`scripts/t605_hash.py`, format daftar sama dengan T-602 / T-604): `before` dan `after` = 10 660 berkas (6 `qc_report.json`); kedua daftar byte-identik dengan `work/t604/after_t4_sha256.txt` (F1 penutupan T-604; sha256 daftar `3fe761f1…`): hilang 0, berubah 0, tambahan 0. `points.json` klip3 `e27d669d…`, klip5 `7f6619f9…` (tidak berubah).
+
+**Penyimpangan / keraguan:**
+1. **Basi = hitung ulang otomatis tanpa `--yes`** (keputusan no. 6) bertentangan dengan prinsip 4 docs/01 (stage GPU menolak + `--restart`) dan bisa dibaca bertentangan dengan "butuh `--yes` seperti [2]" (no. 2). Usulan: `--yes` hanya untuk menghapus hasil yang MASIH BERLAKU (`--restart-from isolate`, `isolate --restart`). Alternatif: basi → berhenti + saran `--yes`. Mohon keputusan Rio.
+2. **Ambang cut [1b] = `stabilize.temporal.cut_diff`** (satu definisi "adegan" di pipeline; mengubahnya membuat [1b] basi). Alternatif: `isolate.cut_diff` sendiri (default 0,06). klip3 f114 (0,05999) ada di dalam adegan berklik — margin sangat tipis (R1).
+3. **Sesi per (adegan, target)**, bukan satu sesi per adegan untuk semua target: wajib karena batas `transformers` (R2 a). Biaya: fitur gambar dihitung ulang per target (data Rio sekarang: 1 target per klip).
+4. **`--limit` diabaikan [1b]** (selalu seluruh klip, karena resume per klip). Alternatif: [1b] dilewati saat `--limit`.
+5. **Mode offline + frame malas** memakai atribut dalam `processed_frames` (`transformers` di-pin 5.17.0; dijaga test kontrak 38). Mode berbeda dari T-602 (streaming) dan frame tidak dicrop letterbox (klip5 T-602 dicrop) → kualitas klip5 bisa berbeda dari pratinjau T-602.
+6. **Propagasi mundur tidak teruji di data Rio** (klik paling awal = awal adegan di kedua klip) → varian V-d (opsional).
+7. **Tambahan di luar keputusan Rio** (mohon setuju / tolak): `isolate --dry-run`; `isolate.ram_min_free_mib`; `isolate.mask_threshold` sebagai YAML; [1b] di `download`; varian V-c / V-d; tanpa PNG untuk frame tanpa_prompt; `frames: []` → hasil tanpa GPU; `isolate/` lama tanpa `points.json` dibiarkan + peringatan.
+8. **Urutan kerja:** `scripts/t605_hash.py` (F1 `before`, supaya hash diambil sebelum apa pun berubah) dan `scripts/t605_scenes.py` ditulis SEBELUM entri "Keputusan T-605" dicatat di docs/04. Prompt meminta keputusan dicatat sebelum menulis kode. Keduanya alat ukur baca-saja (bukan kode produksi), tetapi urutannya tetap menyimpang. `t605_scenes.py` dijalankan SETELAH entri dicatat.
+9. Probe CPU memuat processor SAM dari cache HF (offline, tanpa bobot model) lewat `python -I -c` yang hanya mencetak; tidak ada berkas yang ditulis.
+10. Anggaran VRAM / RAM per frame (±2 / ±4,3 MiB per target) = bacaan kode + angka T-602, belum diukur untuk mode offline.
+
+### Keputusan T-605 setelah Tahap 1 (2026-10-17) — Tahap 2–3 dimulai
+
+Dicatat SEBELUM kode ditulis. Rancangan Tahap 1 (R1–R9 di atas) disetujui Rio dengan keputusan berikut:
+1. **`--yes` wajib setiap kali [1b] memakai GPU**, baik hitung baru maupun basi. Hasil basi dihitung ulang otomatis bila `--yes` ada, tanpa `--restart`. Tanpa `--yes` → berhenti dengan pesan jelas. (Menggantikan R4 "basi → hitung ulang otomatis tanpa `--yes`"; keraguan Tahap 1 no. 1.)
+2. **Ambang cut = `stabilize.temporal.cut_diff`**, tanpa parameter terpisah (keraguan no. 2).
+3. **`--limit` diabaikan [1b]**: masker selalu seluruh klip (keraguan no. 4).
+4. **Tambahan Claude Code disetujui**: `--dry-run`, `isolate.ram_min_free_mib`, `isolate.mask_threshold` di YAML, SAM ikut `download`, varian V-c / V-d, frame tanpa_prompt tanpa PNG, `frames: []` tanpa GPU. **KECUALI:** bila `points.json` dihapus, `isolate/` lama **DIHAPUS otomatis dengan pesan**, supaya T-606 tidak memakai masker usang. (Menggantikan R4 "dibiarkan + peringatan".)
+5. **Determinisme:** toleransi = status per frame sama, IoU per target ≥ 0,995, piksel berbeda ≤ 0,1% luas masker. Bila gagal → `torch.use_deterministic_algorithms(True)` + `CUBLAS_WORKSPACE_CONFIG`.
+6. **Varian Tahap 3:** V-a, V-b, V-c, V-d disetujui.
+7. **Urutan kerja Tahap 1 yang menyimpang** (keraguan no. 8: alat F1 + ukur adegan ditulis sebelum entri keputusan) diterima.
+
+**Tahap 2 (implementasi):** R1–R9 + butir 1–7: `src/rotoscope/isolate.py`; CLI (urutan `run` ingest → isolate → segment; subperintah `isolate`; `--restart-from isolate`; `download` mengunduh SAM); config + validasi + `configs/default.yaml`; teks docs/01, docs/02, CLAUDE.md, D-011. Test SAM tiruan tanpa GPU: 38 kelompok Tahap 1 + basi tanpa `--yes` berhenti, basi dengan `--yes` dihitung ulang, `points.json` dihapus → `isolate/` dihapus, `--limit` tidak memengaruhi [1b]. Mutasi: 27 Tahap 1 + basi diproses tanpa `--yes` + `isolate/` tidak dihapus saat titik hilang; setiap mutan harus menggagalkan ≥ 1 test. Suite penuh. Bukti byte-identik: klip tanpa titik → `run` tanpa subprocess [1b] dan tanpa berkas baru.
+**Tahap 3 (persiapan uji Rio, TANPA GPU dari sesi Claude Code):** `scripts/t605_tahap3.py` (`gpu`: V-a / V-b / V-c / V-d berurutan di `work/t605_scratch/` dengan cek VRAM / RAM, bisa diulang bila terputus; `bahan`: video per adegan berklik normal + lambat 0,5×, video berdampingan antar varian, metrik, cek determinisme V-a vs produksi); `isolate --dry-run` klip3 + klip5; `work/t605/PANDUAN_UJI.md` (perintah persis, perkiraan waktu, syarat, langkah bila terputus / OOM, kalimat untuk Claude Code, template penilaian). **F1:** berkas lama di 6 klip + 6 `qc_report.json` + `out/` + `target/points.json` identik sebelum dan sesudah. Tanpa commit; berhenti setelah laporan.
+
+### D-011 — Stage [1b] isolasi target (opt-in, SAM 2.1 hiera tiny)
+**Tanggal:** 2026-10-17 (keputusan Rio T-605 no. 10 + "Keputusan T-605 setelah Tahap 1"; diterapkan sejak T-605 Tahap 2)
+**Konteks:** Klip multi-orang / kerumunan (klip3, klip5): Sapiens2-seg melabeli bagian tubuh SEMUA orang, jadi garis orang lain ikut tergambar. Pemilihan orang otomatis S1 / S2 ditolak Rio (T-305 1b: orang yang dipilih salah). Studi T-602: SAM 2.1 tiny dari klik manual memisahkan target (klip3 f85–108 bersih). T-604: klik target lewat `python -m rotoscope pick`.
+**Keputusan (Rio):**
+- **Stage baru [1b] `isolate.py`** di antara [1] dan [2]: `frames/` + `target/points.json` → `isolate/` (peta label per frame, status per frame, manifest). **Opt-in:** hanya berjalan bila `target/points.json` ada; tanpa itu dilewati (tanpa subprocess, tanpa berkas baru) dan keluaran pipeline byte-identik. `points.json` dihapus → `isolate/` lama dihapus otomatis dengan pesan.
+- **Model:** SAM 2.1 hiera tiny (`facebook/sam2.1-hiera-tiny`; kode + bobot Apache-2.0) lewat `transformers` 5.17.0, tanpa dependency baru. Revision di-pin di YAML (`isolate.revision`), fp32 (fp16 boleh, bf16 dilarang — P-005), satu precision per klip. GPU lewat PyTorch, proses sendiri, satu model di GPU pada satu waktu. Cek VRAM bebas ≥ 2000 MiB + RAM bebas ≥ 4096 MiB sebelum load. Terukur di T-602: 892 MiB reserved, bukan ±4 GB seperti perkiraan D-005, karena frame + state disimpan di CPU.
+- **`--yes` wajib setiap kali [1b] memakai GPU** (hitung baru maupun basi); tanpa `--yes` → berhenti dengan pesan. Hasil yang masih berlaku dilewati tanpa GPU.
+- **Adegan:** target hanya diikuti di adegan yang punya klik. Adegan = cut [3] (fungsi `stabilize` + `stabilize.temporal.cut_diff` yang sama); adegan lain `tanpa_prompt`. Per (adegan berklik, target) satu sesi SAM: frame klik dimasukkan dulu, lalu maju dari klik paling awal, lalu mundur. Basi / terputus → seluruh klip dihitung ulang (memori SAM berantai antar frame); `--limit` tidak berlaku.
+- **Lingkup:** [1b] hanya MENGHASILKAN masker. Pemakaiannya (M1 sebelum [2] / M2 di [3]) = T-606, keputusan terpisah.
+- **Tidak berubah:** D-009 — model seg tetap Sapiens2-seg 0.8B (fallback 0.4B untuk seluruh klip), kedalaman tetap DA-V2 Small; SAM bukan pengganti seg. D-010 — kontrak [2]–[6] tetap; fallback pose [2b] tetap ditunda (BLOCKED).
+- **D-005 diperbarui:** SAM 2 bukan lagi "eksperimen opsional"; SAM 2.1 tiny dipakai sebagai stage produksi opt-in [1b].
+
+**Alternatif ditolak:**
+- pemilihan orang otomatis S1 / S2 (T-305 1b);
+- paket `sam2` resmi (dependency hydra-core + iopath + ekstensi CUDA, T-602 1a);
+- SAM melacak menembus cut (masker bisa pindah ke objek lain);
+- rembg (D-008).
+
+**Risiko:**
+- kerumunan + video kualitas rendah (klip5) → masker rusak bila tanpa klik kanan;
+- cut positif palsu di adegan berklik → pelacakan berhenti (frame sesudahnya tanpa target; tambah klik);
+- cut terlewat → masker bisa menempel ke objek di adegan lain;
+- frame dibaca malas lewat atribut dalam `transformers` → versi di-pin 5.17.0 + test kontrak.
+
+### Hasil T-605 Tahap 2–3 (2026-10-17) — implementasi + persiapan uji; menunggu run GPU + penilaian Rio
+
+Tanpa GPU dari sesi Claude Code; tanpa commit; tanpa dependency baru. Semua berkas repo lewat Edit / Write.
+- **Berkas.**
+  - Baru: `src/rotoscope/isolate.py` (stage [1b]), `tests/test_isolate.py`, `scripts/t605_mutations.py`, `scripts/t605_tahap3.py`,
+    `scripts/t605_identik.py` (F3).
+  - Diubah: `src/rotoscope/cli.py` (urutan `run`, `GPU_STAGES`, `RESTART_SCOPE`, `--yes` ke [1b], subperintah `isolate`, `download`),
+    `src/rotoscope/config.py` (`IsolateConfig` + validasi), `configs/default.yaml` (section `isolate:`), docs/01 (diagram, prinsip
+    3 / 4, CLI, `--restart-from`, `--yes`, bagian "[1b] `isolate.py`", pick, pohon repo, anggaran), docs/02 (blok YAML + 6 baris
+    validasi), CLAUDE.md (baris tabel 1b, aturan keras 1 / 6, "Cara pakai", "Pilih target"), docs/04 (D-005 status, D-011, entri
+    ini), docs/05.
+  - Test lama yang disesuaikan dengan kontrak baru: `tests/test_cli.py::test_download_default_and_fallback_without_forcing_offline`
+    (`download` kini juga memanggil [1b]); `tests/test_pick.py::test_run_does_not_create_target_and_ignores_points` (dengan
+    `points.json`, `run` kini membuat subprocess [1b] setelah ingest; argv stage lain tetap sama) + docstring test byte-identik T-604.
+- **Implementasi = R1–R9 + keputusan setelah Tahap 1.** Rincian yang tidak tertulis di rancangan (mohon dicek):
+  1. Urutan pemanggilan sesi ada di `track_job` (logika murni, diuji dengan SAM tiruan): `add_prompt` → `run_frame` per frame klik,
+     lalu `propagate` maju, lalu mundur. Backend asli (`TorchEngine`) hanya membungkus panggilan `transformers`.
+  2. `key` di manifest TIDAK memuat lisensi (R3 contoh memuatnya): kunci hanya dari config + input, supaya cek up-to-date tidak butuh
+     cache model. Lisensi dicatat di `manifest.model`.
+  3. `frames.jsonl` hanya berisi baris `event: frame` (tanpa `run_start` / `run_end`); data run ada di `manifest.run`.
+  4. Masker + logit per target disimpan sementara di `isolate.partial/_tmp/` (npz) selama satu adegan lalu digabung ke PNG — RAM
+     tidak menampung logit semua frame.
+  5. `TorchSamBackend(device="cpu")` hanya untuk test kontrak (tanpa cek VRAM); produksi selalu `cuda`.
+  6. Pesan `run` saat [1b] gagal menambahkan "Lihat pesan [1b] di atas (mis. butuh --yes …)".
+  7. Rencana mencetak saran klik bila adegan tanpa klik tepat sesudah adegan berklik (kemungkinan cut positif palsu).
+- **Test** `tests/test_isolate.py`: 47 test (38 kelompok Tahap 1 + (39)–(42) keputusan Rio + `02b` ambang cut dari config + `07b`
+  backend kurang frame + `26b` RAM dicek sebelum model dimuat). SAM tiruan meniru perilaku `transformers` 5.17.0 (penanda input baru
+  ditimpa / dikosongkan; sesi tanpa frame kondisi → galat). 45 lolos + 2 skip default (model nyata).
+  - **Kontrak bobot asli di CPU** (`ROTOSCOPE_SAM_CPU_TESTS=1`, `CUDA_VISIBLE_DEVICES` kosong; dijalankan sekali di sesi ini, BUKAN
+    GPU): klip sintetis 6 frame (kotak 16 × 16 bergerak), klik f2 + titik negatif + kotak → maju f3–f5 dan MUNDUR f1–f0, IoU masker vs
+    kotak > 0,5 di semua frame (luas 256 px = kotak); dua run berturut di CPU → PNG byte-identik. 1 lolos (40,9 s; ±2–3 s per frame
+    CPU). Membuktikan: frame malas (`processed_frames`), kotak + titik negatif, frame kondisi, maju + mundur di kelas sesi asli.
+  - GPU nyata (`ROTOSCOPE_GPU_TESTS=1`): belum dijalankan (aturan sesi).
+- **Mutasi** (`scripts/t605_mutations.py`, pola T-604; hasil `work/t605/mutations.json`): kontrol lolos; **32 / 32 mutan menggagalkan
+  ≥ 1 test** = 27 rancangan Tahap 1 (no. 19 dipecah 19a stage membuat `isolate/` tanpa titik / 19b `run` membuat subprocess tanpa titik)
+  + 2 baru (basi diproses tanpa `--yes`; `isolate/` tidak dihapus saat titik hilang) + 2 CLI (`--yes` tidak diteruskan; `--limit`
+  diteruskan ke [1b]).
+- **Suite penuh:** **1423 lolos, 4 skip, 0 gagal** (465,8 s). Skip = 2 test GPU lama (`ROTOSCOPE_GPU_TESTS`) + 2 test model nyata
+  [1b] (GPU; CPU bobot asli). Acuan T-604: 1378 lolos + 2 skip; tambahan = 47 test `test_isolate.py`.
+- **Bukti byte-identik:**
+  - test (28): `run` tanpa titik → argv semua stage sama persis dengan sebelum T-605, tanpa subprocess [1b], tanpa berkas / folder baru;
+  - test (34): rantai CPU nyata (stabilize → export, ffmpeg) → keluaran isi dengan `points.json` + [1b] (SAM tiruan, `--yes`) =
+    tanpa titik; tanpa `--yes` `run` berhenti di [1b] tanpa membuat `isolate/`;
+  - klip nyata (`scripts/t605_identik.py` → `work/t605/identik.json`; semua stage dipalsukan pencatat, hanya logika cli yang asli):
+    test, test_short, Klip2, klip4 (tanpa titik) → 0 panggilan [1b], daftar berkas + folder (ukuran + mtime_ns) sama persis (2 570 /
+    1 094 / 1 121 / 1 976 entri); klip3, klip5 (ada titik) → [1b] tercatat sebagai subprocess `--work-dir <klip>` (tidak dijalankan),
+    daftar sama persis.
+- **Dry-run** (`python -m rotoscope isolate samples/<klip>.mp4 --dry-run`; baca-saja):
+  - klip3: belum ada hasil; 9 adegan (cut 49, 85, 126, 134, 146, 154, 166, 174); berklik f85–f125; job target 1 (41 frame), klik f85,
+    maju f85 → f125, tanpa mundur; tanpa_prompt 141 (f0–f84, f126–f181); catatan: adegan f126–f133 tanpa klik; GPU dibutuhkan,
+    ≈ 42 s;
+  - klip5: belum ada hasil; 11 adegan (cut 92–96, 100–104); berklik f0–f91; job target 1 (92 frame), klik f0 + f64, maju f0 → f91,
+    tanpa mundur; tanpa_prompt 41 (f92–f132); GPU dibutuhkan, ≈ 77 s.
+- **Tahap 3 (persiapan):** `scripts/t605_tahap3.py` `siapkan` (dijalankan: V-a klip3_ulang = titik Rio byte-identik; V-b klip3_t602
+  15 kiri / 4 kanan; V-c klip5 tanpa kotak f64; V-d klip5 hanya f64; status frame klik ok), `gpu` (Rio), `bahan` (CPU), `uji` (uji
+  asap `bahan` dengan SAM tiruan: 6 hasil [1b] tiruan, 10 video — ukuran / fps / jumlah frame dicek ffprobe, isi tidak dibuka —
+  metrik + determinisme V-a dihitung; keluaran di `work/t605_scratch/uji/`, bukan bahan penilaian). Panduan Rio:
+  `work/t605/PANDUAN_UJI.md`.
+- **F1** (`scripts/t605_hash.py`): `before_t23` = `after_t23` = 10 660 berkas (6 `qc_report.json`, `points.json` klip3
+  `e27d669d…` / klip5 `7f6619f9…`); kedua daftar byte-identik dengan F1 penutupan T-604 (sha256 daftar `3fe761f1…`): hilang 0,
+  berubah 0, tambahan 0. Belum ada `isolate/` di klip mana pun (dibuat Rio di Tahap 3).
+- **Penyimpangan / keraguan:**
+  1. Dua test T-604 diubah karena kontrak `run` berubah (di atas); isi pengujiannya dipertahankan (argv stage lain sama, keluaran
+     [2]–[6] byte-identik).
+  2. `key` tanpa lisensi (rincian no. 2 di atas) — beda kecil dari contoh R3.
+  3. Mode offline dan frame malas baru teruji dengan bobot asli di CPU (klip sintetis), belum di GPU dan belum di klip nyata; T-602
+     memakai mode streaming + crop letterbox klip5.
+  4. Uji asap `bahan` memakai SAM tiruan; isi video tidak saya buka (hanya ffprobe).
+  5. `scripts/t605_tahap3.py gpu` belum pernah dijalankan (butuh GPU); hanya `siapkan` dijalankan. Sampel `nvidia-smi` opsional.
+  6. Dry-run membaca seluruh frame (sidik piksel) — baca-saja, F1 identik.
+
+### Hasil T-605 Tahap 3b (2026-10-17) — run GPU Rio diverifikasi + bahan penilaian; menunggu penilaian Rio
+
+Run GPU dijalankan Rio dari PowerShell terpisah: `python -m rotoscope isolate samples\klip3.mp4 --yes`, `… klip5.mp4 --yes`, lalu
+`python scripts\t605_tahap3.py gpu` (V-a → V-d berurutan). Sesi Claude Code TANPA GPU: verifikasi (`t605_tahap3.py cek`, baru,
+baca-saja → `work/t605/cek_run.json`), `bahan` (CPU), suite, F1. Semua berkas repo lewat Edit / Write; tanpa commit.
+
+**Verifikasi run** (6 / 6 LOLOS):
+- status `ok` = kunci manifest cocok dengan input SEKARANG (titik, sidik piksel semua frame, model, parameter; fungsi stage);
+- PNG + `frames.jsonl` lengkap; `key_sha256` cocok; NaN 0;
+- fp32, `cuda`, `facebook/sam2.1-hiera-tiny` @ `de431c40…`, torch 2.7.1+cu118, transformers 5.17.0.
+
+| hasil | target / kosong / tanpa_prompt | SAM frame, p50 / maks per frame | wall [1b] | VRAM bebas sebelum / reserved maks / allocated maks (MiB) | RAM bebas / puncak proses (MiB) | puncak `nvidia-smi` |
+|---|---|---|---|---|---|---|
+| klip3 (produksi) | 41 / 0 / 141 | 41, 0,682 / 7,60 s (frame pertama) | 41,1 s | 3313,7 / 866 / 544,3 | 7849 / 3549 | – (tidak disampel) |
+| klip5 (produksi) | **32 / 60 / 41** | 92, 0,730 / 2,87 s | 76,0 s | 3313,7 / 892 / 589,1 | 7858 / 3810 | – |
+| V-a klip3_ulang | 41 / 0 / 141 | 41, 0,689 / 2,78 s | 36,5 s | 3313,7 / 866 / 544,3 | 8054 / 3547 | 2422 / 4096 |
+| V-b klip3_t602 | 41 / 0 / 141 | 41, 0,690 / 2,78 s | 36,6 s | 3313,7 / 866 / 544,3 | 8058 / 3548 | 2422 / 4096 |
+| V-c klip5 tanpa kotak f64 | **24 / 68 / 41** | 92, 0,735 / 2,80 s | 76,4 s | 3313,7 / 892 / 589,1 | 8101 / 3810 | 2450 / 4096 |
+| V-d klip5 hanya f64 | 92 / 0 / 41 | 92, 0,691 / 2,82 s | 72,9 s | 3313,7 / 892 / 569,9 | 8104 / 3733 | 2448 / 4096 |
+
+Waktu proses penuh pembungkus `gpu`: V-a 44,4 s, V-b 44,5 s, V-c 81,7 s, V-d 78,3 s. Sesuai perkiraan T-602: reserved 866–892 MiB,
+±0,7 s / frame, RAM proses 3,5–3,8 GiB.
+
+**Metrik** (`t605_tahap3.py bahan` → `work/t605/metrik.json`; target 1; luas dalam px dari 921 600 px frame; IoU t / t−1 hanya di
+adegan berklik; lompatan = |Δluas| / luas > 20%; skor = logit skor objek SAM):
+
+| hasil | luas min / median / maks | IoU t/t−1 median / min (frame < 0,8) | lompatan luas | skor min / median (frame ≤ 0) | tanpa_prompt |
+|---|---|---|---|---|---|
+| klip3 | 126 620 / 135 024 / 138 919 (14–15% frame) | 0,892 / 0,677 (f86, f89, f96, f97, f102) | 0 | 7,23 / 8,09 (0) | 141 (f0–84, f126–181) |
+| klip5 | 0 / 0 / 468 776 (maks 50,9% frame) | 0,854 / 0,0 (13 frame) | 3: f2→f3 (119 440 → 0), f62→f63 (0 → 455 029), f77→f78 (452 550 → 171 942) | −0,89 / −0,34 (61) | 41 (f92–132) |
+| V-a | = klip3 (byte-identik) | = klip3 | 0 | = klip3 | 141 |
+| V-b | 125 136 / 133 542 / 137 670 | 0,891 / 0,665 (f86, f89, f96, f97, f102) | 0 | 6,44 / 6,75 (0) | 141 |
+| V-c | 0 / 0 / 526 067 (57,1%) | 0,966 / 0,0 (f1–3, f64, f85) | 4: f1→f2, f2→f3 (→ 0), f63→f64 (0 → 501 712), f84→f85 (→ 0) | −1,15 / −0,55 (68) | 41 |
+| V-d | 145 111 / 465 966 / 472 428 (51,3%) | 0,988 / 0,378 (f15, f81, f84, f88–91) | 2: f14→f15 (190 180 → 330 185), f80→f81 (463 708 → 177 382) | 4,47 / 6,47 (0) | 41 |
+
+- **klip5 (angka, BUKAN penilaian visual):**
+  - produksi: f0–f2 masker ±25% area video aktif (letterbox y 344–1011, 720 × 668 = 480 960 px); **f3–f62 kosong** (skor < 0,
+    60 frame); **f63–f77 masker menutupi 95–97% area video aktif**; f78–f91 30–36%;
+  - V-d: f0–f14 ±33%; **f15–f80 96–98% area aktif**; f81–f91 ±31%;
+  - V-c: f64–f84 97–98% area aktif + 32 000–57 000 px bocor ke pita hitam; f3–f63 dan f85–f91 kosong.
+- **Kotak f64 = seluruh area video aktif:** luas kotak 480 950 px ≈ area aktif 480 960 px. Masker f64 = 461 287 px (96% kotak) di
+  produksi dan V-d. Tanpa kotak (V-c) masker f64 = 501 712 px (104% kotak, sebagian di pita hitam) — titik positif f64 di x 32 dan
+  x 707 (dekat kedua tepi) juga memilih seluruh gambar. Dugaan (belum dilihat): frame kondisi f64 "seluruh gambar" ikut menjadi
+  memori untuk f1–f62 (mode offline memakai SEMUA frame kondisi, termasuk yang sesudahnya), sehingga skor objek turun < 0 sejak f3.
+- Skor cut klip5 tertinggi di f0–f91 = f64 (0,0584, di bawah ambang 0,06); f13 / f15 skor 0,0000 / 0,0001 (frame kembar sumber 60 fps).
+- **klip3:** masker di 41 / 41 frame, luas stabil (±5%), skor 7,2–8,1. V-b (dengan 4 klik kanan) vs produksi: IoU median 0,989, min
+  0,968, status sama → klik kanan hampir tidak berpengaruh di klip3.
+- Perbandingan antar varian (`metrik.json` `banding`): V-b vs produksi klip3 IoU 0,989 / 0,968; V-c vs produksi klip5 status
+  berbeda (IoU median 0,595); V-d vs produksi klip5 per rentang: f0–2 0,335, f3–62 0 (produksi kosong), f63–77 0,992, f78–91 0,957.
+
+**Determinisme** (V-a vs produksi klip3, toleransi keputusan no. 5): **41 / 41 PNG byte-identik**, status sama di 182 frame, IoU
+min 1,0, piksel berbeda 0 → **LOLOS** (byte-identik; `use_deterministic_algorithms` tidak diperlukan).
+
+**Bahan penilaian** `work/t605/nilai/`: 10 video (`klip3_f085-125` + `_lambat`, `klip5_f000-091` + `_lambat`,
+`klip3_banding_V-b_f085-125` + `_lambat`, `klip5_banding_V-c_V-d_f000-091` + `_lambat`, `klip3_ringkas`, `klip5_ringkas`) +
+`PENILAIAN.md` (daftar video, hal yang perlu diperhatikan, template). Isi video tidak dibuka Claude Code.
+
+**Suite penuh** (diulang karena perapian format pesan `isolate.py` terjadi sesudah suite Tahap 2–3): **1423 lolos, 4 skip, 0 gagal**
+(455,5 s) — sama dengan sebelumnya. Kode produksi tidak berubah sejak Tahap 2–3 selain perapian itu; yang berubah di Tahap 3b hanya
+`scripts/t605_tahap3.py` (subperintah `cek`).
+
+**F1** (`scripts/t605_hash.py`): `before_t3b` (sesudah run Rio, sebelum `bahan`) = `after_t3b` = 10 797 berkas. Dibanding F1
+penutupan T-604 dan `before_t23` (10 660 berkas): hilang 0, berubah 0; tambahan HANYA 137 berkas `isolate/` (klip3 41 PNG +
+`frames.jsonl` + `manifest.json`; klip5 92 PNG + 2); `out/` tidak berubah. Scratch `work/t605_scratch/` (208 MB: 4 varian + uji
+asap) dan `work/t605/` (21 MB) di luar cakupan F1.
+
+**Penyimpangan / keraguan:**
+1. **klip5 hampir pasti tidak memenuhi kriteria ≥ 90%** (keputusan no. 9) menurut angka: 60 / 92 frame kosong + 15 frame masker
+   seluruh gambar. Keputusan resmi tetap penilaian visual Rio. Keputusan no. 7 ("kotak terlalu besar merusak masker → peringatan di
+   pick") tampaknya terpenuhi, tetapi V-c menunjukkan titik f64 di kedua tepi frame juga merusak; perlu keputusan Rio.
+2. Tidak ada varian "hanya f0" (di luar V-a–V-d yang disetujui), jadi pengaruh f64 terhadap f1–f62 adalah dugaan dari perbandingan,
+   belum diukur langsung.
+3. `cek` = subperintah baru di `scripts/t605_tahap3.py` (baca-saja), ditambahkan di Tahap 3b.
+4. Run produksi tidak disampel `nvidia-smi` (Rio menjalankan perintah `isolate` langsung); VRAM produksi dari `torch` saja.
+
+### Keputusan akhir T-605 (2026-10-17) — DONE (lolos berdasarkan klip3; klip5 dikecualikan)
+
+Dicatat SEBELUM titik klip5 diarsipkan / dihapus dan sebelum scratch dihapus. Tanpa GPU; tanpa perubahan `src/` / `configs/` /
+`tests/` di Tahap 4.
+
+**Penilaian Rio** (video `work/t605/nilai/`, template `PENILAIAN.md`):
+- klip3: masker mengikuti target yang benar di **semua frame** (41 / 41, f85–f125);
+- klip5: **semua salah**;
+- klip5 detik 2,6–3,2: orang memang memenuhi layar (zoom) = **ya** → masker ±95–97% gambar di f63–f77 BENAR;
+- klip3 V-b (dengan 4 klik kanan, titik T-602) **lebih baik** dari produksi;
+- klip5 V-c (tanpa kotak f64) **sama buruknya**;
+- klip5 V-d (hanya klik f64): **tidak benar** sebelum f64;
+- catatan Rio: klip5 punya banyak masalah video, jadi harus diolah terpisah sebelum masuk model.
+
+**Keputusan Rio:**
+1. **T-605 DONE, lolos berdasarkan klip3.** klip5 **DIKECUALIKAN** atas keputusan Rio (konsisten dengan keputusan 2026-10-15:
+   konten seperti klip5 → pengolahan khusus, backlog) dan dicatat sebagai batas yang diketahui. **Terus terang: kriteria awal
+   (keputusan T-605 no. 9) mencakup klip5** ("video pratinjau masker klip3 dan klip5 … ≥ 90% frame"); klip5 tidak memenuhinya
+   (0% menurut penilaian Rio), jadi kelulusan ini memakai kriteria yang dipersempit oleh Rio sesudah penilaian.
+2. **Diagnosis klip5** (bahan pengolahan khusus kelak):
+   - f3–f62: target hilang (masker kosong, skor objek < 0);
+   - f63–f77: zoom — orang memenuhi layar; kotak f64 (= seluruh area video aktif) BENAR;
+   - dugaan: klik f64 (frame kondisi zoom) mengacaukan memori frame awal (mode offline memakai semua frame kondisi, termasuk yang
+     sesudahnya) — **belum terbukti**; varian "hanya f0" belum diuji. V-d (hanya f64) juga salah sebelum f64, V-c (tanpa kotak) sama
+     buruknya.
+3. **Peringatan "kotak terlalu besar" di pick TIDAK dibuat** (keputusan T-605 no. 7 ditutup): kotak besar benar saat zoom.
+4. **Titik klip5 diarsipkan** (`work/t605/arsip_klip5_target/`, sha256 diverifikasi) **lalu `target/` klip5 dihapus**; `isolate/`
+   klip5 ikut terhapus otomatis oleh [1b] saat `run` (titik tidak ada → masker lama dihapus). Salinan ter-track titik klip5 tetap ada
+   di `scripts/t605_points_rio.json`.
+5. **Titik + masker klip3 tetap** (`work/clips/klip3/target/points.json`, `work/clips/klip3/isolate/`) — bahan uji T-606.
+6. **Syarat desain T-606:** masker memilih BAGIAN (komponen / wilayah seg), bukan memotong per piksel — atau lubang masker diisi
+   dulu. Alasan: lubang kecil di masker klip3 (dekat tangan, celah lengan–badan) akan menjadi garis palsu bila masker memotong
+   per piksel.
+7. **Data disimpan ke berkas ter-track** (`scripts/t605_data.json`); **F4:** `T605-prompt.md` + `work/t605_scratch/` dihapus;
+   `work/t605/` dipertahankan (bahan penilaian, arsip titik klip5, hash).
+
+**Pelaksanaan penutupan (Tahap 4, 2026-10-17; tanpa GPU):**
+- **Arsip titik klip5** (`scripts/t605_tutup.py arsip`, baru, F3): `points.json` (7 143 B, sha256 `7f6619f9…`; f0 11 kiri / 30 kanan +
+  kotak, f64 8 kiri / 0 kanan + kotak) dan `points.prev.json` (5 655 B, `2c630c1c…`; f0 saja) disalin ke
+  `work/t605/arsip_klip5_target/` (+ `arsip.json`); sha256 + ukuran salinan = sumber → baru kemudian `work/clips/klip5/target/` dihapus.
+- **`python -m rotoscope run samples\klip5.mp4`** (tanpa `--yes`), rc 0:
+  - [1] ingest 133 frame (1,0 s);
+  - **[1b] "target/points.json tidak ada — isolate/ lama DIHAPUS (masker dari titik lama tidak berlaku; T-606 tidak boleh memakainya)"**;
+  - [2] 0 diproses, 133 dilewati, QC 6 / 133 gagal (sama), 39,3 s;
+  - [2c] 0 diproses, 9,8 s; [3] / [4] / [5] 0 diproses (cut f92–96, f100–104 sama);
+  - [6] "klip5.mp4 sudah up-to-date — dilewati", SVG 0 disalin.
+- **`python -m rotoscope run samples\klip3.mp4`** (tanpa `--yes`), rc 0:
+  - [1] ingest 182 frame (2,0 s);
+  - **[1b] "up-to-date — dilewati (tanpa GPU; kunci 3af7de8d400a, 4,7 s)"**;
+  - [2] 0 diproses, QC 1 / 182 gagal (sama), 36,6 s;
+  - [2c] / [3] / [4] / [5] 0 diproses; [6] "klip3.mp4 sudah up-to-date — dilewati".
+- **Data** `scripts/t605_data.json` (17 909 B, format `t605-data/1`):
+  - metrik 6 hasil (status, luas, IoU t/t−1, lompatan, skor, luas + skor per frame);
+  - waktu / VRAM / RAM per run; determinisme; perbandingan varian; kotak f64;
+  - penilaian Rio; diagnosis klip5 (rentang + cakupan area aktif);
+  - ringkasan titik (sha256); adegan; pin model; ringkasan mutasi.
+
+  Isinya disusun `scripts/t605_data.py` (baru, F3) dari `work/t605/*.json`, ditulis lewat Write, lalu dicek byte-identik dengan
+  susun ulang (`t605_data.py cek` + `cmp`).
+- **Dokumen:**
+  - docs/01 [1b]: angka terukur + "Batas yang diketahui" (kerumunan / kualitas rendah / zoom, klik kanan membantu, lubang masker
+    per piksel);
+  - CLAUDE.md baris 1b: status DONE + batas;
+  - docs/05: T-605 DONE, backlog klip5, syarat T-606, T-606 = task berikutnya, rekonsiliasi.
+- **Suite penuh:** **1423 lolos, 4 skip, 0 gagal** (592,4 s; berjalan bersamaan dengan dua `run` di atas). Skip = 2 test GPU lama +
+  2 test model nyata [1b] (`ROTOSCOPE_GPU_TESTS`, `ROTOSCOPE_SAM_CPU_TESTS`). `src/` / `configs/` / `tests/` tidak berubah di Tahap 4.
+- **F4:**
+  - `T605-prompt.md` (5 880 B, tidak ter-track) dihapus;
+  - `work/t605_scratch/` dihapus (2 291 berkas, 215 597 909 B: varian V-a–V-d + uji asap; frame di-hard-link, berkas sumber tidak
+    terpengaruh — F1);
+  - `work/t605/` dipertahankan (22 917 158 B): `nilai/` (10 video + `PENILAIAN.md`), `arsip_klip5_target/`, `PANDUAN_UJI.md`, daftar
+    hash F1, `metrik.json`, `cek_run.json`, `tahap3_gpu.json`, `run_tahap3.log`, `scenes.json`, `mutations.json`, `identik.json`.
+- **Skrip F3 yang bergantung pada data yang dihapus:**
+  - `t605_tahap3.py`: `gpu` / `cek` / `bahan` butuh varian scratch dan `isolate/` klip5 (keduanya terhapus); `siapkan` / `uji` membaca
+    `work/clips/klip5/target/points.json` (diarsipkan) → gagal untuk varian klip5. Bahan yang sudah dibuat tetap di `work/t605/nilai/`;
+  - `t605_points_check.py`: membandingkan salinan ter-track dengan `work/clips/klip5/target/points.json` (diarsipkan) → gagal untuk
+    klip5 (bandingkan dengan `work/t605/arsip_klip5_target/points.json`);
+  - `t605_identik.py`: tetap jalan; klip5 kini tanpa titik, jadi diharapkan TANPA subprocess [1b];
+  - mandiri: `t605_hash.py`, `t605_scenes.py` (bagian klik klip5 kosong), `t605_mutations.py`, `t605_data.py` (`cek` membaca
+    `work/t605/*.json` + titik klip3 + konversi T-602), `t605_tutup.py` (selesai; diulang = "sudah diarsipkan").
+- **F1** (`scripts/t605_hash.py`, kini melaporkan penghapusan klip5 `target/` + `isolate/` terpisah):
+  - `before_t4` 10 797 berkas → `after_t4` 10 701 berkas;
+  - hilang hanya yang diputuskan: klip5 `target/` (2) + `isolate/` (94); klip3 `target/` + `isolate/` (43) tetap;
+  - `out/` identik;
+  - **PENYIMPANGAN: 2 berkas berubah — `work/clips/klip3/qc_report.json` dan `work/clips/klip5/qc_report.json`.** Penyebab:
+    [2] segment `run_qc` menulis ulang `qc_report.json` di SETIAP `run` dengan `created_utc` baru — perilaku [2] yang sudah ada,
+    bukan T-605; muncul karena Tahap 4 menjalankan `run` sungguhan. **Dibuktikan:** dengan `created_utc` lama dikembalikan (klip5
+    `2026-10-15T06:28:55+00:00`, klip3 `2026-10-13T05:27:31+00:00`, ditemukan dengan mencoba tiap detik), sha256 = hash lama → isi
+    lain byte-identik. Cap waktu TIDAK dikembalikan.
 
 ## Pitfall yang sudah diketahui
 

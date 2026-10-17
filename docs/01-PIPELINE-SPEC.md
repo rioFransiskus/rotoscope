@@ -11,6 +11,9 @@ video.mp4
    │
    ├─[1]  ingest ─────► frames/*.png + meta.json                  (24 fps, resolusi kerja)
    │
+   ├─[1b] isolate ────► isolate/labels/*.png + isolate/frames.jsonl (GPU, proses sendiri; HANYA bila
+   │                     + isolate/manifest.json                     target/points.json ada — T-605, D-011)
+   │
    ├─[2]  segment ────► seg/classmap/*.png + seg/probs/*.npz       (GPU, proses sendiri)
    │         │           + seg/manifest.json + qc_report.json
    │         └─[2b] fallback pose — DITUNDA (BLOCKED, D-010); frame gagal QC ditangani di [3]
@@ -31,7 +34,8 @@ Path stage di bawah (`frames/`, `seg/`, `depth/`, `stable/`, …) relatif terhad
 dan `out/` = `paths.out_dir` (default `out/`, tidak per klip). `paths.work_dir` boleh diarahkan ke drive lain —
 data antara ±1–5 GB per klip (lihat anggaran disk).
 Di luar pipeline: `python -m rotoscope pick` (T-604, BUKAN stage) menulis `target/points.json` (+ `target/points.prev.json`,
-`target/pick_dryrun/`) di folder kerja klip; tidak ada stage yang membacanya sampai T-605 (lihat "`pick.py`").
+`target/pick_dryrun/`) di folder kerja klip; dibaca stage [1b] isolate (T-605, lihat "`pick.py`" dan "[1b] `isolate.py`").
+`isolate/` (T-605) belum dibaca stage mana pun: [2]–[6] tidak berubah sampai T-606.
 
 ## Prinsip (D-010)
 
@@ -40,12 +44,16 @@ Di luar pipeline: `python -m rotoscope pick` (T-604, BUKAN stage) menulis `targe
 2. **[2] hanya menyimpan output MENTAH model** (probabilitas + class map) + QC. Semua pembersihan
    spasial dan temporal ada di [3], supaya stabilisasi bekerja dari probabilitas, bukan label yang
    sudah dibulatkan.
-3. **Satu model di GPU pada satu waktu; tiap stage GPU ([2], [2c]) = proses sendiri.** Proses yang
+3. **Satu model di GPU pada satu waktu; tiap stage GPU ([1b], [2], [2c]) = proses sendiri.** Proses yang
    selesai pasti melepas CUDA context (`torch.cuda.empty_cache()` tidak).
 4. **Resume per frame:** frame dengan output valid dilewati. Manifest tiap stage mencatat model /
    parameter; output yang dibuat dengan model / parameter berbeda dianggap basi. Perilaku saat manifest
    beda (T-106):
    - **Stage GPU ([2], [2c]):** **tolak** + `--restart` — menghapus hasil ±1.6 jam tanpa sengaja terlalu mahal.
+   - **[1b] isolate (GPU, per KLIP — T-605):** tanpa resume per frame (memori SAM berantai antar frame). Basi → seluruh klip
+     dihitung ulang otomatis, TETAPI hanya bila `--yes` ada (keputusan Rio: `--yes` wajib setiap kali [1b] memakai GPU, hitung
+     baru maupun basi); tanpa `--yes` → berhenti dengan pesan, tidak ada yang dihapus. `target/points.json` dihapus →
+     `isolate/` lama dihapus otomatis dengan pesan.
    - **Stage CPU murah, deterministik, tanpa data manual ([3], [4]):** output basi **dihapus lalu dihitung
      ulang otomatis**, dengan peringatan yang menyebut field yang berubah (hash lama → baru). `--restart`
      tetap ada untuk memaksa hitung ulang.
@@ -110,9 +118,10 @@ internal yang dipanggil cli, bukan cara pakai utama.
 
 | Subperintah | Fungsi |
 |---|---|
-| `run <video>` | ingest → segment → depth → stabilize → vectorize → stylize → export (T-203b); flag `--config --style --seg-model --limit --restart-from --yes`; **T-204:** `--preview N [--from K]` (jendela K..K+N-1, tanpa GPU; lihat "`run --preview`" di bawah) |
+| `run <video>` | ingest → isolate (T-605; HANYA bila `target/points.json` ada) → segment → depth → stabilize → vectorize → stylize → export (T-203b); flag `--config --style --seg-model --limit --restart-from --yes` (`--yes` juga = izin GPU untuk [1b]); **T-204:** `--preview N [--from K]` (jendela K..K+N-1, tanpa GPU, tanpa [1b]; lihat "`run --preview`" di bawah) |
+| `isolate <video> [--config P] [--yes] [--restart] [--dry-run]` | **T-605:** stage [1b] sendiri (subprocess); `--yes` wajib bila GPU dipakai (hitung baru / basi); `--restart` butuh `--yes`; `--dry-run` = status + adegan + job + perkiraan tanpa GPU / tulis. Lihat "[1b] `isolate.py`" |
 | `ingest\|segment\|depth\|stabilize\|vectorize\|stylize\|export <video> [flag stage]` | satu stage; sisa argumen diteruskan apa adanya ke `main(argv)` stage (flag stage tidak diparse ulang di cli). `vectorize` (T-201a, T-201b): flag `--restart --limit` (`--limit N` tetap membaca SEMUA frame untuk ambang per klip, `clip_stats.json`), CPU in-process, `--restart` tanpa `--yes`. `stylize` (T-203a; `--from` T-204): flag `--style PATH --restart --limit [--from K]`, CPU in-process, `--restart` tanpa `--yes` (hanya menghapus `strokes/`). Keduanya (dan `export`) juga bagian urutan `run` sejak T-203b |
-| `download [--config P] [--seg-model 0.8b\|0.4b]` | unduh checkpoint (online, sekali jalan): Sapiens2-seg (default **0.8b**; `--seg-model 0.4b` = fallback) **dan** Depth Anything V2 Small + model card. Subprocess mewarisi environment; **tidak** memaksa `HF_HUB_OFFLINE=1` (run biasa offline) |
+| `download [--config P] [--seg-model 0.8b\|0.4b]` | unduh checkpoint (online, sekali jalan): Sapiens2-seg (default **0.8b**; `--seg-model 0.4b` = fallback), Depth Anything V2 Small, **dan** SAM 2.1 hiera tiny ([1b], T-605; 6 berkas jalur `transformers`) + model card. Subprocess mewarisi environment; **tidak** memaksa `HF_HUB_OFFLINE=1` (run biasa offline) |
 | `pick <video> [--frame N] [--config P] [--dry-run]` | **T-604:** jendela klik target (BUKAN stage, tidak masuk urutan `run`) → `target/points.json`. `meta.json` belum ada → [1] ingest dulu (CPU, argumen sama dengan `run`); sudah ada → `frames/` tidak disentuh. Lihat "`pick.py`" di bawah |
 
 - **Folder kerja per klip:** `<paths.work_dir>/clips/<stem>/`; `stem` = nama video disanitasi dengan fungsi yang sama
@@ -121,7 +130,7 @@ internal yang dipanggil cli, bukan cara pakai utama.
 - **`--work-dir DIR` di setiap `main()` stage** (ingest sudah punya; segment, depth, stabilize, export sejak
   T-104b): menang atas `paths.work_dir` config (lewat `overrides`, T-104a — tanpa menulis YAML); `paths.out_dir` tidak
   berubah. cli selalu menambahkannya sendiri; `--work-dir` di baris perintah cli ditolak (exit 2).
-- **Proses:** stage GPU ([2], [2c]) = **subprocess** `[sys.executable, -m, rotoscope.segment|depth, …]`, stdout/stderr
+- **Proses:** stage GPU ([1b], [2], [2c]) = **subprocess** `[sys.executable, -m, rotoscope.isolate|segment|depth, …]`, stdout/stderr
   diwariskan (pesan VRAM tetap terbaca), baik lewat `run` maupun subperintah sendiri. Stage CPU (ingest, stabilize,
   export) = in-process lewat `main(argv)`; `SystemExit` dari argparse stage ditangkap dan menyebut nama stage. Proses
   induk **tidak meng-import torch** / menyentuh CUDA (diuji di subprocess bersih); cek VRAM tetap tugas stage.
@@ -147,7 +156,11 @@ internal yang dipanggil cli, bukan cara pakai utama.
   `default.yaml`; satu fungsi `config.resolve_style` untuk stylize / export / run / preview / pre-flight, nama tak dikenal = exit 1 + daftar preset sebelum stage mana pun;
   pre-flight target export dan folder SVG memakai nama style untuk `{style}`; docs/02 "Memilih style"), `--seg-model 0.8b|0.4b` (hanya segment;
   **tidak pernah fallback otomatis**, D-009), `--limit N` (segment, depth, stabilize, vectorize, stylize, export; export →
-  `<nama>.limitN.mp4`, tanpa salinan SVG), `--restart-from`, `--yes`. [4] dan [5] **selalu** dijalankan di `run` (up-to-date →
+  `<nama>.limitN.mp4`, tanpa salinan SVG; **tidak** diteruskan ke [1b]: masker selalu seluruh klip, satu baris pesan), `--restart-from`,
+  `--yes` (juga diteruskan ke [1b] sebagai izin GPU; stage lain tidak menerimanya).
+  **[1b] di `run` (T-605):** setelah ingest; `target/points.json` tidak ada → TANPA subprocess dan tanpa operasi berkas (bila `isolate/`
+  lama ada, dihapus in-process dengan pesan); ada → subprocess `rotoscope.isolate --work-dir … [--config] [--restart] [--yes]`. Hasil
+  up-to-date → dilewati tanpa GPU (±3–6 s: sidik piksel semua frame); perlu GPU tanpa `--yes` → [1b] exit 1, `run` berhenti dengan pesan. [4] dan [5] **selalu** dijalankan di `run` (up-to-date →
   dilewati dalam ≈ 0,2–1 s; hanya basi yang dihitung ulang), apa pun `export.source`.
   `--adopt` / `--qc-only` hanya di subperintah `segment` / `depth` (`--adopt` hanya keduanya); di `run` → exit 1.
 - **`run --preview N [--from K]` (T-204):** jendela frame K..K+N-1 (K default 0) → `out/<nama>.preview_K-<K+N-1>.mp4` (pola nama
@@ -197,7 +210,8 @@ internal yang dipanggil cli, bukan cara pakai utama.
 
   | `--restart-from` | stage ber-`--restart` | butuh `--yes` |
   |---|---|---|
-  | `ingest` | segment, depth, stabilize, vectorize, stylize, export (semua) | ya |
+  | `ingest` | isolate, segment, depth, stabilize, vectorize, stylize, export (semua) | ya |
+  | `isolate` | hanya [1b] (`isolate/`); tanpa `target/points.json` → `isolate/` dihapus, tidak dihitung | ya |
   | `segment` | hanya [2] (`seg/` + `qc_report.json`); `depth/` utuh | ya |
   | `depth` | hanya [2c] (`depth/`) | ya |
   | `stabilize` / `vectorize` / `stylize` / `export` | hanya stage itu | tidak |
@@ -207,8 +221,9 @@ internal yang dipanggil cli, bukan cara pakai utama.
   setelah [5]) dihitung ulang otomatis oleh stage-nya. Terukur `--restart-from vectorize` (test_short / test): [4] 9,2 / 21,4 s,
   [5] 16,1 / 39,2 s, [6] 2,4 / 5,4 s; contours, strokes, MP4 dan SVG byte-identik dengan sebelumnya.
 
-- **`--yes`:** wajib untuk SETIAP penghapusan hasil GPU lewat cli — `run --restart-from ingest|segment|depth` dan
-  subperintah `segment|depth --restart`. cli membuang `--yes` sebelum meneruskan ke stage. Tanpa `--yes`: cetak apa
+- **`--yes`:** wajib untuk SETIAP penghapusan hasil GPU lewat cli — `run --restart-from ingest|isolate|segment|depth` dan
+  subperintah `isolate|segment|depth --restart`. cli membuang `--yes` sebelum meneruskan ke stage, KECUALI ke [1b] (T-605): di sana
+  `--yes` juga izin memakai GPU (hitung baru / basi). Tanpa `--yes`: cetak apa
   yang akan dihapus (jumlah file, MiB, estimasi waktu GPU: 0.8b 16.5 s/frame, 0.4b 8 s/frame, depth 0.19 s/frame —
   konstanta pesan di `cli.py`, bukan parameter), exit 1, tidak ada yang terhapus. Pesan error stage yang menyuruh
   `--restart` memakai perintah CLI lengkap (`python -m rotoscope segment "<video>" --restart --yes`; `<video>` dari
@@ -239,6 +254,66 @@ diukur saat implementasi.
   `<paths.work_dir>/clips/<nama>/`; pre-flight (a)+(b) di bagian "CLI"). Di `run` ingest **selalu** dijalankan ulang
   (`meta.json` byte-deterministik, jadi klip yang sama lolos identitas T-108). Ingest tidak membaca config (tanpa
   `--config`); entry point modul: `python -m rotoscope.ingest <video> [--work-dir DIR]`. Exit code 0 / 1.
+
+### [1b] `isolate.py` — isolasi target, SAM 2.1 hiera tiny (GPU, proses sendiri, OPT-IN; T-605, D-011)
+- **Peran:** masker target per frame dari klik `pick` (T-604). Hanya MENGHASILKAN masker; [2]–[6] belum membacanya (pemakaian =
+  T-606, mode M1 / M2 diputuskan di sana).
+- **In:** `meta.json`, `frames/*.png`, `target/points.json` (`rotoscope-target-points/1`, divalidasi `pick.load_points` +
+  `check_doc_matches_clip`; setiap frame klik harus `ok` menurut sidik piksel, id target ≤ 255); config `isolate`,
+  `stabilize.temporal.cut_diff`.
+- **Opt-in:** tanpa `target/points.json` → dilewati. `run` tidak membuat subprocess dan tidak menulis apa pun; bila `isolate/`
+  (atau sisa `isolate.partial/` / `isolate.old/`) masih ada, folder itu DIHAPUS dengan pesan (keputusan Rio: T-606 tidak boleh
+  memakai masker usang).
+- **Model:** `isolate.model_id` `facebook/sam2.1-hiera-tiny` (kode + bobot Apache-2.0; wajib diawali `facebook/sam2.1-hiera-`),
+  `transformers` 5.17.0 `Sam2VideoModel` + `Sam2VideoProcessor` (tanpa dependency baru). Revision di-pin (`isolate.revision`,
+  commit 40-hex; `HF_HUB_OFFLINE=1`; tidak di cache → berhenti + perintah `download`); `license` model card (`README.md`) =
+  `apache-2.0` dicek saat load. `isolate.precision` fp32 (fp16 boleh; bf16 ditolak, P-005); satu precision per klip.
+- **Cek sebelum load:** RAM fisik bebas ≥ `isolate.ram_min_free_mib` (4096; `GlobalMemoryStatusEx`), VRAM bebas ≥
+  `isolate.vram_min_free_mib` (2000). Kurang → berhenti dengan pesan (exit 1), model tidak dimuat.
+- **Adegan:** `stabilize.frame_thumb` + `cut_scores` + `detect_cuts(stabilize.temporal.cut_diff)` + `shot_bounds` — fungsi + ambang
+  SAMA dengan [3] (dipakai walau `stabilize.temporal.enabled` false; 0 = satu adegan). Adegan tanpa klik → `tanpa_prompt`.
+  Cut positif palsu di adegan berklik = pelacakan berhenti (frame sesudahnya tanpa target; tambah klik di awal adegan itu);
+  cut terlewat = SAM melacak menembus cut. Rencana mencetak saran klik bila adegan tanpa klik tepat sesudah adegan berklik.
+- **Propagasi** (satu sesi offline per (adegan berklik, target); frame adegan diindeks lokal 0..L−1 dan dibaca dari disk saat
+  dibutuhkan (`processed_frames` malas; praproses = `processor(images=…)`, resize bilinear 1024 × 1024 tanpa menjaga rasio +
+  normalisasi ImageNet); frame + state di CPU, inferensi di GPU):
+  1. tiap frame klik target itu di adegan itu, urut naik: `add_inputs_to_inference_session` (titik + label + kotak, koordinat frame
+     kerja apa adanya) lalu LANGSUNG `model(frame_idx=k)` → frame kondisi;
+  2. `propagate_in_video_iterator` maju dari klik paling awal sampai akhir adegan (frame kondisi lain dipakai dari cache = koreksi);
+  3. mundur dari klik paling awal − 1 sampai awal adegan.
+
+  Tiap frame dihitung tepat sekali. Logit (`post_process_masks`, ukuran frame kerja) > `isolate.mask_threshold` (float32) = target.
+- **Out:**
+
+  | path | isi |
+  |---|---|
+  | `isolate/labels/frame_%05d.png` | peta label uint8 1 kanal, ukuran frame kerja: 0 = bukan target, k = id target. HANYA frame di adegan berklik. Tumpang tindih → logit terbesar, seri → id terkecil |
+  | `isolate/frames.jsonl` | satu baris `event: frame` per frame klip (urut indeks): `shot`, `status` (`target` ≥ 1 piksel target / `kosong` adegan berklik tanpa piksel target / `tanpa_prompt` adegan tanpa klik, tanpa PNG), `pixel_sha256`, `targets` {id: `kind` (`klik` / `maju` / `mundur`), `area_px`, `score_logit`} |
+  | `isolate/manifest.json` | `format` `rotoscope-isolate/1`, `clip`, `frame_size`, `frame_count`, `key` (kontrak `T-605`, sha256 byte `points.json`, sidik piksel gabungan SEMUA frame, model id + revision, precision, `mask_threshold` + `cut_diff`, versi torch / transformers) + `key_sha256`, `model` (+ lisensi), `processor`, `mode`, `scenes` (cut + adegan), `jobs` (adegan, target, frame klik, maju / mundur, jumlah + waktu inferensi), `targets`, `frames` (jumlah per status + rentang), `run` (waktu, VRAM bebas / total / maks reserved + allocated, RAM bebas + puncak proses, frame NaN), `created_utc`. Ditulis TERAKHIR |
+
+- **Basi + resume (per KLIP, bukan per frame):** up-to-date = manifest ada + `key` + `clip` + `frame_count` sama + semua PNG wajib
+  terbaca (uint8, ukuran frame) + tanpa PNG lebih + `frames.jsonl` lengkap → dilewati tanpa torch / GPU. Selain itu basi (alasan
+  per field dicetak). `vram_min_free_mib` / `ram_min_free_mib` bukan kunci. **`--yes` wajib setiap kali GPU dipakai** (hitung baru
+  maupun basi): tanpa `--yes` → exit 1 + pesan (perintah `--yes` + `--dry-run`), tidak ada yang dihitung / dihapus; dengan `--yes` →
+  seluruh klip dihitung ulang tanpa `--restart`. `frames: []` → hasil tanpa GPU (semua `tanpa_prompt`, tanpa `--yes`).
+- **Tulis atomik per klip:** semua berkas ke `isolate.partial/`; selesai → `isolate/` → `isolate.old/`, `isolate.partial/` →
+  `isolate/`, `isolate.old/` dihapus. Terputus (Ctrl+C / OOM / galat) → `isolate/` lama utuh; sisa dihapus di awal run berikutnya.
+- **CLI:** `python -m rotoscope isolate <video> [--config P] [--yes] [--restart] [--dry-run]` (`--restart` tanpa `--yes` → exit 1);
+  modul `python -m rotoscope.isolate [--config] [--work-dir] [--yes] [--restart] [--dry-run] [--download]`; tanpa `--limit`. Exit 0
+  (dihitung / up-to-date / dilewati / dry-run) | 1 (prasyarat, termasuk butuh `--yes`, titik basi, RAM / VRAM kurang) | 3 (OOM) | 130.
+- **Terukur (T-605, GTX 1650 Ti, fp32):** reserved maks 866 MiB (41 frame) / 892 MiB (92 frame), p50 0,68–0,74 s per frame, RAM
+  proses 3,5–3,8 GiB, puncak `nvidia-smi` ≤ 2450 MiB; up-to-date ±5 s tanpa GPU; dua run berturut = PNG byte-identik.
+- **Batas yang diketahui:**
+  - **Kerumunan / video kualitas rendah / zoom (klip5, T-605): masker salah di SEMUA frame** (penilaian Rio): target hilang di
+    f3–f62, lalu zoom di f63–f77 (orang memenuhi layar; masker seluruh gambar di sana benar, kotak seluruh layar juga benar). Klik
+    di frame zoom diduga mengacaukan memori frame awal (mode offline memakai semua frame kondisi, termasuk yang sesudahnya; belum
+    terbukti). Klip seperti ini harus diolah terpisah sebelum [1b] (backlog "pengolahan khusus klip5").
+  - **Klik kanan (bukan target) membantu:** klip3 dengan 4 klik kanan (titik T-602) dinilai Rio lebih baik daripada 16 klik kiri saja.
+  - **Masker memotong per piksel:** lubang kecil (dekat tangan, celah lengan–badan) bisa menjadi garis palsu bila masker dipakai
+    langsung per piksel — syarat desain T-606 (pilih bagian / isi lubang).
+  - Frame utuh tanpa crop letterbox (backlog); frame dibaca malas lewat atribut dalam `transformers` (`processed_frames`; versi di-pin
+    5.17.0, test kontrak bobot asli di CPU `ROTOSCOPE_SAM_CPU_TESTS=1`); sesi per target menghitung ulang fitur gambar per target;
+    VRAM ±2 MiB / frame / target dan RAM ±4,3 MiB / frame / target tumbuh selama satu sesi.
 
 ### [2] `segment.py` — Sapiens2-seg (GPU, proses sendiri)
 - **In:** `frames/*.png`, `meta.json`; config `segment`, `qc`
@@ -1031,9 +1106,9 @@ dengan aturan tetap)*:
   tidak melihat isi file video (batas T-108); (5) `--preview N` = T-204.
 
 ### `pick.py` — klik target (T-604; alat CLI, BUKAN stage, CPU)
-- **Peran:** pengguna mengklik target di satu frame → titik + kotak per target, bahan isolasi target (T-605, SAM 2.1 tiny). Bukan
-  stage: tidak masuk urutan `run`, tidak ada stage yang membaca `target/` sampai T-605; keluaran `run` byte-identik dengan atau
-  tanpa `target/` (test).
+- **Peran:** pengguna mengklik target di satu frame → titik + kotak per target, bahan isolasi target ([1b] `isolate.py`, T-605,
+  SAM 2.1 tiny). Bukan stage: tidak masuk urutan `run`. Sejak T-605 `points.json` membuat `run` menjalankan [1b] (opt-in; `--yes`
+  untuk GPU); keluaran [2]–[6] tetap byte-identik dengan atau tanpa `target/` (test).
 - **In:** `meta.json` + `frames/frame_%05d.png`. `meta.json` belum ada → cli menjalankan [1] ingest dulu (argumen sama dengan
   `run`); sudah ada → `frames/` / `meta.json` tidak disentuh. **Out:** `target/points.json` (+ `target/points.prev.json` = isi
   sebelum simpan terakhir, cadangan satu tingkat); `--dry-run` → `target/pick_dryrun/frame_%05d.png` (kanvas yang akan tampil).
@@ -1126,6 +1201,7 @@ C: sisa ±54 GB → arahkan `paths.work_dir` ke drive lain kalau banyak klip dis
 | [2] | seg 0.8B fp16 | 3276 MiB (cek ≥ 3300 bebas) | ±95 mnt (15.85 s/frame) |
 | [2] fallback | seg 0.4B fp16 | 2258 MiB (cek ≥ 2300 bebas) | ±48 mnt (7.99 s/frame) |
 | [2c] | DA-V2 Small fp32 | 424 MiB (cek ≥ 500 bebas) | ±1 mnt (0.185 s/frame) |
+| [1b] (opt-in) | SAM 2.1 tiny fp32 | 892 MiB (T-602, 92 frame; cek ≥ 2000 bebas) | hanya frame di adegan berklik: ±0,67 s/frame (T-602 p50) + muat; ≤ ±4 mnt untuk 360 frame berklik |
 | [3] spasial | CPU | – | ±43 s (0.12 s/frame, T-106) |
 | [4] T-201a | CPU | – | ±11 s (29–30 ms/frame rata-rata, p95 34–35 ms, maks 50 ms; 283 frame 8.5 s) |
 | [4] T-202 (+ oklusi + pelacakan) | CPU | – | median 74–93 ms/frame antar run (p95 84–112 ms, maks 88–135 ms, 0 frame > 1 s, target ≤ 150 ms; pelacakan sendiri median 8–11 ms, maks 19–26 ms), pass 2 saja; pass 1 ambang (baca ulang + gradien semua frame) 1,3 s (119 frame) / 2,7 s (283 frame) |
@@ -1169,6 +1245,7 @@ ffmpeg                      # ingest + muxing (binary eksternal, gyan.dev essent
 rotoscope/
 ├── src/rotoscope/
 │   ├── ingest.py  segment.py  depth.py  fallback_pose.py (ditunda)
+│   ├── isolate.py        # [1b] (T-605): masker target SAM 2.1 tiny dari target/points.json (opt-in, GPU)
 │   ├── stabilize.py  vectorize.py  stylize.py  export.py
 │   ├── config.py  cli.py  __main__.py   # python -m rotoscope (T-104b)
 │   ├── pick.py           # `pick` (T-604): jendela klik target → <klip>/target/points.json (bukan stage)
@@ -1176,7 +1253,7 @@ rotoscope/
 │   │                     # error/exit code; khusus GPU: offline/revision/cache HF, VRAM, OOM (T-105)
 │   └── data/sapiens2_classes.json   # nama 29 kelas (data paket)
 ├── configs/
-│   ├── default.yaml       # paths, segment, depth, qc, groups, stabilize, vectorize
+│   ├── default.yaml       # paths, style, isolate, segment, depth, qc, groups, stabilize, vectorize, export
 │   └── styles/rough-sketch.yaml
 ├── assets/        # brushes/, paper/
 ├── scripts/       # smoke_test.py, alat sekali pakai (A/B, T-102c)

@@ -515,11 +515,13 @@ def test_no_qc_warning_when_clean(rec, tmp_path, capsys):
 def test_download_default_and_fallback_without_forcing_offline(rec, tmp_path, monkeypatch):
     monkeypatch.delenv(HF_OFFLINE_ENV, raising=False)
     assert run_cli("download") == 0
-    assert [(c[1], c[2]) for c in rec.calls] == [("segment", ["--download"]), ("depth", ["--download"])]
+    assert [(c[1], c[2]) for c in rec.calls] == [("segment", ["--download"]), ("depth", ["--download"]),
+                                                 ("isolate", ["--download"])]        # T-605: + SAM 2.1 tiny [1b]
     assert all(c[3] is None for c in rec.calls) and HF_OFFLINE_ENV not in os.environ
     rec.calls.clear()
     assert run_cli("download", "--seg-model", "0.4b") == 0
     assert rec.args("segment") == ["--download", "--seg-model", "0.4b"] and rec.args("depth") == ["--download"]
+    assert rec.args("isolate") == ["--download"]
 
 
 def test_download_stops_on_failure(rec):

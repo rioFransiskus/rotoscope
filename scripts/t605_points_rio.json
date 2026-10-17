@@ -1,0 +1,147 @@
+{
+  "format": "t605-points-rio/1",
+  "note": "Salinan ter-track titik klik Rio (T-604, dipakai T-605) dari work/clips/<klip>/target/points.json (work/ tidak ikut git). 'doc' = isi berkas asli utuh (rotoscope-target-points/1); json.dumps(doc, indent=2, ensure_ascii=False) dalam UTF-8 = byte berkas asli (dicek scripts/t605_points_check.py; 'bytes' + 'sha256' = berkas asli). Memakai salinan: tulis 'doc' ke work/clips/<klip>/target/points.json dengan cara yang sama.",
+  "created": "2026-10-17",
+  "clips": {
+    "klip3": {
+      "source": "work/clips/klip3/target/points.json",
+      "bytes": 2930,
+      "sha256": "e27d669df5760f239349b09868e0f0b83e75b39681e080668ff23eeea74e19d0",
+      "doc": {
+        "format": "rotoscope-target-points/1",
+        "clip": {"meta_sha256": "bf9047515e9c2f47c73ea438750c295f8a06425db2164147d292efbbf321e18c", "source_path": "C:\\projects\\rotoscope\\samples\\klip3.mp4"},
+        "frame_size": {"width": 720, "height": 1280},
+        "coords": "piksel frame kerja frames/ (x ke kanan, y ke bawah; pusat piksel kiri-atas = 0, 0); label 1 = target, 0 = bukan target (konvensi SAM); box = [x0, y0, x1, y1] dengan x0 < x1, y0 < y1",
+        "frame_hash": "frame_pixel_sha256 = sha256(b'rgb8 <W>x<H>\\n' + piksel RGB uint8 hasil decode, baris demi baris) - sidik piksel, bukan byte PNG",
+        "frames": [
+          {
+            "frame_index": 85,
+            "frame_file": "frame_00085.png",
+            "frame_pixel_sha256": "392814a97aef83a3323e0cc79486652cd3d364989a659795c8832874cb5afec2",
+            "updated_utc": "2026-10-16T17:25:24+00:00",
+            "display": {"scale": 0.7531, "screen_wh": [1920, 1080], "work_area_wh": [1920, 1020], "dpi_aware": true},
+            "targets": [
+              {
+                "id": 1,
+                "points": [
+                  {"x": 334.9, "y": 338.8, "label": 1},
+                  {"x": 268.5, "y": 488.8, "label": 1},
+                  {"x": 462.5, "y": 459.6, "label": 1},
+                  {"x": 495.7, "y": 539.3, "label": 1},
+                  {"x": 489.0, "y": 653.4, "label": 1},
+                  {"x": 447.8, "y": 571.1, "label": 1},
+                  {"x": 315.0, "y": 723.8, "label": 1},
+                  {"x": 473.1, "y": 725.1, "label": 1},
+                  {"x": 471.8, "y": 861.9, "label": 1},
+                  {"x": 465.1, "y": 1057.1, "label": 1},
+                  {"x": 482.4, "y": 1124.8, "label": 1},
+                  {"x": 340.2, "y": 1059.7, "label": 1},
+                  {"x": 311.0, "y": 1120.8, "label": 1},
+                  {"x": 312.3, "y": 865.9, "label": 1},
+                  {"x": 275.1, "y": 618.9, "label": 1},
+                  {"x": 364.1, "y": 520.7, "label": 1}
+                ],
+                "box": null
+              }
+            ]
+          }
+        ],
+        "tool": "python -m rotoscope pick"
+      }
+    },
+    "klip5": {
+      "source": "work/clips/klip5/target/points.json",
+      "bytes": 7143,
+      "sha256": "7f6619f9aa077ba671f0de920a2ad82726ab324a2058af719936521a938b1144",
+      "doc": {
+        "format": "rotoscope-target-points/1",
+        "clip": {"meta_sha256": "a3b4e9919916157b68cc43d837f81151de4745bcf74db5b57a6edd55ddb13c91", "source_path": "C:\\projects\\rotoscope\\samples\\klip5.mp4"},
+        "frame_size": {"width": 720, "height": 1280},
+        "coords": "piksel frame kerja frames/ (x ke kanan, y ke bawah; pusat piksel kiri-atas = 0, 0); label 1 = target, 0 = bukan target (konvensi SAM); box = [x0, y0, x1, y1] dengan x0 < x1, y0 < y1",
+        "frame_hash": "frame_pixel_sha256 = sha256(b'rgb8 <W>x<H>\\n' + piksel RGB uint8 hasil decode, baris demi baris) - sidik piksel, bukan byte PNG",
+        "frames": [
+          {
+            "frame_index": 0,
+            "frame_file": "frame_00000.png",
+            "frame_pixel_sha256": "c9d7657e156e6152df83e244af274839d116d1c8c21e98f81bfac48f8322990e",
+            "updated_utc": "2026-10-16T17:23:14+00:00",
+            "display": {"scale": 0.7531, "screen_wh": [1920, 1080], "work_area_wh": [1920, 1020], "dpi_aware": true},
+            "targets": [
+              {
+                "id": 1,
+                "points": [
+                  {"x": 260.5, "y": 532.6, "label": 1},
+                  {"x": 417.3, "y": 561.8, "label": 1},
+                  {"x": 159.6, "y": 640.2, "label": 1},
+                  {"x": 466.4, "y": 697.3, "label": 1},
+                  {"x": 474.4, "y": 776.9, "label": 1},
+                  {"x": 214.0, "y": 669.4, "label": 1},
+                  {"x": 354.9, "y": 482.2, "label": 1},
+                  {"x": 230.0, "y": 828.7, "label": 1},
+                  {"x": 413.3, "y": 842.0, "label": 1},
+                  {"x": 376.1, "y": 990.7, "label": 1},
+                  {"x": 239.3, "y": 1005.3, "label": 1},
+                  {"x": 583.3, "y": 435.7, "label": 0},
+                  {"x": 508.9, "y": 572.4, "label": 0},
+                  {"x": 690.9, "y": 565.8, "label": 0},
+                  {"x": 512.9, "y": 690.6, "label": 0},
+                  {"x": 693.6, "y": 986.7, "label": 0},
+                  {"x": 588.7, "y": 986.7, "label": 0},
+                  {"x": 547.5, "y": 836.7, "label": 0},
+                  {"x": 680.3, "y": 818.1, "label": 0},
+                  {"x": 53.3, "y": 466.2, "label": 0},
+                  {"x": 18.8, "y": 541.9, "label": 0},
+                  {"x": 63.9, "y": 608.3, "label": 0},
+                  {"x": 42.7, "y": 706.6, "label": 0},
+                  {"x": 40.0, "y": 887.1, "label": 0},
+                  {"x": 40.0, "y": 988.0, "label": 0},
+                  {"x": 125.0, "y": 989.4, "label": 0},
+                  {"x": 176.8, "y": 921.7, "label": 0},
+                  {"x": 134.3, "y": 811.5, "label": 0},
+                  {"x": 183.5, "y": 393.2, "label": 0},
+                  {"x": 113.1, "y": 413.1, "label": 0},
+                  {"x": 247.2, "y": 479.5, "label": 0},
+                  {"x": 381.4, "y": 361.3, "label": 0},
+                  {"x": 455.8, "y": 403.8, "label": 0},
+                  {"x": 263.2, "y": 387.9, "label": 0},
+                  {"x": 272.5, "y": 445.0, "label": 0},
+                  {"x": 471.8, "y": 482.2, "label": 0},
+                  {"x": 466.4, "y": 549.9, "label": 0},
+                  {"x": 414.6, "y": 511.4, "label": 0},
+                  {"x": 702.9, "y": 492.8, "label": 0},
+                  {"x": 714.9, "y": 451.6, "label": 0},
+                  {"x": 550.1, "y": 591.0, "label": 0}
+                ],
+                "box": [105.1, 407.8, 520.9, 1014.6]
+              }
+            ]
+          },
+          {
+            "frame_index": 64,
+            "frame_file": "frame_00064.png",
+            "frame_pixel_sha256": "5a28cbe6fe47b640bc11ce947d4d3c2ce9c9ec15f5a071d3c065c546a5bed865",
+            "updated_utc": "2026-10-16T17:24:12+00:00",
+            "display": {"scale": 0.7531, "screen_wh": [1920, 1080], "work_area_wh": [1920, 1020], "dpi_aware": true},
+            "targets": [
+              {
+                "id": 1,
+                "points": [
+                  {"x": 323.0, "y": 385.2, "label": 1},
+                  {"x": 199.4, "y": 691.9, "label": 1},
+                  {"x": 463.8, "y": 706.6, "label": 1},
+                  {"x": 706.9, "y": 830.0, "label": 1},
+                  {"x": 32.0, "y": 652.1, "label": 1},
+                  {"x": 121.0, "y": 535.3, "label": 1},
+                  {"x": 214.0, "y": 1010.6, "label": 1},
+                  {"x": 531.5, "y": 996.0, "label": 1}
+                ],
+                "box": [1.5, 353.4, 718.8, 1023.9]
+              }
+            ]
+          }
+        ],
+        "tool": "python -m rotoscope pick"
+      }
+    }
+  }
+}

@@ -29,6 +29,17 @@ paths:
 # Nama dicari relatif ke root project (folder pyproject.toml), peka huruf besar-kecil. Flag --style mengalahkan kunci ini (T-406).
 style: "rough-sketch"
 
+# ── ISOLATE [1b] — SAM 2.1 hiera tiny (T-605, D-011) ─
+# HANYA berjalan bila work/clips/<klip>/target/points.json ada (python -m rotoscope pick); tanpa itu dilewati.
+# Memakai GPU → wajib --yes. Ambang cut (adegan) = stabilize.temporal.cut_diff di bawah.
+isolate:
+  model_id: "facebook/sam2.1-hiera-tiny"   # kode + bobot Apache-2.0; wajib diawali facebook/sam2.1-hiera-
+  revision: "de431c4043854a71d8101e17995dfe596bf101a5"   # commit hash snapshot HF (pin T-602); wajib ada di cache HF
+  precision: "fp32"          # "fp32" | "fp16" — TANPA bf16 (P-005); fp16 lebih lambat di GTX 1650 Ti (T-602)
+  vram_min_free_mib: 2000    # reserved terukur 892 MiB (T-602, 92 frame); tumbuh ±2 MiB / frame / target
+  ram_min_free_mib: 4096     # RAM bebas sebelum load (puncak proses T-602 3,7–4,8 GiB)
+  mask_threshold: 0.0        # logit SAM > ambang = target (konvensi SAM: 0)
+
 # ── SEGMENT [2] — Sapiens2-seg ─────────────────────
 segment:
   model: "0.8b"              # "0.8b" | "0.4b" — eksplisit, untuk SELURUH klip (D-009)
@@ -131,6 +142,12 @@ export:
 |---|---|
 | `paths.work_dir`, `paths.out_dir` | string tidak kosong, tanpa karakter kontrol; relatif → di-resolve terhadap direktori kerja (cwd) saat load; absolut (mis. `D:/…`) boleh. Loader **tidak** membuat folder (tanpa side effect) — stage memanggil `ensure_dir()` |
 | `style` | string tidak kosong, tanpa karakter kontrol. Nama preset (tanpa pemisah path, tanpa `.yaml`) → `<root project>/configs/styles/<nama>.yaml`, peka huruf besar-kecil; selain itu path YAML (relatif → cwd). Ada tidaknya preset / berkas dicek saat DIPAKAI (`resolve_style`, pre-flight `run`), bukan oleh loader; flag `--style` mengalahkan kunci ini (T-406) |
+| `isolate.model_id` | wajib diawali `facebook/sam2.1-hiera-` (SAM 2.1 hiera, kode + bobot Apache-2.0; D-011). Saat load [1b] juga mengecek `license` model card (`README.md` di cache) = `apache-2.0` |
+| `isolate.revision` | `null` atau string tidak kosong. Stage [1b] saat runtime menolak `null` dan nilai selain commit hash 40-hex (T-605) |
+| `isolate.precision` | `"fp32"` (default) atau `"fp16"` (`bf16` ditolak, P-005); satu precision untuk seluruh klip |
+| `isolate.vram_min_free_mib` | int 0–4096; VRAM bebas < nilai ini → [1b] berhenti sebelum model dimuat |
+| `isolate.ram_min_free_mib` | int 0–65536; RAM fisik bebas < nilai ini → [1b] berhenti sebelum model dimuat |
+| `isolate.mask_threshold` | float −10 … 10 (logit SAM; piksel target bila logit > ambang). Masuk kunci basi `isolate/`; `vram_min_free_mib` / `ram_min_free_mib` TIDAK (tidak mengubah hasil). Ambang cut [1b] = `stabilize.temporal.cut_diff` (juga masuk kunci basi `isolate/`) |
 | `segment.model` | `"0.8b"` atau `"0.4b"` |
 | `segment.model_ids`, `segment.revision`, `segment.vram_min_free_mib` | key persis {`0.8b`, `0.4b`} |
 | `segment.model_ids.*` | wajib diawali `facebook/sapiens2-seg-` — Sapiens v1 (`facebook/sapiens-seg-…`, CC-BY-NC) ditolak |

@@ -844,7 +844,10 @@ def test_run_does_not_create_target_and_ignores_points(tmp_path, monkeypatch):
     before = points_path(work).read_bytes()
     r.calls.clear()
     assert cli.main(["run", str(video)]) == 0
-    assert r.calls == first and points_path(work).read_bytes() == before
+    # T-605: dengan points.json, `run` menjalankan [1b] isolate (subprocess, setelah ingest); argv stage lain tetap sama
+    assert [c for c in r.calls if c[1] != "isolate"] == first
+    assert [c[1] for c in r.calls][:2] == ["ingest", "isolate"] and r.args("isolate") == r.args("segment")[:2]
+    assert points_path(work).read_bytes() == before
     assert sorted(p.name for p in (work / "target").iterdir()) == ["points.json"]
 
 
@@ -870,8 +873,9 @@ def _content_hashes(wd: Path, out: Path) -> dict[str, str]:
 
 @needs_ffmpeg
 def test_real_run_is_byte_identical_with_points_present(tmp_path, monkeypatch):
-    """Rantai CPU nyata (stabilize → vectorize → stylize → export; ingest + GPU palsu): run tanpa target/ lalu, setelah
-    points.json ditulis dan keluaran CPU dihapus, run lagi → keluaran isi byte-identik; target/ hanya points.json, tidak disentuh."""
+    """Rantai CPU nyata (stabilize → vectorize → stylize → export; ingest + GPU palsu, termasuk [1b] T-605 palsu): run tanpa
+    target/ lalu, setelah points.json ditulis dan keluaran CPU dihapus, run lagi → keluaran isi byte-identik; target/ hanya
+    points.json, tidak disentuh."""
     import test_stabilize as tst
     from test_cli import Rec
 

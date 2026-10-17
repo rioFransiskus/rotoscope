@@ -1,0 +1,591 @@
+{
+ "format": "t605-data/1",
+ "catatan": "Data T-605 ([1b] isolasi target, SAM 2.1 hiera tiny) yang disimpan sebelum work/t605_scratch/ dihapus. Disusun scripts/t605_data.py dari work/t605/*.json; isi masker klip5 + varian tidak disimpan (dihapus). Luas = px dari frame 720 x 1280 (921 600 px); skor = logit skor objek SAM; IoU t/t-1 hanya di adegan berklik.",
+ "model": {
+  "model_id": "facebook/sam2.1-hiera-tiny",
+  "revision": "de431c4043854a71d8101e17995dfe596bf101a5",
+  "license": "apache-2.0",
+  "precision": "fp32",
+  "libs": {
+   "torch": "2.7.1+cu118",
+   "transformers": "5.17.0"
+  }
+ },
+ "adegan": {
+  "klip3": {
+   "cut": [49, 85, 126, 134, 146, 154, 166, 174],
+   "adegan": [
+    [0, 48],
+    [49, 84],
+    [85, 125],
+    [126, 133],
+    [134, 145],
+    [146, 153],
+    [154, 165],
+    [166, 173],
+    [174, 181]
+   ],
+   "klik": [85],
+   "dilacak": [
+    [85, 125]
+   ]
+  },
+  "klip5": {
+   "cut": [92, 93, 94, 95, 96, 100, 101, 102, 103, 104],
+   "adegan": [
+    [0, 91],
+    [92, 92],
+    [93, 93],
+    [94, 94],
+    [95, 95],
+    [96, 99],
+    [100, 100],
+    [101, 101],
+    [102, 102],
+    [103, 103],
+    [104, 132]
+   ],
+   "klik": [0, 64],
+   "dilacak": [
+    [0, 91]
+   ]
+  }
+ },
+ "metrik": {
+  "klip3": {
+   "isi": "produksi",
+   "status": {
+    "target": 41,
+    "kosong": 0,
+    "tanpa_prompt": 141
+   },
+   "kosong_ranges": [],
+   "tanpa_prompt_ranges": [
+    [0, 84],
+    [126, 181]
+   ],
+   "luas_px": {
+    "min": 126620,
+    "median": 135024.0,
+    "max": 138919
+   },
+   "iou_t_t1": {
+    "median": 0.89212,
+    "min": 0.67696,
+    "frame_iou_lt_0_8": [86, 89, 96, 97, 102]
+   },
+   "lompatan_luas_gt_20pct": [],
+   "skor_min": 7.232,
+   "n_skor_le_0": 0,
+   "jobs": [
+    {
+     "shot": [85, 125],
+     "target": 1,
+     "prompt_frames": [85],
+     "n_infer": 41,
+     "infer_s": 34.46
+    }
+   ],
+   "per_frame": {
+    "frame_awal": 85,
+    "frame_akhir": 125,
+    "luas_px": [137514, 137463, 136630, 135843, 134259, 133694, 134848, 135834, 136887, 137117, 137169, 137165, 137097, 136531, 135923, 134971, 135268, 135815, 136035, 135637, 134822, 133550, 133208, 134145, 133411, 132240, 131688, 130780, 128684, 126868, 126620, 127237, 128485, 130447, 131677, 133558, 135024, 136854, 136598, 136103, 138919],
+    "skor_logit": [23.031, 7.799, 7.471, 7.597, 7.302, 7.232, 7.332, 7.603, 7.654, 7.396, 7.601, 7.727, 7.965, 7.815, 8.286, 8.208, 8.258, 7.999, 8.121, 8.29, 8.341, 7.998, 8.336, 8.224, 8.387, 8.521, 8.451, 8.399, 8.294, 8.118, 7.876, 8.058, 8.105, 7.925, 8.169, 8.167, 8.132, 7.943, 7.771, 8.093, 8.116]
+   }
+  },
+  "klip5": {
+   "isi": "produksi",
+   "status": {
+    "target": 32,
+    "kosong": 60,
+    "tanpa_prompt": 41
+   },
+   "kosong_ranges": [
+    [3, 62]
+   ],
+   "tanpa_prompt_ranges": [
+    [92, 132]
+   ],
+   "luas_px": {
+    "min": 0,
+    "median": 0.0,
+    "max": 468776
+   },
+   "iou_t_t1": {
+    "median": 0.8542449999999999,
+    "min": 0.0,
+    "frame_iou_lt_0_8": [1, 2, 3, 63, 78, 79, 80, 83, 84, 88, 89, 90, 91]
+   },
+   "lompatan_luas_gt_20pct": [
+    [2, 3, 119440, 0],
+    [62, 63, 0, 455029],
+    [77, 78, 452550, 171942]
+   ],
+   "skor_min": -0.89,
+   "n_skor_le_0": 61,
+   "jobs": [
+    {
+     "shot": [0, 91],
+     "target": 1,
+     "prompt_frames": [0, 64],
+     "n_infer": 92,
+     "infer_s": 68.7
+    }
+   ],
+   "per_frame": {
+    "frame_awal": 0,
+    "frame_akhir": 91,
+    "luas_px": [122145, 142159, 119440, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 455029, 461287, 464964, 468301, 468475, 467396, 468187, 467735, 468776, 466598, 463485, 460745, 460850, 455039, 452550, 171942, 183193, 177182, 170059, 166960, 160039, 144954, 140560, 137596, 140289, 145997, 148183, 147198, 146500],
+    "skor_logit": [3.247, 0.794, 0.167, -0.003, -0.176, -0.232, -0.213, -0.257, -0.27, -0.325, -0.331, -0.343, -0.381, -0.379, -0.354, -0.351, -0.306, -0.331, -0.363, -0.386, -0.405, -0.39, -0.455, -0.399, -0.446, -0.426, -0.358, -0.44, -0.505, -0.405, -0.428, -0.501, -0.516, -0.501, -0.573, -0.622, -0.646, -0.592, -0.637, -0.552, -0.515, -0.492, -0.446, -0.565, -0.591, -0.535, -0.687, -0.615, -0.615, -0.599, -0.617, -0.729, -0.754, -0.642, -0.89, -0.736, -0.633, -0.487, -0.367, -0.345, -0.123, -0.11, -0.042, 0.0, 24.514, 1.751, 1.089, 1.095, 0.949, 0.979, 1.144, 1.106, 0.923, 0.952, 0.72, 0.726, 0.727, 0.756, 0.882, 1.037, 1.029, 1.024, 1.075, 0.984, 0.925, 0.998, 1.108, 1.065, 1.225, 1.183, 0.914, 0.695]
+   }
+  },
+  "V-a": {
+   "isi": "klip3, titik Rio apa adanya (determinisme)",
+   "status": {
+    "target": 41,
+    "kosong": 0,
+    "tanpa_prompt": 141
+   },
+   "kosong_ranges": [],
+   "tanpa_prompt_ranges": [
+    [0, 84],
+    [126, 181]
+   ],
+   "luas_px": {
+    "min": 126620,
+    "median": 135024.0,
+    "max": 138919
+   },
+   "iou_t_t1": {
+    "median": 0.89212,
+    "min": 0.67696,
+    "frame_iou_lt_0_8": [86, 89, 96, 97, 102]
+   },
+   "lompatan_luas_gt_20pct": [],
+   "skor_min": 7.232,
+   "n_skor_le_0": 0,
+   "jobs": [
+    {
+     "shot": [85, 125],
+     "target": 1,
+     "prompt_frames": [85],
+     "n_infer": 41,
+     "infer_s": 29.89
+    }
+   ],
+   "per_frame": "= klip3 (41 / 41 PNG byte-identik)"
+  },
+  "V-b": {
+   "isi": "klip3, titik T-602 (15 kiri + 4 kanan)",
+   "status": {
+    "target": 41,
+    "kosong": 0,
+    "tanpa_prompt": 141
+   },
+   "kosong_ranges": [],
+   "tanpa_prompt_ranges": [
+    [0, 84],
+    [126, 181]
+   ],
+   "luas_px": {
+    "min": 125136,
+    "median": 133542.0,
+    "max": 137670
+   },
+   "iou_t_t1": {
+    "median": 0.89105,
+    "min": 0.66525,
+    "frame_iou_lt_0_8": [86, 89, 96, 97, 102]
+   },
+   "lompatan_luas_gt_20pct": [],
+   "skor_min": 6.444,
+   "n_skor_le_0": 0,
+   "jobs": [
+    {
+     "shot": [85, 125],
+     "target": 1,
+     "prompt_frames": [85],
+     "n_infer": 41,
+     "infer_s": 29.94
+    }
+   ],
+   "per_frame": {
+    "frame_awal": 85,
+    "frame_akhir": 125,
+    "luas_px": [134950, 134277, 133934, 132986, 131997, 131950, 133120, 134191, 135431, 135552, 135405, 135568, 135278, 134970, 134257, 133507, 133772, 134809, 134523, 134362, 133542, 132293, 131837, 132777, 131981, 130822, 130246, 129314, 127443, 125227, 125136, 125968, 127596, 129192, 130372, 132152, 133791, 135671, 135540, 134974, 137670],
+    "skor_logit": [21.844, 6.989, 7.019, 7.08, 6.922, 7.015, 6.971, 7.135, 7.004, 6.647, 6.753, 6.663, 6.685, 6.465, 6.606, 6.735, 6.683, 6.732, 6.597, 6.792, 6.772, 6.747, 6.609, 6.739, 6.989, 6.985, 7.099, 7.133, 7.262, 7.029, 7.094, 6.973, 6.74, 6.481, 6.444, 6.573, 6.691, 6.512, 6.509, 6.687, 6.767]
+   }
+  },
+  "V-c": {
+   "isi": "klip5, kotak f64 dibuang",
+   "status": {
+    "target": 24,
+    "kosong": 68,
+    "tanpa_prompt": 41
+   },
+   "kosong_ranges": [
+    [3, 63],
+    [85, 91]
+   ],
+   "tanpa_prompt_ranges": [
+    [92, 132]
+   ],
+   "luas_px": {
+    "min": 0,
+    "median": 0.0,
+    "max": 526067
+   },
+   "iou_t_t1": {
+    "median": 0.96605,
+    "min": 0.0,
+    "frame_iou_lt_0_8": [1, 2, 3, 64, 85]
+   },
+   "lompatan_luas_gt_20pct": [
+    [1, 2, 135545, 78157],
+    [2, 3, 78157, 0],
+    [63, 64, 0, 501712],
+    [84, 85, 493727, 0]
+   ],
+   "skor_min": -1.15,
+   "n_skor_le_0": 68,
+   "jobs": [
+    {
+     "shot": [0, 91],
+     "target": 1,
+     "prompt_frames": [0, 64],
+     "n_infer": 92,
+     "infer_s": 68.99
+    }
+   ],
+   "per_frame": {
+    "frame_awal": 0,
+    "frame_akhir": 91,
+    "luas_px": [122145, 135545, 78157, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 501712, 512728, 500997, 508200, 503542, 508237, 503581, 510323, 515236, 498199, 496513, 510535, 506252, 522592, 525680, 524014, 520394, 526067, 504059, 507557, 493727, 0, 0, 0, 0, 0, 0, 0],
+    "skor_logit": [3.247, 0.764, 0.077, -0.022, -0.231, -0.29, -0.288, -0.317, -0.36, -0.431, -0.437, -0.449, -0.499, -0.496, -0.475, -0.47, -0.413, -0.449, -0.552, -0.601, -0.609, -0.612, -0.651, -0.65, -0.68, -0.681, -0.663, -0.732, -0.758, -0.682, -0.705, -0.731, -0.775, -0.751, -0.789, -0.864, -0.845, -0.808, -0.82, -0.739, -0.734, -0.707, -0.755, -0.807, -0.817, -0.814, -0.927, -0.898, -0.874, -0.857, -0.954, -1.035, -1.046, -0.945, -1.15, -1.003, -0.985, -0.807, -0.77, -0.776, -0.625, -0.546, -0.515, -0.562, 23.556, 2.548, 1.646, 1.615, 1.431, 1.439, 1.606, 1.569, 1.28, 1.218, 0.879, 0.618, 0.563, 0.513, 0.509, 0.486, 0.427, 0.26, 0.242, 0.125, 0.046, -0.017, -0.013, -0.154, -0.306, -0.52, -0.66, -1.031]
+   }
+  },
+  "V-d": {
+   "isi": "klip5, hanya klik f64",
+   "status": {
+    "target": 92,
+    "kosong": 0,
+    "tanpa_prompt": 41
+   },
+   "kosong_ranges": [],
+   "tanpa_prompt_ranges": [
+    [92, 132]
+   ],
+   "luas_px": {
+    "min": 145111,
+    "median": 465966.0,
+    "max": 472428
+   },
+   "iou_t_t1": {
+    "median": 0.98812,
+    "min": 0.37849,
+    "frame_iou_lt_0_8": [15, 81, 84, 88, 89, 90, 91]
+   },
+   "lompatan_luas_gt_20pct": [
+    [14, 15, 190180, 330185],
+    [80, 81, 463708, 177382]
+   ],
+   "skor_min": 4.474,
+   "n_skor_le_0": 0,
+   "jobs": [
+    {
+     "shot": [0, 91],
+     "target": 1,
+     "prompt_frames": [64],
+     "n_infer": 92,
+     "infer_s": 65.45
+    }
+   ],
+   "per_frame": {
+    "frame_awal": 0,
+    "frame_akhir": 91,
+    "luas_px": [157683, 158639, 155094, 156576, 154325, 154063, 154931, 156070, 162258, 169920, 173849, 189202, 181768, 195603, 190180, 330185, 342277, 356587, 358860, 363590, 382052, 402725, 388737, 398203, 423457, 416526, 429268, 451010, 447737, 455466, 463016, 448978, 469394, 470944, 470974, 470912, 471150, 471370, 472172, 472294, 472014, 471993, 471979, 472056, 471668, 471816, 471711, 471920, 471900, 472035, 471814, 472017, 472300, 472428, 472278, 471535, 471476, 471194, 471422, 472148, 472198, 472351, 471566, 471094, 461287, 466504, 469334, 469522, 470807, 470806, 471189, 471047, 470711, 469176, 467923, 467860, 466255, 467771, 466038, 465894, 463708, 177382, 173934, 168231, 151478, 148054, 147668, 145111, 150849, 151089, 150104, 148861],
+    "skor_logit": [8.061, 8.006, 7.877, 7.707, 7.655, 7.588, 7.377, 7.251, 7.208, 7.157, 7.137, 6.905, 6.906, 6.849, 7.015, 6.89, 6.556, 6.372, 6.186, 5.953, 5.706, 5.511, 5.502, 5.282, 5.058, 5.063, 4.791, 4.624, 4.795, 4.708, 4.608, 4.58, 4.474, 4.534, 4.744, 4.707, 4.533, 4.537, 4.647, 4.613, 4.799, 4.833, 4.849, 5.021, 5.118, 5.109, 5.092, 5.11, 5.321, 5.261, 5.436, 5.438, 5.696, 6.11, 6.233, 6.47, 6.709, 6.77, 6.303, 6.322, 6.301, 6.05, 5.908, 5.135, 24.514, 7.295, 7.33, 7.344, 7.226, 6.894, 6.681, 6.723, 6.203, 6.537, 6.515, 6.425, 6.582, 6.597, 6.863, 6.87, 6.99, 6.932, 7.286, 7.382, 7.423, 7.397, 7.38, 7.58, 7.839, 8.035, 8.08, 8.179]
+   }
+  }
+ },
+ "run": {
+  "klip3": {
+   "wall_s": 41.07,
+   "key_s": 3.7,
+   "scenes_s": 2.88,
+   "load_s": 0.44,
+   "infer_s": {
+    "n": 41,
+    "p50": 0.682,
+    "max": 7.595,
+    "total": 33.98
+   },
+   "vram_mib": {
+    "vram_free_before_load_mib": 3313.7,
+    "vram_total_mib": 4095.7,
+    "max_reserved_mib": 866.0,
+    "max_allocated_mib": 544.3
+   },
+   "ram_mib": {
+    "free_before_mib": 7848.8,
+    "peak_process_mib": 3548.5
+   },
+   "nvidia_smi_puncak_mib": null,
+   "wall_pembungkus_gpu_s": null,
+   "nonfinite_frames": [],
+   "device": "cuda",
+   "gpu": "NVIDIA GeForce GTX 1650 Ti",
+   "precision": "fp32"
+  },
+  "klip5": {
+   "wall_s": 75.97,
+   "key_s": 2.33,
+   "scenes_s": 1.68,
+   "load_s": 0.44,
+   "infer_s": {
+    "n": 92,
+    "p50": 0.73,
+    "max": 2.871,
+    "total": 67.74
+   },
+   "vram_mib": {
+    "vram_free_before_load_mib": 3313.7,
+    "vram_total_mib": 4095.7,
+    "max_reserved_mib": 892.0,
+    "max_allocated_mib": 589.1
+   },
+   "ram_mib": {
+    "free_before_mib": 7858.3,
+    "peak_process_mib": 3810.4
+   },
+   "nvidia_smi_puncak_mib": null,
+   "wall_pembungkus_gpu_s": null,
+   "nonfinite_frames": [],
+   "device": "cuda",
+   "gpu": "NVIDIA GeForce GTX 1650 Ti",
+   "precision": "fp32"
+  },
+  "V-a": {
+   "wall_s": 36.5,
+   "key_s": 3.76,
+   "scenes_s": 2.91,
+   "load_s": 0.44,
+   "infer_s": {
+    "n": 41,
+    "p50": 0.689,
+    "max": 2.777,
+    "total": 29.41
+   },
+   "vram_mib": {
+    "vram_free_before_load_mib": 3313.7,
+    "vram_total_mib": 4095.7,
+    "max_reserved_mib": 866.0,
+    "max_allocated_mib": 544.3
+   },
+   "ram_mib": {
+    "free_before_mib": 8054.1,
+    "peak_process_mib": 3547.4
+   },
+   "nvidia_smi_puncak_mib": 2422.0,
+   "wall_pembungkus_gpu_s": 44.4,
+   "nonfinite_frames": [],
+   "device": "cuda",
+   "gpu": "NVIDIA GeForce GTX 1650 Ti",
+   "precision": "fp32"
+  },
+  "V-b": {
+   "wall_s": 36.58,
+   "key_s": 3.78,
+   "scenes_s": 2.94,
+   "load_s": 0.44,
+   "infer_s": {
+    "n": 41,
+    "p50": 0.69,
+    "max": 2.783,
+    "total": 29.46
+   },
+   "vram_mib": {
+    "vram_free_before_load_mib": 3313.7,
+    "vram_total_mib": 4095.7,
+    "max_reserved_mib": 866.0,
+    "max_allocated_mib": 544.3
+   },
+   "ram_mib": {
+    "free_before_mib": 8057.9,
+    "peak_process_mib": 3548.3
+   },
+   "nvidia_smi_puncak_mib": 2422.0,
+   "wall_pembungkus_gpu_s": 44.5,
+   "nonfinite_frames": [],
+   "device": "cuda",
+   "gpu": "NVIDIA GeForce GTX 1650 Ti",
+   "precision": "fp32"
+  },
+  "V-c": {
+   "wall_s": 76.37,
+   "key_s": 2.37,
+   "scenes_s": 1.7,
+   "load_s": 0.44,
+   "infer_s": {
+    "n": 92,
+    "p50": 0.735,
+    "max": 2.802,
+    "total": 68.04
+   },
+   "vram_mib": {
+    "vram_free_before_load_mib": 3313.7,
+    "vram_total_mib": 4095.7,
+    "max_reserved_mib": 892.0,
+    "max_allocated_mib": 589.1
+   },
+   "ram_mib": {
+    "free_before_mib": 8100.9,
+    "peak_process_mib": 3810.1
+   },
+   "nvidia_smi_puncak_mib": 2450.0,
+   "wall_pembungkus_gpu_s": 81.7,
+   "nonfinite_frames": [],
+   "device": "cuda",
+   "gpu": "NVIDIA GeForce GTX 1650 Ti",
+   "precision": "fp32"
+  },
+  "V-d": {
+   "wall_s": 72.89,
+   "key_s": 2.39,
+   "scenes_s": 1.72,
+   "load_s": 0.44,
+   "infer_s": {
+    "n": 92,
+    "p50": 0.691,
+    "max": 2.82,
+    "total": 64.51
+   },
+   "vram_mib": {
+    "vram_free_before_load_mib": 3313.7,
+    "vram_total_mib": 4095.7,
+    "max_reserved_mib": 892.0,
+    "max_allocated_mib": 569.9
+   },
+   "ram_mib": {
+    "free_before_mib": 8103.5,
+    "peak_process_mib": 3732.5
+   },
+   "nvidia_smi_puncak_mib": 2448.0,
+   "wall_pembungkus_gpu_s": 78.3,
+   "nonfinite_frames": [],
+   "device": "cuda",
+   "gpu": "NVIDIA GeForce GTX 1650 Ti",
+   "precision": "fp32"
+  }
+ },
+ "determinisme_V-a_vs_produksi_klip3": {
+  "frame": 182,
+  "png_byte_identik": 41,
+  "status_sama": true,
+  "iou_min": 1.0,
+  "iou_median": 1.0,
+  "piksel_beda_maks": 0,
+  "fraksi_beda_maks": 0.0,
+  "lolos_toleransi": true,
+  "byte_identik_semua": true,
+  "toleransi": "status sama, IoU per target >= 0,995, piksel beda <= 0,1% luas"
+ },
+ "banding_varian": {
+  "V-b_vs_produksi": {
+   "iou_median": 0.98882,
+   "iou_min": 0.96753,
+   "status_sama": true,
+   "png_byte_identik": 0
+  },
+  "V-c_vs_produksi": {
+   "iou_median": 0.59512,
+   "iou_min": 0.0,
+   "status_sama": false,
+   "png_byte_identik": 61
+  },
+  "V-d_vs_produksi": {
+   "iou_median": 0.0,
+   "iou_min": 0.0,
+   "status_sama": false,
+   "png_byte_identik": 1
+  }
+ },
+ "kotak_f64_klip5": {
+  "luas_kotak_f64_px": 480949.64999999997,
+  "produksi": {
+   "luas_masker_f64_px": 461287,
+   "masker_per_kotak": 0.959
+  },
+  "V-c": {
+   "luas_masker_f64_px": 501712,
+   "masker_per_kotak": 1.043
+  },
+  "V-d": {
+   "luas_masker_f64_px": 461287,
+   "masker_per_kotak": 0.959
+  }
+ },
+ "penilaian_rio": {
+  "klip3": "masker mengikuti target yang benar di semua frame",
+  "klip5": "semua salah",
+  "klip5_detik_2_6_3_2_zoom": "ya (orang memenuhi layar; masker seluruh gambar di f63-f77 benar)",
+  "klip3_V-b_vs_produksi": "lebih baik",
+  "klip5_V-c_vs_produksi": "sama buruknya",
+  "klip5_V-d_sebelum_f64": "tidak benar",
+  "catatan": "klip5 punya banyak masalah video, jadi harus diolah terpisah sebelum masuk model"
+ },
+ "keputusan": "T-605 DONE, lolos berdasarkan klip3; klip5 dikecualikan (kriteria awal mencakup klip5)",
+ "diagnosis_klip5": {
+  "f0_f2": {
+   "masker": "ada",
+   "cakupan_area_aktif": [0.248, 0.296]
+  },
+  "f3_f62": {
+   "masker": "kosong (target hilang, skor objek < 0)",
+   "skor_min": -0.89
+  },
+  "f63_f77": {
+   "masker": "seluruh gambar = zoom (BENAR menurut Rio)",
+   "cakupan_area_aktif": [0.941, 0.975]
+  },
+  "f78_f91": {
+   "cakupan_area_aktif": [0.286, 0.381]
+  },
+  "kotak_f64": "luas 480 950 px = area video aktif 480 960 px (letterbox 720 x 668); benar saat zoom -> peringatan kotak besar di pick TIDAK dibuat",
+  "dugaan": "frame kondisi f64 (zoom) mengacaukan memori frame awal (mode offline memakai semua frame kondisi, termasuk sesudahnya) — BELUM terbukti; varian 'hanya f0' belum diuji",
+  "V-c_cakupan_f64_f84": [1.027, 1.094],
+  "V-d_cakupan_f15_f80": [0.687, 0.982],
+  "skor_cut_f64": 0.0584,
+  "frame_kembar_f13_f15": "skor cut 0,0000 / 0,0001 (sumber 60 fps)"
+ },
+ "titik": {
+  "klip3": {
+   "berkas": "work/clips/klip3/target/points.json (tetap; bahan uji T-606)",
+   "sha256": "e27d669df5760f239349b09868e0f0b83e75b39681e080668ff23eeea74e19d0",
+   "isi": "f85: target 1, 16 kiri / 0 kanan, tanpa kotak"
+  },
+  "klip5": {
+   "berkas": "diarsipkan ke work/t605/arsip_klip5_target/ lalu target/ klip5 dihapus (salinan ter-track: scripts/t605_points_rio.json)",
+   "points.json": {
+    "bytes": 7143,
+    "sha256": "7f6619f9aa077ba671f0de920a2ad82726ab324a2058af719936521a938b1144",
+    "isi": ["f0: target 1 11 kiri / 30 kanan + kotak", "f64: target 1 8 kiri / 0 kanan + kotak"]
+   },
+   "points.prev.json": {
+    "bytes": 5655,
+    "sha256": "2c630c1c8fa8301d1225f7252fab17199155e5fe738c173efab8ee6c9ff0a024",
+    "isi": ["f0: target 1 11 kiri / 30 kanan + kotak"]
+   }
+  },
+  "klip3_t602_V-b": {
+   "berkas": "work/t604/t602_converted/klip3.points.json",
+   "sha256": "572ff6adde38b58a9d0eb172de66167dbfb0d17f02e3e61241a229471e82b5a2",
+   "isi": "f85: target 1, 15 kiri / 4 kanan, tanpa kotak"
+  }
+ },
+ "mutasi": {
+  "n": 32,
+  "menggagalkan_test": 32,
+  "kontrol_lolos": true
+ }
+}

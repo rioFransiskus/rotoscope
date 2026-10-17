@@ -17,6 +17,7 @@ Segmentation → Contour → Stylized stroke. MediaPipe Pose hanya fallback untu
 | # | Modul | Input → Output |
 |---|---|---|
 | 1 | ingest.py | video → work/frames/frame_%05d.png + meta.json |
+| 1b | isolate.py | frames/ + target/points.json → work/isolate/labels/*.png (peta label uint8: 0 = bukan target, k = id target; HANYA frame di adegan berklik) + isolate/frames.jsonl (status per frame `target` / `kosong` / `tanpa_prompt`) + isolate/manifest.json. **T-605 (D-011):** SAM 2.1 hiera tiny lewat `transformers` (pin `isolate.revision`, fp32, GPU proses sendiri, cek RAM ≥ 4096 + VRAM ≥ 2000 MiB). **OPT-IN:** hanya bila `target/points.json` ada; tanpa itu `run` tidak membuat subprocess / berkas (byte-identik) dan `isolate/` lama DIHAPUS dengan pesan. **`--yes` wajib setiap kali [1b] memakai GPU** (hitung baru maupun basi; basi + `--yes` = dihitung ulang tanpa `--restart`; tanpa `--yes` = berhenti). Adegan = cut [3] (fungsi `stabilize` + `stabilize.temporal.cut_diff` sama); per (adegan berklik, target) satu sesi: frame klik dimasukkan + langsung dihitung, maju dari klik paling awal, lalu mundur. Kunci basi: byte titik, sidik piksel semua frame, model, precision, `mask_threshold`, `cut_diff`, versi lib; terputus → ulang per KLIP (via `isolate.partial/`); `--limit` tidak berlaku. Masker BELUM dipakai [2]–[6] (T-606). Subperintah `isolate` (`--yes --restart --dry-run`). **T-605 DONE (lolos berdasarkan klip3, 41 / 41 frame; klip5 dikecualikan):** reserved ≤ 892 MiB, ±0,7 s / frame, run ulang byte-identik. **Batas:** kerumunan / video kualitas rendah / zoom (klip5) → masker salah di semua frame (target hilang f3–f62; klik di frame zoom diduga mengacaukan memori frame awal) → olah terpisah dulu (backlog); klik kanan membantu (klip3); lubang kecil masker → garis palsu bila dipotong per piksel (syarat T-606: pilih bagian / isi lubang) |
 | 2 | segment.py | frames → work/seg/classmap/*.png + work/seg/probs/*.npz (Sapiens2-seg, probabilitas mentah 29 kelas) + work/seg/manifest.json + work/qc_report.json |
 | 2b | fallback_pose.py | DITUNDA (BLOCKED, D-010) — frame gagal QC diberi bobot temporal kecil di stage 3 |
 | 2c | depth.py | frames → work/depth/*.npy (disparity mentah DA-V2 Small) + work/depth/manifest.json |
@@ -29,12 +30,13 @@ Path `work/…` di tabel = relatif terhadap folder kerja klip `work/clips/<nama 
 Preview cepat (T-204, tanpa GPU): `python -m rotoscope run <video> --preview N [--from K]` → `out/<nama>.preview_K-<K+N-1>.mp4`
 (jendela frame K..K+N-1; seg/ dan depth/ harus sudah valid untuk jendela, kalau tidak exit 1 + perintah; tidak bersama `--limit` /
 `--restart-from`; MP4 utama dan out/svg tidak disentuh; hangat ±4–6 s, rantai vectorize dingin ±30 s, `stable/` basi ±50 s).
-Cara pakai: `python -m rotoscope run <video> [--config P] [--style NAMA|PATH (stylize + export)] [--limit N] [--restart-from STAGE [--yes]]` (urutan: ingest →
-segment → depth → stabilize → vectorize → stylize → export); per stage: `python -m rotoscope <stage> <video>` (stage = ingest, segment,
-depth, stabilize, vectorize, stylize, export); unduh model: `python -m rotoscope download` (bagian "CLI" di docs/01). Hasil GPU
-(`--restart-from ingest|segment|depth`) hanya dihapus dengan `--yes` — itu MENJALANKAN GPU; vectorize / stylize / export ber-restart
-tanpa `--yes`. Skenario uji destruktif / pre-flight hanya lewat stage palsu atau `--restart-from vectorize`.
-Pilih target (T-604; alat CLI, BUKAN stage — `run` tidak berubah, konsumen pertama T-605): `python -m rotoscope pick <video> [--frame N] [--dry-run]`
+Cara pakai: `python -m rotoscope run <video> [--config P] [--style NAMA|PATH (stylize + export)] [--limit N] [--yes] [--restart-from STAGE [--yes]]` (urutan: ingest →
+isolate (hanya bila `target/points.json` ada; `--yes` = izin GPU [1b]) → segment → depth → stabilize → vectorize → stylize → export); per stage:
+`python -m rotoscope <stage> <video>` (stage = ingest, isolate, segment, depth, stabilize, vectorize, stylize, export); unduh model: `python -m rotoscope download`
+(Sapiens2-seg + DA-V2 Small + SAM 2.1 tiny; bagian "CLI" di docs/01). Hasil GPU (`--restart-from ingest|isolate|segment|depth`) hanya dihapus dengan `--yes` —
+itu MENJALANKAN GPU; vectorize / stylize / export ber-restart tanpa `--yes`. Skenario uji destruktif / pre-flight hanya lewat stage palsu atau
+`--restart-from vectorize`. Rencana [1b] tanpa GPU: `python -m rotoscope isolate <video> --dry-run`.
+Pilih target (T-604; alat CLI, BUKAN stage — dibaca stage [1b] isolate, T-605): `python -m rotoscope pick <video> [--frame N] [--dry-run]`
 → `work/clips/<klip>/target/points.json` (`rotoscope-target-points/1`: koordinat frame kerja, per frame `frame_pixel_sha256` = sha256
 PIKSEL RGB + ukuran, bukan byte PNG; frame berubah = basi → pick ulang; isi lama → `points.prev.json`; `--dry-run` → `target/pick_dryrun/`).
 `meta.json` belum ada → [1] ingest dulu (CPU). Kontrol: kiri = target, kanan = bukan target, tarik = kotak (satu per target per frame,
@@ -51,7 +53,8 @@ Kontrak lengkap per modul: docs/01-PIPELINE-SPEC.md. Parameter style: docs/02-ST
 1. Segmentasi (stage 2) = Sapiens2-seg 0.8B fp16 GPU; fallback Sapiens2-seg 0.4B fp16 untuk SELURUH
    klip (tidak pernah dicampur dalam satu klip). Kedalaman (garis oklusi) = Depth Anything V2 Small
    (Apache-2.0; Base/Large CC-BY-NC DILARANG). Sapiens2-pointmap dan seg 1B DIBUANG — D-009.
-   rembg/u2net_human_seg DITOLAK (D-008): jangan dipakai lagi
+   rembg/u2net_human_seg DITOLAK (D-008): jangan dipakai lagi. Isolasi target [1b] (opt-in) = SAM 2.1 hiera tiny (Apache-2.0)
+   fp32 lewat `transformers` — D-011; SAM bukan pengganti seg
 2. Tolak library/model berlisensi AGPL/copyleft atau lisensi komersial berbayar
    (contoh: YOLOv8 — D-004). Cek lisensi sebelum menambah dependency apa pun
 3. Semua parameter style dan threshold dibaca dari YAML (configs/). Tidak ada magic number.
@@ -59,8 +62,8 @@ Kontrak lengkap per modul: docs/01-PIPELINE-SPEC.md. Parameter style: docs/02-ST
 4. Randomness wajib deterministic — P-007, D-010. Jitter T-402: noise 3D dari `jitter.param_seed` (salt terpisah dari tebal), indeks gambar = floor(frame_index / hold_frames), seed per `track_id` hanya untuk s > 0 (rencana lama hash per strok DIGANTI, docs/04 "Keputusan T-402")
 5. Setiap stage baca dari disk dan tulis ke disk → pipeline resumable, tiap stage bisa
    dijalankan ulang sendiri
-6. GPU/CUDA hanya lewat PyTorch (wheel cu118) untuk Sapiens2-seg dan Depth Anything V2 Small, satu model
-   di GPU pada satu waktu. Tanpa bf16 (Turing, P-005): fp16/fp32 saja (D-009). onnxruntime-gpu tidak dipakai (T-601 SKIP).
+6. GPU/CUDA hanya lewat PyTorch (wheel cu118) untuk Sapiens2-seg, Depth Anything V2 Small, dan SAM 2.1 tiny ([1b], D-011),
+   satu model di GPU pada satu waktu. Tanpa bf16 (Turing, P-005): fp16/fp32 saja (D-009). onnxruntime-gpu tidak dipakai (T-601 SKIP).
 7. Jangan tambah dependency baru tanpa bertanya dulu dan membandingkannya dengan stack
    yang sudah disetujui
 

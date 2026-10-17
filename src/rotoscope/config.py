@@ -14,7 +14,7 @@ Aturan:
   diam-diam memakai yang terakhir).
 - YAML parsial = merge dengan default. `groups` diganti UTUH (bukan digabung per grup).
   Section kosong (mis. `stroke:` tanpa isi) = default section itu.
-- `null` hanya boleh di `segment.revision.<model>` / `depth.revision`.
+- `null` hanya boleh di `segment.revision.<model>` / `depth.revision` / `isolate.revision`.
 - `paths.work_dir` / `paths.out_dir`: relatif → terhadap direktori kerja (cwd) saat load.
   Aset style (`paper.texture_image`): relatif → terhadap root project
   (folder berisi pyproject.toml, dicari dari lokasi paket; editable install). Path absolut boleh.
@@ -22,8 +22,8 @@ Aturan:
 - Load TANPA side effect: folder tidak dibuat. Stage memanggil ensure_dir().
 
 `segment.revision` = mapping per model ({"0.8b": hash, "0.4b": hash}; dua repo HF = dua hash);
-`depth.revision` = satu string. Keduanya boleh null di loader. Stage [2] (T-102b) dan [2c] (T-105)
-WAJIB menolak null (dan selain commit hash 40-hex) saat runtime — bukan loader.
+`depth.revision` / `isolate.revision` = satu string. Semuanya boleh null di loader. Stage [2] (T-102b), [2c] (T-105) dan
+[1b] (T-605) WAJIB menolak null (dan selain commit hash 40-hex) saat runtime — bukan loader.
 
 Hash per bagian untuk manifest [2]/[3]/[4]: section_hash(cfg, "groups") = sha256 dari canonical
 JSON (key terurut, float dinormalisasi). Untuk `groups`, urutan grup ikut dihitung (menentukan id),
@@ -70,6 +70,9 @@ DEPTH_MODEL_ID_REQUIRED = "Small"               # DA-V2 Base/Large = CC-BY-NC
 PRECISIONS = ("fp16", "fp32")                   # tanpa bf16 (Turing, P-005)
 PROBS_DTYPES = ("uint8",)
 VRAM_MAX_MIB = 4096
+ISOLATE_MODEL_ID_PREFIX = "facebook/sam2.1-hiera-"   # [1b] T-605 (D-011): SAM 2.1 hiera, kode + bobot Apache-2.0
+RAM_MAX_MIB = 65536                             # isolate.ram_min_free_mib
+MASK_THRESHOLD_MIN, MASK_THRESHOLD_MAX = -10.0, 10.0   # isolate.mask_threshold (logit SAM)
 NORMALIZE_METHODS = ("log_median_iqr", "log_median")   # T-302: B = log_median (affine / IQR tetap per klip ditolak)
 BIG_BLOBS_RULES = ("transient", "legacy", "report")     # qc.big_blobs_rule (T-305d; legacy = perilaku sebelum T-305d)
 TRANSIENT_MIN_RUN_MIN = 2                               # qc.transient_min_run: run 1 frame tidak pernah "panjang"
@@ -106,7 +109,7 @@ _SUGGEST_CUTOFF = 0.6
 
 # Key yang pindah file / section (D-010) → pesan khusus, bukan sekadar "tidak dikenal".
 _STYLE_SECTIONS = ("shape", "stroke", "jitter", "multipass", "paper", "render")
-_PIPELINE_SECTIONS = ("paths", "segment", "depth", "qc", "groups", "stabilize", "vectorize", "export")
+_PIPELINE_SECTIONS = ("paths", "isolate", "segment", "depth", "qc", "groups", "stabilize", "vectorize", "export")
 _MOVED_IN_PIPELINE = {
     s: "ini parameter style — taruh di configs/styles/*.yaml" for s in _STYLE_SECTIONS
 }
@@ -127,6 +130,18 @@ def _frozen(d: dict) -> Callable[[], Mapping]:
 class PathsConfig:
     work_dir: Path = Path("work")
     out_dir: Path = Path("out")
+
+
+@dataclass(frozen=True)
+class IsolateConfig:
+    """[1b] isolasi target (T-605, D-011): hanya berjalan bila <klip>/target/points.json ada. Ambang cut = stabilize.temporal.cut_diff."""
+    model_id: str = "facebook/sam2.1-hiera-tiny"
+    # Commit hash snapshot HF, di-pin di T-602 (unduhan + sha256 model.safetensors dicek di sana).
+    revision: str | None = "de431c4043854a71d8101e17995dfe596bf101a5"
+    precision: str = "fp32"            # fp16 lebih lambat di GTX 1650 Ti (T-602)
+    vram_min_free_mib: int = 2000      # reserved terukur 892 MiB (T-602, 92 frame)
+    ram_min_free_mib: int = 4096       # RAM bebas sebelum load (puncak proses T-602 3,7–4,8 GiB)
+    mask_threshold: float = 0.0        # logit SAM > ambang = target (konvensi SAM)
 
 
 @dataclass(frozen=True)
@@ -251,6 +266,7 @@ class ExportConfig:
 class PipelineConfig:
     paths: PathsConfig = field(default_factory=PathsConfig)
     style: str = DEFAULT_STYLE_NAME      # T-406: nama preset atau path YAML style (kalah dari flag --style); dicari lewat resolve_style
+    isolate: IsolateConfig = field(default_factory=IsolateConfig)
     segment: SegmentConfig = field(default_factory=SegmentConfig)
     depth: DepthConfig = field(default_factory=DepthConfig)
     qc: QcConfig = field(default_factory=QcConfig)
@@ -748,6 +764,14 @@ def _validate_pipeline(c: PipelineConfig) -> None:
               f"wajib varian {DEPTH_MODEL_ID_REQUIRED} (Apache-2.0) — Base/Large berlisensi CC-BY-NC, dilarang")
     _precision("depth.precision", d.precision)
     _between("depth.vram_min_free_mib", d.vram_min_free_mib, 0, VRAM_MAX_MIB)
+
+    i = c.isolate
+    if not i.model_id.startswith(ISOLATE_MODEL_ID_PREFIX):
+        _fail("isolate.model_id", i.model_id, f"wajib diawali {ISOLATE_MODEL_ID_PREFIX!r} (SAM 2.1 hiera, Apache-2.0; D-011)")
+    _precision("isolate.precision", i.precision)
+    _between("isolate.vram_min_free_mib", i.vram_min_free_mib, 0, VRAM_MAX_MIB)
+    _between("isolate.ram_min_free_mib", i.ram_min_free_mib, 0, RAM_MAX_MIB)
+    _between("isolate.mask_threshold", i.mask_threshold, MASK_THRESHOLD_MIN, MASK_THRESHOLD_MAX)
 
     q = c.qc
     _unit("qc.area_min", q.area_min)
