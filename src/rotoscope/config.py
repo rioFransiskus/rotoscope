@@ -73,6 +73,8 @@ VRAM_MAX_MIB = 4096
 ISOLATE_MODEL_ID_PREFIX = "facebook/sam2.1-hiera-"   # [1b] T-605 (D-011): SAM 2.1 hiera, kode + bobot Apache-2.0
 RAM_MAX_MIB = 65536                             # isolate.ram_min_free_mib
 MASK_THRESHOLD_MIN, MASK_THRESHOLD_MAX = -10.0, 10.0   # isolate.mask_threshold (logit SAM)
+NO_PROMPT_MODES = ("keep", "clear")                    # target_mask.no_prompt (T-606, D-012)
+DILATE_MAX_PX = 32                                     # target_mask.dilate_px (px kerja)
 NORMALIZE_METHODS = ("log_median_iqr", "log_median")   # T-302: B = log_median (affine / IQR tetap per klip ditolak)
 BIG_BLOBS_RULES = ("transient", "legacy", "report")     # qc.big_blobs_rule (T-305d; legacy = perilaku sebelum T-305d)
 TRANSIENT_MIN_RUN_MIN = 2                               # qc.transient_min_run: run 1 frame tidak pernah "panjang"
@@ -109,7 +111,7 @@ _SUGGEST_CUTOFF = 0.6
 
 # Key yang pindah file / section (D-010) → pesan khusus, bukan sekadar "tidak dikenal".
 _STYLE_SECTIONS = ("shape", "stroke", "jitter", "multipass", "paper", "render")
-_PIPELINE_SECTIONS = ("paths", "isolate", "segment", "depth", "qc", "groups", "stabilize", "vectorize", "export")
+_PIPELINE_SECTIONS = ("paths", "isolate", "segment", "depth", "qc", "groups", "target_mask", "stabilize", "vectorize", "export")
 _MOVED_IN_PIPELINE = {
     s: "ini parameter style — taruh di configs/styles/*.yaml" for s in _STYLE_SECTIONS
 }
@@ -199,6 +201,19 @@ DEFAULT_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
 
 
 @dataclass(frozen=True)
+class TargetMaskConfig:
+    """[3] masker target [1b] (T-606, D-012, algoritma H) sebelum kernel temporal; hanya bila masker [1b] berlaku. Section
+    sendiri (bukan di bawah stabilize): masuk manifest [3] hanya bila masker dipakai → klip tanpa titik tidak basi."""
+    enabled: bool = True
+    r_keep: float = 0.9                # r = |C ∩ M_f| / |C| ≥ ini → komponen utuh (keputusan Rio T-606, klip3)
+    r_drop: float = 0.1                # r ≤ ini → komponen dibuang; di antaranya → dipotong C ∩ M_d
+    dilate_px: int = 4                 # d: M_d = M_f + d px (p95 tepi seg di luar masker, klip3; d 8 / 12 dinilai lebih buruk)
+    hole_fill_max_px: int = 0          # 0 = semua lubang masker diisi; N = hanya lubang ≤ N px
+    piece_min_px: int = 30             # potongan C ∩ M_d dengan |P ∩ M_f| < N dibuang
+    no_prompt: str = "keep"            # adegan tanpa klik: keep = digambar seperti biasa, clear = dikosongkan
+
+
+@dataclass(frozen=True)
 class TemporalConfig:
     enabled: bool = True
     mask_ema_alpha: float = 0.7
@@ -271,6 +286,7 @@ class PipelineConfig:
     depth: DepthConfig = field(default_factory=DepthConfig)
     qc: QcConfig = field(default_factory=QcConfig)
     groups: tuple[tuple[str, tuple[str, ...]], ...] = DEFAULT_GROUPS
+    target_mask: TargetMaskConfig = field(default_factory=TargetMaskConfig)
     stabilize: StabilizeConfig = field(default_factory=StabilizeConfig)
     vectorize: VectorizeConfig = field(default_factory=VectorizeConfig)
     export: ExportConfig = field(default_factory=ExportConfig)
@@ -784,6 +800,15 @@ def _validate_pipeline(c: PipelineConfig) -> None:
     _at_least("qc.max_big_blobs", q.max_big_blobs, 1)
     _at_least("qc.transient_min_run", q.transient_min_run, TRANSIENT_MIN_RUN_MIN)
     _odd("qc.area_median_window", q.area_median_window, 3)
+
+    tm = c.target_mask
+    _between("target_mask.r_keep", tm.r_keep, 0, 1, lo_open=True)
+    _between("target_mask.r_drop", tm.r_drop, 0, 1, hi_open=True)
+    _less("target_mask.r_drop", tm.r_drop, "target_mask.r_keep", tm.r_keep)
+    _between("target_mask.dilate_px", tm.dilate_px, 0, DILATE_MAX_PX)
+    _at_least("target_mask.hole_fill_max_px", tm.hole_fill_max_px, 0)
+    _at_least("target_mask.piece_min_px", tm.piece_min_px, 1)
+    _choice("target_mask.no_prompt", tm.no_prompt, NO_PROMPT_MODES)
 
     t = c.stabilize.temporal
     _between("stabilize.temporal.mask_ema_alpha", t.mask_ema_alpha, 0, 1, lo_open=True)

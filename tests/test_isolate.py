@@ -723,7 +723,20 @@ def test_34_real_cpu_chain_byte_identical_with_points_and_isolate(tmp_path, monk
     assert cli.main(["run", str(video)]) == 1 and not (wd / "isolate").exists()      # GPU tanpa --yes → berhenti di [1b]
     assert cli.main(["run", str(video), "--yes"]) == 0
     assert (wd / "isolate" / "manifest.json").is_file() and InProcIso.fac.made
-    assert tp._content_hashes(wd, out) == first                            # [2]–[6] tidak berubah (T-605 hanya masker)
+    # T-606 (D-012): masker [1b] berlaku → [3] memakainya (keluaran berubah, manifest [3] memuat `isolate`); dimatikan lewat
+    # target_mask.enabled false → [2]–[6] kembali byte-identik dengan run tanpa titik ([1b] up-to-date, tanpa GPU / --yes).
+    assert tp._content_hashes(wd, out) != first
+    assert "isolate" in json.loads((wd / "stable" / "manifest.json").read_text(encoding="utf-8"))
+    off = tmp_path / "off.yaml"
+    off.write_text("target_mask:\n  enabled: false\n", encoding="utf-8")
+    # Keluaran CPU dihapus dulu: [4] merujuk [3] lewat created_utc (resolusi detik) — di klip 4 frame dua run [3] bisa jatuh di
+    # detik yang sama sehingga [4] tidak melihat [3] berubah (sifat rantai lama; di klip nyata satu run [3] makan puluhan detik).
+    for d in ("stable", "contours", "strokes"):
+        shutil.rmtree(wd / d)
+    shutil.rmtree(out)
+    assert cli.main(["run", str(video), "--config", str(off)]) == 0
+    assert tp._content_hashes(wd, out) == first
+    assert "isolate" not in json.loads((wd / "stable" / "manifest.json").read_text(encoding="utf-8"))
 
 
 # ── (35) --dry-run ─────────────────────────────────

@@ -3,7 +3,8 @@
 
 OPT-IN: tanpa `target/points.json` → dilewati (cli `run` tidak membuat subprocess; tidak ada berkas yang ditulis). Bila
 `isolate/` lama masih ada, folder itu DIHAPUS dengan pesan (keputusan Rio: T-606 tidak boleh memakai masker usang). [1b] hanya
-MENGHASILKAN masker; stage [2]–[6] belum membacanya (pemakaian = T-606).
+MENGHASILKAN masker; pemakainya = stage [3] (T-606, D-012, `target_mask.py`: hanya bila kunci di manifest ini = titik + frame
+sekarang).
 
 Alur run:
   1. titik divalidasi (`pick.load_points` + `check_doc_matches_clip`; setiap frame klik harus `ok`, id target ≤ 255);

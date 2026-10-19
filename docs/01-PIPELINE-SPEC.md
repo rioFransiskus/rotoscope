@@ -21,6 +21,7 @@ video.mp4
    ├─[2c] depth ──────► depth/*.npy + depth/manifest.json          (GPU, proses sendiri)
    │
    ├─[3]  stabilize ──► stable/groups/*.png + stable/depth_smooth/*.npy
+   │                     (+ masker target isolate/ bila berlaku — T-606, D-012)
    │
    ├─[4]  vectorize ──► contours/*.json + contours/manifest.json (+ clip_stats.json, T-201b) (polyline bertipe)
    │
@@ -35,7 +36,8 @@ dan `out/` = `paths.out_dir` (default `out/`, tidak per klip). `paths.work_dir` 
 data antara ±1–5 GB per klip (lihat anggaran disk).
 Di luar pipeline: `python -m rotoscope pick` (T-604, BUKAN stage) menulis `target/points.json` (+ `target/points.prev.json`,
 `target/pick_dryrun/`) di folder kerja klip; dibaca stage [1b] isolate (T-605, lihat "`pick.py`" dan "[1b] `isolate.py`").
-`isolate/` (T-605) belum dibaca stage mana pun: [2]–[6] tidak berubah sampai T-606.
+`isolate/` (T-605) dibaca stage [3] (T-606, D-012) — hanya bila masker berlaku (kunci [1b] = titik + frame sekarang); [2] / [2c]
+tidak membacanya.
 
 ## Prinsip (D-010)
 
@@ -256,8 +258,9 @@ diukur saat implementasi.
   `--config`); entry point modul: `python -m rotoscope.ingest <video> [--work-dir DIR]`. Exit code 0 / 1.
 
 ### [1b] `isolate.py` — isolasi target, SAM 2.1 hiera tiny (GPU, proses sendiri, OPT-IN; T-605, D-011)
-- **Peran:** masker target per frame dari klik `pick` (T-604). Hanya MENGHASILKAN masker; [2]–[6] belum membacanya (pemakaian =
-  T-606, mode M1 / M2 diputuskan di sana).
+- **Peran:** masker target per frame dari klik `pick` (T-604). Hanya MENGHASILKAN masker; pemakainya = **[3] langkah 1b** (T-606,
+  D-012, mode M2-H: seg asli dibatasi masker sebelum kernel temporal). [2] / [2c] tidak membacanya (M1 — frame dibersihkan + seg
+  ulang — ditolak, D-012).
 - **In:** `meta.json`, `frames/*.png`, `target/points.json` (`rotoscope-target-points/1`, divalidasi `pick.load_points` +
   `check_doc_matches_clip`; setiap frame klik harus `ok` menurut sidik piksel, id target ≤ 255); config `isolate`,
   `stabilize.temporal.cut_diff`.
@@ -310,7 +313,7 @@ diukur saat implementasi.
     terbukti). Klip seperti ini harus diolah terpisah sebelum [1b] (backlog "pengolahan khusus klip5").
   - **Klik kanan (bukan target) membantu:** klip3 dengan 4 klik kanan (titik T-602) dinilai Rio lebih baik daripada 16 klik kiri saja.
   - **Masker memotong per piksel:** lubang kecil (dekat tangan, celah lengan–badan) bisa menjadi garis palsu bila masker dipakai
-    langsung per piksel — syarat desain T-606 (pilih bagian / isi lubang).
+    langsung per piksel — karena itu [3] memakai algoritma H (pilih komponen + isi lubang + lebar 4 px; T-606, D-012).
   - Frame utuh tanpa crop letterbox (backlog); frame dibaca malas lewat atribut dalam `transformers` (`processed_frames`; versi di-pin
     5.17.0, test kontrak bobot asli di CPU `ROTOSCOPE_SAM_CPU_TESTS=1`); sesi per target menghitung ulang fitur gambar per target;
     VRAM ±2 MiB / frame / target dan RAM ±4,3 MiB / frame / target tumbuh selama satu sesi.
@@ -483,12 +486,41 @@ dan temporal fill tidak cukup. D-002 (pose hanya fallback, bukan primary) tetap 
 - **In:** `seg/probs/`, `seg/classmap/` (tie-break seri, T-106), `seg/manifest.json`, `depth/`,
   `depth/manifest.json`, `depth/frames.jsonl` (status `finite`), `frames/` (deteksi cut T-302 — dibaca hanya bila temporal aktif,
   R > 0, `cut_diff` > 0), `qc_report.json` (bobot temporal T-302 — dibaca hanya bila temporal aktif dan R > 0;
-  tidak ada / frame tanpa baris → berhenti + perintah `segment`); config `groups`, `stabilize`
+  tidak ada / frame tanpa baris → berhenti + perintah `segment`); config `groups`, `stabilize`, `target_mask` (T-606);
+  **T-606 (D-012), hanya bila `target/points.json` ada:** `target/points.json` (byte, untuk kunci), `isolate/manifest.json`,
+  `isolate/frames.jsonl` (status per frame), `isolate/labels/*.png`, dan sidik piksel SEMUA `frames/` (kunci [1b])
 - **Langkah:**
   1. Probabilitas kelas → **probabilitas grup** (jumlah per grup / 255, float32). Definisi grup:
      `groups:` di `configs/default.yaml` (lihat 02). Tanpa temporal, argmax dihitung dari jumlah uint8
      per grup (integer, eksak — sama dengan argmax float32). `classes` di `seg/manifest.json` wajib sama
      persis dengan `sapiens2_classes.json` (urutan kelas menentukan pemetaan ke grup).
+  1b. **Masker target (T-606 `DONE` 2026-10-19, D-012; `target_mask.py`, dipanggil di `FrameCache.raw(k)` tepat sesudah `group_sums`, SEBELUM
+     kernel temporal — setiap jendela yang memuat frame k memakai versi bermasker, jadi masker ikut dihaluskan).**
+     - **Berlaku** hanya bila `target/points.json` + `isolate/` ada, `target_mask.enabled`, dan `isolate.existing_state` = ok untuk
+       kunci SEKARANG (`isolate.build_key`: byte titik, sidik piksel semua frame, model, precision, `mask_threshold`, `cut_diff`,
+       versi lib; PNG + `frames.jsonl` lengkap) — fungsi [1b] yang sama. Biaya: sidik piksel semua frame (±4,7 s di klip3 182
+       frame 720 × 1280) di setiap run [3] klip bertitik. Tanpa titik → tidak ada yang dibaca / dicek (byte-identik). Ada titik
+       tetapi tidak berlaku (titik / frame berubah, `isolate/` hilang / basi / PNG hilang) → **[3] TANPA masker + satu baris
+       `PERINGATAN`** (alasan + `python -m rotoscope isolate <video> --yes`); lewat `run`, [1b] basi tanpa `--yes` sudah berhenti
+       sebelum [3]. `enabled: false` → tanpa masker + satu baris log.
+     - **Algoritma H** per frame berstatus `target` / `kosong`: F = foreground seg MENTAH (argmax jumlah grup ≠ 0, seri → grup
+       classmap); M = label [1b] ≠ 0 (semua target); M_f = M + lubang (komponen 4-arah ~M yang tidak menyentuh tepi gambar;
+       `hole_fill_max_px` 0 = semua); M_d = M_f dilebarkan `dilate_px` (elips (2d + 1)²); komponen 8-arah C dari F dengan
+       r = |C ∩ M_f| / |C|: r ≥ `r_keep` → utuh, r ≤ `r_drop` → dibuang, di antaranya → C ∩ M_d dipecah jadi potongan 8-arah,
+       potongan dengan |P ∩ M_f| < `piece_min_px` dibuang. Piksel F yang tidak dipertahankan → jumlah grup (255, 0, …, 0) + grup
+       seri 0 (= probabilitas kelas one-hot Background). Piksel di luar F tidak diubah.
+     - **Status:** `kosong` (adegan berklik, target tidak ditemukan) → M kosong → semua dibuang (tidak menggambar apa pun; dengan
+       α 0,7 frame tengah tetap dominan — batas: frame `kosong` yang juga gagal QC berbobot 0,1 bisa terisi tetangga);
+       `tanpa_prompt` → tidak disentuh (`no_prompt: keep`, default) atau F dibuang (`clear`).
+     - **QC tidak dihitung ulang:** bobot q tetap dari `qc_report.json` [2] (classmap tanpa masker). Cut tetap dari `frames/` asli;
+       adegan [1b] = cut [3] (fungsi + ambang sama), jadi jendela kernel tidak mencampur frame bermasker dan tanpa masker.
+     - **Efek hilir:** normalisasi depth memakai foreground bermasker (median target saja → geser konstan per frame); ambang [4]
+       `clip_stats` (persentil foreground SEMUA frame) ikut bergeser — klip3 T_high +1,0%, garis oklusi adegan tanpa klik −1,3%
+       (diterima Rio).
+     - **Default** (keputusan Rio T-606, klip3): d 4, r_keep 0,9, r_drop 0,1, piece_min 30, semua lubang, `no_prompt` keep. Terukur
+       klip3 f85–f125: siluet 3,54 → 1,00 per frame, strok di luar target 35,3 → 0, garis baru di dalam badan 0, penilaian Rio 4
+       (lolos semua kriteria; d 8 / 12 nilai 3 / 2, M1 nilai 3). Produksi klip3 penuh (`run`, CPU): f85–f125 byte-identik dengan
+       prototipe d 4; dinilai Rio sama dengan d 4, tanpa masalah baru, nilai 4 (docs/04 "Keputusan akhir T-606").
   2. **Temporal** (T-302, kalau `stabilize.temporal.enabled`; **tanpa optical flow: DITOLAK di T-303 berdasarkan data**, docs/04 "Hasil T-303 (ditolak)"):
      **kernel eksponensial simetris TERPOTONG** (bukan EMA IIR dua arah) pada jumlah grup:
      - frame t: `p_t = Σ_k w_k · S_(t+k) / Σ_k w_k`, `w_k = ρ^|k| · q_(t+k)`, k = −R..+R, ρ = (1 − α) / (1 + α),
@@ -555,8 +587,8 @@ dan temporal fill tidak cukup. D-002 (pose hanya fallback, bukan primary) tetap 
 |---|---|---|---|---|
 | `stable/groups/frame_%05d.png` | id grup: 0 = background, 1..G = urutan `groups:` di YAML | uint8 | kerja | ±2.4 MB (±6.6 KB/frame, terukur T-106) |
 | `stable/depth_smooth/frame_%05d.npy` | kedalaman ternormalisasi per frame (+ temporal) | float16 | kerja | 295 MB (820 KB/frame) |
-| `stable/manifest.json` | **`temporal`** (T-302: `{enabled: false}`, atau `enabled`, `radius`, `depth_radius`, `cut_frames`, `qc_fail_frames`), section `stabilize` + `stabilize_hash`, `groups` + `groups_hash`, referensi `seg/manifest.json` (model, model id, revision, precision, processor, `num_labels`, frame_size, classes, `created_utc`) + `depth/manifest.json` (model id, revision, lisensi, precision, processor, ukuran input, output, frame_size, `created_utc`), frame_size, `clip` (identitas klip, T-108) | – | – | kecil |
-| `stable/frames.jsonl` | log per frame: waktu per langkah, piksel seri, piksel berubah di filter pulau / mode, luas foreground, `depth_finite`, statistik normalisasi (region, median + IQR log, clamp) + min / median / maks `depth_smooth` | – | – | kecil |
+| `stable/manifest.json` | **`temporal`** (T-302: `{enabled: false}`, atau `enabled`, `radius`, `depth_radius`, `cut_frames`, `qc_fail_frames`), section `stabilize` + `stabilize_hash`, `groups` + `groups_hash`, referensi `seg/manifest.json` (model, model id, revision, precision, processor, `num_labels`, frame_size, classes, `created_utc`) + `depth/manifest.json` (model id, revision, lisensi, precision, processor, ukuran input, output, frame_size, `created_utc`), frame_size, `clip` (identitas klip, T-108); T-606: `isolate` (kunci + sidik label [1b], adegan, status, `target_mask`) HANYA bila masker dipakai | – | – | kecil |
+| `stable/frames.jsonl` | log per frame: waktu per langkah, piksel seri, piksel berubah di filter pulau / mode, luas foreground, `depth_finite`, statistik normalisasi (region, median + IQR log, clamp) + min / median / maks `depth_smooth`; T-606: `isolate` (status, jumlah komponen utuh / potong / buang, potongan dibuang, piksel F / dibuang) HANYA di frame yang dimasker | – | – | kecil |
 
 - **Tulis atomik + `*.tmp`:** aturan sama dengan [2] (helper `stage_common.py`).
 - **Resume:** frame dilewati kalau `groups` valid (PNG uint8, ukuran = frame, id ≤ G) **dan**
@@ -580,6 +612,15 @@ dan temporal fill tidak cukup. D-002 (pose hanya fallback, bukan primary) tetap 
   Temporal mati: R = 0 → perilaku lama (hanya input N frame pertama).
 - **Basi (T-302):** `temporal` di manifest (radius, cut, frame gagal QC, status optical flow) ikut dibandingkan; setelan temporal apa pun
   (α, b, `cut_diff`, `qc_fail_weight`, normalisasi, `depth.temporal`, `enabled`) sudah ada di `stabilize_hash` → `stable/` basi.
+- **Basi (T-606):** key manifest `isolate` (ikut `MANIFEST_MATCH_KEYS`) **HANYA ditulis bila masker dipakai**:
+  `{key_sha256 [1b], labels_sha256 (sha256 gabungan nama + sha256 byte PNG label frame target / kosong), shots, jumlah status,
+  target_mask + target_mask_hash}`. Masker muncul / hilang / label berubah / parameter `target_mask.*` berubah → `stable/` basi →
+  dihitung ulang (CPU); [1b] diulang dengan label byte-identik → TIDAK basi. Klip tanpa titik: key tidak ada di manifest lama
+  maupun baru → manifest dan output tidak berubah, tanpa hitung ulang; `target_mask.*` tidak berpengaruh. **Kontrak / format [3]
+  TIDAK naik** (tanpa field versi baru): menaikkannya akan membuat `stable/` SEMUA klip basi dan [4]–[6] dihitung + di-encode ulang.
+  `--preview` / `--limit`: H per frame sebelum kernel → frame prefiks = frame run penuh; `--preview` menjalankan [3] apa adanya
+  (masker dipakai bila berlaku; [1b] tidak dijalankan preview). `--restart-from isolate --yes` → label baru → [3] basi lewat
+  `labels_sha256`; `--restart-from stabilize` → dihitung ulang dengan masker bila berlaku.
 - **CLI** (T-104b): `python -m rotoscope stabilize <video> [--config PATH] [--restart] [--limit N]`; di dalam `run`
   dipanggil in-process `stabilize.main([--work-dir <folder klip>, …])` (`--work-dir DIR` menang atas
   `paths.work_dir`). `--restart` stage CPU tidak butuh `--yes`. Exit code sama dengan [2]: 0 sukses, 1 prasyarat

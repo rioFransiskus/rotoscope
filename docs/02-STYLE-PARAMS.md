@@ -88,6 +88,18 @@ groups:
   left_leg: [Left_Upper_Leg, Left_Lower_Leg, Left_Foot, Left_Shoe, Left_Sock]
   right_leg: [Right_Upper_Leg, Right_Lower_Leg, Right_Foot, Right_Shoe, Right_Sock]
 
+# ── TARGET MASK — masker [1b] dipakai di [3] (T-606, D-012) ─
+# Hanya bila target/points.json + isolate/ ada dan kunci [1b] cocok dengan titik + frame SEKARANG; selain itu [3] tanpa masker
+# (+ PERINGATAN bila ada titik). Algoritma H per frame adegan berklik, SEBELUM kernel temporal. Satuan px = px kerja.
+target_mask:
+  enabled: true              # false = masker tidak pernah dipakai (sama dengan klip tanpa titik)
+  r_keep: 0.9                # r = |komponen seg ∩ masker| / |komponen| ≥ ini → komponen utuh
+  r_drop: 0.1                # r ≤ ini → komponen dibuang; di antaranya → dipotong mengikuti masker + dilate_px
+  dilate_px: 4               # d: masker (lubang terisi) dilebarkan d px; d 8 / 12 dinilai lebih buruk (orang sebelah ikut)
+  hole_fill_max_px: 0        # 0 = semua lubang masker diisi; N = hanya lubang ≤ N px
+  piece_min_px: 30           # potongan hasil potong dengan < N px di dalam masker dibuang
+  no_prompt: "keep"          # adegan tanpa klik: "keep" = digambar seperti biasa, "clear" = dikosongkan
+
 # ── STABILIZE [3] ──────────────────────────────────
 stabilize:
   temporal:
@@ -164,6 +176,13 @@ export:
 | `qc.transient_min_run` | int ≥ 2, bukan bool (hanya dipakai `big_blobs_rule: transient`) |
 | `qc.area_median_window` | int ganjil ≥ 3 |
 | `groups` | lihat aturan grup di bawah |
+| `target_mask.enabled` | bool; `false` = masker [1b] tidak pernah dipakai di [3] (T-606, D-012) |
+| `target_mask.r_keep`, `target_mask.r_drop` | 0 < r_keep ≤ 1, 0 ≤ r_drop < 1, r_drop < r_keep. Komponen seg dengan r ≥ r_keep utuh, r ≤ r_drop dibuang, di antaranya dipotong |
+| `target_mask.dilate_px` | int 0–32 (px kerja; 0 = potong tepat di tepi masker berlubang-terisi) |
+| `target_mask.hole_fill_max_px` | int ≥ 0 (0 = semua lubang masker diisi) |
+| `target_mask.piece_min_px` | int ≥ 1 |
+| `target_mask.no_prompt` | `"keep"` (default: adegan tanpa klik digambar seperti biasa) atau `"clear"` (dikosongkan) |
+| `target_mask.*` (basi) | masuk manifest [3] (key `isolate`) HANYA bila masker dipakai: mengubahnya membuat `stable/` klip bertitik basi; klip tanpa titik tidak terpengaruh |
 | `stabilize.temporal.mask_ema_alpha` | (0, 1] |
 | `stabilize.temporal.boil_preserve`, `qc_fail_weight` | 0–1 |
 | `stabilize.temporal.cut_diff` | 0–1 (0 = pengaman cut mati) |

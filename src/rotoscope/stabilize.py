@@ -1,11 +1,13 @@
 """Stage [3] stabilize: seg/probs + seg/classmap + depth/ → stable/groups/*.png + stable/depth_smooth/*.npy
 + stable/manifest.json + stable/frames.jsonl (D-010). Kontrak lengkap: docs/01 [3].
 
-T-106 = spasial; T-302 = temporal (kernel simetris, tanpa optical flow; optical flow DITOLAK di T-303, docs/04). CPU saja, tanpa
-torch. Per frame:
+T-106 = spasial; T-302 = temporal (kernel simetris, tanpa optical flow; optical flow DITOLAK di T-303, docs/04); T-606 = masker
+target [1b] (D-012). CPU saja, tanpa torch. Per frame:
   1. probabilitas kelas uint8 (29, H, W) → probabilitas grup = jumlah per grup / 255. argmax dihitung
      dari jumlah integer (eksak, sama dengan argmax float32). Seri eksak → grup dari seg/classmap
      (argmax logits tanpa pembulatan) kalau grup itu ikut seri, selain itu id terkecil.
+  1b. Masker target (T-606, `target_mask.py`, hanya bila masker [1b] berlaku): di frame adegan berklik, piksel foreground
+     yang tidak dipertahankan algoritma H → jumlah grup background one-hot, SEBELUM kernel (masker ikut dihaluskan).
   2. Temporal (`stabilize.temporal.enabled`): kernel eksponensial simetris TERPOTONG pada jumlah grup,
      bobot ρ^|k|·q_(t+k) (ρ = (1−α)/(1+α), q = 1 atau qc_fail_weight), dinormalisasi; jendela [t−R, t+R]
      dipotong di tepi klip dan di cut (`cut_diff`); `boil_preserve` b: p = (1−b)·p_halus + b·p_mentah.
@@ -24,7 +26,7 @@ torch. Per frame:
 frame yang jendelanya butuh input di luar yang ada ditunda + dilaporkan (tidak pernah ditulis dengan jendela
 terpotong, supaya resume tidak menganggapnya valid).
 
-Manifest berbeda (grup / parameter stabilize / input [2]/[2c] / identitas klip berubah) → output lama BASI:
+Manifest berbeda (grup / parameter stabilize / input [2]/[2c] / identitas klip / blok `isolate` T-606 berubah) → output lama BASI:
 dihapus dan dihitung ulang otomatis dengan peringatan (stage CPU murah + deterministik). Manifest lama tanpa
 `clip` juga basi (dihitung ulang sekali). Output tanpa manifest → ditolak. --restart = paksa hitung ulang.
 Input [2]/[2c] yang milik klip lain / tanpa identitas → ditolak (load_inputs); [3] tidak punya --adopt.
@@ -52,6 +54,7 @@ import numpy as np
 
 from rotoscope import depth as dep
 from rotoscope import segment as seg
+from rotoscope import target_mask as tmk
 from rotoscope.config import (
     ConfigError, PipelineConfig, ensure_dir, load_class_names, load_pipeline, section_hash, to_dict,
 )
@@ -90,8 +93,9 @@ WEIGHT_SUM_MIN = 1e-6     # jumlah bobot jendela < ini → hanya frame tengah (d
 CUT_THUMB_WIDTH = 48      # lebar thumbnail abu-abu untuk skor selisih frame (tinggi mengikuti aspek)
 GRAY_MAX = 255.0
 
-# Kunci manifest yang harus sama untuk resume; beda → output basi (dihapus + dihitung ulang).
-MANIFEST_MATCH_KEYS = ("stabilize_hash", "groups_hash", "seg", "depth", "frame_size", CLIP_KEY, "temporal")
+# Kunci manifest yang harus sama untuk resume; beda → output basi (dihapus + dihitung ulang). `isolate` (T-606) hanya ada bila
+# masker dipakai: klip tanpa titik → None = None, manifest lama tetap cocok (tanpa hitung ulang).
+MANIFEST_MATCH_KEYS = ("stabilize_hash", "groups_hash", "seg", "depth", "frame_size", CLIP_KEY, "temporal", tmk.MANIFEST_KEY)
 SEG_REF_KEYS = ("model", "model_id", "revision", "precision", "processor", "num_labels", "frame_size",
                 "classes", "created_utc")
 DEPTH_REF_KEYS = ("model_id", "revision", "license", "precision", "processor", "input_size", "output",
@@ -524,15 +528,19 @@ def temporal_manifest(cfg: PipelineConfig, clip: Clip, plan: TemporalPlan) -> di
             "qc_fail_frames": [clip.names[k] for k in plan.qc_fail_frames]}
 
 
-def build_manifest(cfg: PipelineConfig, clip: Clip, seg_m: dict, dep_m: dict, plan: TemporalPlan) -> dict:
-    return {"stage": "stabilize", "temporal": temporal_manifest(cfg, clip, plan),
-            "stabilize": to_dict(cfg.stabilize), "stabilize_hash": section_hash(cfg, "stabilize"),
-            "groups": to_dict(cfg.groups), "groups_hash": section_hash(cfg, "groups"),
-            "seg": {k: seg_m.get(k) for k in SEG_REF_KEYS},
-            "depth": {k: dep_m.get(k) for k in DEPTH_REF_KEYS},
-            "frame_size": {"width": clip.width, "height": clip.height},
-            CLIP_KEY: clip_identity(clip.work_dir),
-            "outputs": dict(OUTPUT_INFO), "created_utc": utc_now()}
+def build_manifest(cfg: PipelineConfig, clip: Clip, seg_m: dict, dep_m: dict, plan: TemporalPlan,
+                   masks: tmk.MaskSet | None = None) -> dict:
+    """`isolate` (T-606) hanya bila masker dipakai — tanpa masker, manifest = sebelum T-606 (byte-identik selain cap waktu)."""
+    m = {"stage": "stabilize", "temporal": temporal_manifest(cfg, clip, plan),
+         "stabilize": to_dict(cfg.stabilize), "stabilize_hash": section_hash(cfg, "stabilize"),
+         "groups": to_dict(cfg.groups), "groups_hash": section_hash(cfg, "groups"),
+         "seg": {k: seg_m.get(k) for k in SEG_REF_KEYS},
+         "depth": {k: dep_m.get(k) for k in DEPTH_REF_KEYS},
+         "frame_size": {"width": clip.width, "height": clip.height},
+         CLIP_KEY: clip_identity(clip.work_dir)}
+    if masks is not None:
+        m[tmk.MANIFEST_KEY] = masks.block
+    return {**m, "outputs": dict(OUTPUT_INFO), "created_utc": utc_now()}
 
 
 def _short(v) -> str:
@@ -572,21 +580,30 @@ class FrameCache:
     dibuang lewat `evict_before`. Peta grup frame k = langkah 2–5 atas jendela [k−R, k+R]; kedalaman akhir frame t
     memakai peta grup akhir tiap frame di jendelanya (statistik foreground), jadi jangkauan input = `plan.needed`."""
 
-    def __init__(self, cfg: PipelineConfig, clip: Clip, plan: TemporalPlan, lut: np.ndarray, n_classes: int) -> None:
+    def __init__(self, cfg: PipelineConfig, clip: Clip, plan: TemporalPlan, lut: np.ndarray, n_classes: int,
+                 masks: tmk.MaskSet | None = None) -> None:
         self.cfg, self.clip, self.plan, self.lut, self.n_classes = cfg, clip, plan, lut, n_classes
+        self.masks = masks
         self.n_groups = len(cfg.groups)
         self._raw: dict[int, tuple[np.ndarray, np.ndarray, np.ndarray]] = {}
         self._groups: dict[int, tuple[np.ndarray, dict]] = {}
         self._depth: dict[int, tuple[np.ndarray, dict]] = {}
+        self.mask_info: dict[int, dict] = {}
         self.timers = {"read": 0.0, "groups": 0.0, "depth": 0.0}
 
     def raw(self, k: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """(jumlah grup uint16, grup classmap (seri), disparity) frame k."""
+        """(jumlah grup uint16, grup classmap (seri), disparity) frame k; T-606: sudah dibatasi masker target bila berlaku
+        (SEBELUM kernel — semua jendela yang memuat frame k memakai versi bermasker)."""
         if k not in self._raw:
             t0 = time.perf_counter()
             probs, cm, d = _read_inputs(self.clip, self.clip.names[k], self.n_classes)
             t1 = time.perf_counter()
-            self._raw[k] = (group_sums(probs, self.lut, self.n_groups), self.lut[cm], d)
+            sums, tie = group_sums(probs, self.lut, self.n_groups), self.lut[cm]
+            index = self.clip.indices[k]
+            if self.masks is not None and self.masks.needs(index):
+                fg = group_argmax(sums, tie)[0] != BACKGROUND_ID      # F = foreground seg mentah frame ini
+                self.mask_info[k] = self.masks.apply(index, sums, tie, fg)
+            self._raw[k] = (sums, tie, d)
             self.timers["read"] += t1 - t0
             self.timers["groups"] += time.perf_counter() - t1
         return self._raw[k]
@@ -640,7 +657,7 @@ class FrameCache:
         return out
 
     def evict_before(self, k: int) -> None:
-        for cache in (self._raw, self._groups, self._depth):
+        for cache in (self._raw, self._groups, self._depth, self.mask_info):
             for key in [x for x in cache if x < k]:
                 del cache[key]
 
@@ -677,7 +694,14 @@ def run_stabilize(cfg: PipelineConfig, *, restart: bool = False, limit: int | No
         raise StageError(f"qc_report.json tidak memuat {len(missing_qc)} dari {len(selected)} frame terpilih, mis. "
                          f"{Path(missing_qc[0]).stem} — jalankan stage [2] segment: {cli_cmd('segment', clip.work_dir)}")
 
-    manifest = build_manifest(cfg, clip, seg_m, dep_m, plan)
+    masks = tmk.load_masks(cfg, clip.work_dir, log)                 # T-606: None = tanpa masker (tanpa titik / tidak berlaku)
+    if masks is not None:
+        f = masks.block["frames"]
+        log(f"[3] masker target [1b] dipakai (T-606, H: r_keep {cfg.target_mask.r_keep}, r_drop {cfg.target_mask.r_drop}, "
+            f"d {cfg.target_mask.dilate_px} px): adegan berklik {', '.join(f'f{a}–f{b}' for a, b in masks.block['shots'])} "
+            f"(target {f[tmk.STATUS_TARGET]}, kosong {f[tmk.STATUS_EMPTY]} frame); tanpa_prompt {f[tmk.STATUS_NO_PROMPT]} frame "
+            f"= {cfg.target_mask.no_prompt}")
+    manifest = build_manifest(cfg, clip, seg_m, dep_m, plan, masks)
     stale = []
     if restart:
         restart_outputs(clip)
@@ -734,7 +758,7 @@ def run_stabilize(cfg: PipelineConfig, *, restart: bool = False, limit: int | No
     t_run = time.perf_counter()
     append_jsonl(clip.frames_log, {"event": "run_start", "time_utc": utc_now(), "n_todo": len(todo),
                                    "stabilize_hash": manifest["stabilize_hash"], "groups_hash": manifest["groups_hash"]})
-    cache = FrameCache(cfg, clip, plan, lut, len(classes))
+    cache = FrameCache(cfg, clip, plan, lut, len(classes), masks)
     try:
         for k, (pos, index, name) in enumerate(todo, 1):
             t0 = time.perf_counter()
@@ -751,6 +775,8 @@ def run_stabilize(cfg: PipelineConfig, *, restart: bool = False, limit: int | No
                    "write_s": round(t4 - t3, 4), "total_s": round(t4 - t0, 4), **gstats,
                    "window": list(plan.window(pos, plan.radius)),
                    "depth_finite": depth_log.get(name, {}).get("finite"), "depth_smooth": dstats}
+            if pos in cache.mask_info:
+                rec[tmk.MANIFEST_KEY] = cache.mask_info[pos]
             append_jsonl(clip.frames_log, rec)
             run["frames"].append(rec)
             run["processed"] += 1

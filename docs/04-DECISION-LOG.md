@@ -3560,6 +3560,628 @@ Dicatat SEBELUM titik klip5 diarsipkan / dihapus dan sebelum scratch dihapus. Ta
     `2026-10-15T06:28:55+00:00`, klip3 `2026-10-13T05:27:31+00:00`, ditemukan dengan mencoba tiap detik), sha256 = hash lama → isi
     lain byte-identik. Cap waktu TIDAK dikembalikan.
 
+### Keputusan T-606 (terapkan masker target), 2026-10-17 — Tahap 1 berjalan
+
+Dicatat SEBELUM skrip Tahap 1 ditulis. **Konteks:**
+- **T-605 (DONE):** [1b] menghasilkan `work/clips/<klip>/isolate/` (peta label PNG uint8 per frame, status `target` / `kosong` /
+  `tanpa_prompt`, manifest dengan kunci). Hanya klip3 yang punya titik + masker: adegan f85–f125, 1 target (orang tengah).
+- Di klip3 f85–108 tiga orang menyatu dalam SATU blob seg → memilih per komponen utuh tidak bisa memisahkan mereka.
+- Masker klip3 punya lubang kecil (dekat tangan di dada, celah lengan–badan) → bila dipotong per piksel, lubang itu menjadi garis palsu.
+- Syarat desain dari T-605 (keputusan akhir no. 6): masker memilih bagian, atau lubang masker diisi.
+
+**Keputusan Rio (final, 2026-10-17):**
+1. **Cara memakai masker = prototipe H (hibrida):**
+   - komponen foreground yang tidak bersentuhan dengan orang lain dipertahankan atau dibuang UTUH;
+   - komponen yang menyatu dipotong mengikuti masker;
+   - sebelum memotong, lubang masker diisi dan masker dilebarkan d px (d diukur dari data).
+2. **Prototipe M2** (seg asli dibatasi masker, CPU) **DAN M1** (frame dibersihkan → seg ulang, GPU ±11 menit) di klip3 f85–f125,
+   lalu Rio menilai.
+3. **Diterapkan sebelum kernel temporal [3].** Tahap 1 memastikan titik pasangnya dari kode.
+4. **Adegan tanpa klik:** default tidak ada isolasi (semua digambar seperti sekarang); ada opsi YAML untuk "kosongkan".
+5. **Frame `kosong`** (adegan diklik tetapi target tidak ditemukan): tidak menggambar apa pun.
+6. **Tanpa masker yang berlaku: byte-identik dengan sekarang.** Masker dipakai hanya bila kunci manifest cocok dengan `points.json`
+   + frame sekarang.
+7. **Kriteria (ditetapkan sekarang):** Rio menilai klip3 — hanya target yang tergambar, tanpa garis palsu di dalam badan, tepi target
+   tidak terpotong — di ≥ 90% frame adegan yang diklik. Klip tanpa titik byte-identik.
+
+**Lingkup Tahap 1 (CPU; GPU hanya lewat skrip yang dijalankan Rio):**
+1. titik pasang di [3]: data yang masuk kernel temporal, tempat masker diterapkan agar ikut dihaluskan, efek ke QC / cut / normalisasi
+   depth;
+2. algoritma H ditulis persis: F = foreground seg, komponen 8-arah C, M → isi lubang → M_f → lebarkan d → M_d; per komponen
+   r = |C ∩ M_f| / |C|: r ≥ r_keep → utuh, r ≤ r_drop → buang, di antaranya → C ∩ M_d; plus aturan potongan kecil;
+3. ukur klip3 f85–f125 (CPU): sebaran r, komponen gabungan per frame, lubang masker (jumlah, luas), jarak tepi seg di luar masker
+   sepanjang batas target (untuk d, mis. p95); usulan r_keep / r_drop / d (ditandai usulan);
+4. prototipe M2-H di `work/t606_scratch/`: [3]–[6] f85–f125, style default, parameter usulan; metrik vs V0 (strok / siluet per frame,
+   kelahiran strok, "garis di dalam badan");
+5. `scripts/t606_m1.py` untuk Rio (PowerShell): frame f85–f125 di luar M_d → abu-abu 128; seg 0.8B di scratch (cek VRAM ≥ 3300 MiB);
+   depth asli; lalu [3]–[6] (ikut H bila perlu); bisa dilanjutkan bila terputus; dry-run tanpa GPU;
+6. bahan penilaian `work/t606/nilai/`: video berdampingan foto | V0 | M2-H (sekarang) dan foto | V0 | M2-H | M1 (setelah run Rio),
+   normal + lambat 0,5×; `PANDUAN.md` + template (per varian: hanya target tergambar? · garis palsu di dalam badan? · tepi target
+   terpotong? · nilai 1–5; varian terbaik V0 / M2-H / M1);
+7. rancangan produksi (ditulis, TIDAK diimplementasikan): modul, YAML, kunci basi, `--preview` / `--restart-from`, test + mutasi, teks
+   docs/01 / docs/02 / CLAUDE.md, perlu D-012 atau tidak.
+
+**Aturan:** semua berkas repo hanya lewat Edit / Write (tanpa `python -` / `python -c` penulis berkas, `cat >>`, `sed`, heredoc,
+`printf`, `echo >`, `Set-Content`; keluaran skrip yang dijalankan boleh); tanpa commit; tidak membuka PNG / MP4; penolakan classifier
+dilaporkan, tidak disiasati; tanpa perubahan `src/` / `configs/` / `tests/` di Tahap 1; run GPU dijalankan Rio dari PowerShell
+terpisah. **F1** `work/t606/`: hash berkas lama di 6 klip (termasuk `target/` + `isolate/` klip3) + `out/`, sebelum = sesudah;
+`qc_report.json` dikecualikan HANYA untuk cap waktu `created_utc` (perilaku [2] yang diketahui; dibuktikan bila berubah). **F2**
+`work/t606_scratch/` (ter-ignore lewat `work/`). **F3** `scripts/t606_*.py`. **F4** `T606-prompt.md` + scratch dihapus di akhir
+Tahap 4; data berharga ke berkas ter-track lebih dulu.
+**Tahap:** 1 rancangan + prototipe (CPU) → BERHENTI + laporan. docs/05: T-606 `WIP` (Tahap 1); papan tidak berubah (36/49).
+
+### Hasil + rancangan T-606 Tahap 1 (2026-10-17) — usulan Claude Code; menunggu run M1 + penilaian Rio
+
+CPU saja; TANPA GPU; tanpa perubahan `src/` / `configs/` / `tests/` / CLAUDE.md / docs/01 / docs/02. Berkas repo yang berubah: docs/04,
+docs/05; baru (F3): `scripts/t606_hash.py` (F1), `scripts/t606_h.py` (inti H), `scripts/t606_tahap1.py` (`ukur` / `m2` / `metrik` /
+`bahan`), `scripts/t606_m1.py` (M1 untuk Rio). Keluaran: `work/t606/` (`ukur.json`, `m2_run.json`, `metrik.json`, `bahan.json`,
+`nilai/`, hash F1) dan scratch `work/t606_scratch/` (V0s, M2H, uji_M1; 2 154 berkas baru 1,18 GB + 2 102 hard link).
+
+**1. Titik pasang (dari kode `stabilize.py`).**
+- Yang masuk kernel temporal = **jumlah probabilitas grup per frame** `S_k = group_sums(probs_k)` (uint16, (G + 1, H, W)), dibuat di
+  `FrameCache.raw(k)` dan di-cache per frame. `FrameCache.groups(t)` merata-rata `raw(j)[0]` dengan bobot ρ^|j−t|·q_j, mencampur
+  `boil_preserve` dengan `S_t` mentah, lalu `clean_groups` (argmax, seri → `tie = lut[classmap]`, filter pulau, mode filter). Peta
+  kelas hanya dipakai untuk seri.
+- **Titik pasang = `FrameCache.raw(k)` tepat sesudah `group_sums`:** piksel R → `S[:, R] = (255, 0, …, 0)`, `tie[R] = 0`. Karena `raw(k)`
+  dipakai oleh SEMUA jendela yang memuat frame k, masker ikut dihaluskan kernel. Setara persis dengan prototipe M2 (probabilitas kelas
+  one-hot Background → grup 0 = Background saja, dijamin config).
+- **QC:** bobot q dari `qc_report.json` [2] (classmap TANPA masker) — tidak berubah. Diukur: bila QC dihitung ulang pada classmap
+  bermasker, f121 (gagal `big_blobs` sekarang) lolos, tetapi **f85 dan f126 gagal `iou_prev`** (target saja vs tiga orang melintasi
+  batas adegan) → usul: QC [2] tetap.
+- **Cut:** dari `frames/` RGB (thumbnail abu-abu) — tidak terpengaruh M2. Di M1 frame bersih HANYA masukan seg; `frames/` tetap asli
+  (prototipe: cut M2-H dan M1 = produksi: 49, 85, 126, 134, 146, 154, 166, 174). Adegan [1b] = cut [3] (fungsi + ambang sama), jadi
+  jendela kernel tidak pernah mencampur frame bermasker dengan frame tanpa masker.
+- **Normalisasi depth:** median log disparity dihitung dari foreground peta grup bersih → kini target saja → geser konstan per frame
+  (`log_median`), gradien di dalam frame tidak berubah. **Efek samping klip penuh:** ambang [4] `clip_stats` = persentil |grad| di
+  foreground ter-erode SEMUA frame → klip3 T_high 0,013942 → 0,014078 (+1,0%), T_low 0,004210 → 0,004271 (+1,5%), n_values 53,8 M →
+  46,1 M (lihat no. 4).
+
+**2. Algoritma H (persis; `scripts/t606_h.py`).** Per frame di adegan berklik (status `target` / `kosong`):
+1. F = argmax `S` mentah frame itu ≠ 0 (langkah 1 + 3 [3] tanpa temporal / pulau / mode; seri → grup classmap).
+2. M = peta label [1b] ≠ 0 (semua target). **M_f** = M + semua lubang (komponen 4-arah ~M yang tidak menyentuh tepi gambar;
+   `hole_fill_max_px` 0 = tanpa batas). **M_d** = M_f dilebarkan d px (elips (2d + 1)²).
+3. Komponen 8-arah C dari F; **r = |C ∩ M_f| / |C|**: r ≥ r_keep → C UTUH; r ≤ r_drop → C DIBUANG utuh; di antaranya → C ∩ M_d, dipecah
+   jadi potongan 8-arah P; **potongan kecil:** P dipertahankan hanya bila |P ∩ M_f| ≥ `piece_min_px` (30 = N [3]), selain itu dibuang
+   (sisa orang lain / remah di cincin dilasi). Komponen kecil mengikuti aturan r yang sama; remah < N px yang tersisa dirapikan filter
+   pulau [3] seperti biasa.
+4. R = F − (yang dipertahankan) → Background one-hot SEBELUM kernel. Piksel di luar F tidak diubah (argmax-nya sudah background; rata-rata
+   berbobot vektor yang semuanya ber-argmax background tetap background).
+5. Frame `kosong`: M kosong → semua r = 0 → semua dibuang (keputusan no. 5). Frame `tanpa_prompt`: tidak disentuh (default) atau semua
+   F → background (opsi `no_prompt: clear`, keputusan no. 4).
+
+**3. Ukur klip3 f85–f125 (`t606_tahap1.py ukur` → `work/t606/ukur.json`; 66,8 s CPU).** Masker [1b] berlaku (`existing_state` = ok,
+kunci `3af7de8d…` = manifest); 41 / 41 frame `target`. Masker ∩ F 98,1–99,2% masker.
+
+| ukuran | hasil |
+|---|---|
+| komponen F | 369 (181 ≥ 30 px); 4–19 per frame |
+| r = 0 | 321 komponen (luas p50 9 px, p95 5 834, maks 103 339) — orang lain + remah |
+| 0 < r ≤ 0,05 | 3 komponen 3 603–4 678 px: f85 r 0,037 (156 px di M_f), f86 0,005, f89 0,002 — benda di bawah (kaki orang sebelah) menyentuh tepi masker |
+| **komponen gabungan (0,05 < r < 0,95)** | **36 = tepat 1 per frame f85–f120** (205 006–359 712 px; r 0,367–0,432, f120 0,644); f121–f125: 0 |
+| r ≥ 0,95 | 9: target terpisah f121–f125 (r 0,960–0,963, 138 686–141 962 px) + 4 remah 1–19 px (r 1,0) |
+| celah sebaran r | kosong di (0,04; 0,37) dan (0,65; 0,96) |
+| lubang masker | 73 total; per frame 0–46 (median 1); luas p50 8 px, p95 2 173, maks 4 306; f85: 46 lubang kecil (1 454 px); f86–f107: 1 lubang 444–4 306 px per frame, terisi seg 19–42% (celah lengan–badan); 50 / 73 lubang ≥ 50% tertutup seg |
+| sinar normal dari batas M_f (112 389 piksel batas) | berakhir (`ends`) 84,2%; masker melewati seg 14,1%; menyatu / bersambung ≥ 40 px 1,6%; masuk M_f lagi 0,2% |
+| jarak tepi seg di luar M_f, komponen gabungan | p50 2, p75 3, p90 3, **p95 4**, p99 20, maks 39 px; > 4 px: 4,1%; > 6: 2,2%; > 10: 1,7% |
+| idem, target terpisah (r ≥ 0,95) | p50 2, p95 5, p99 7 px |
+| QC [2] pada classmap bermasker (hanya ukuran) | asli gagal [121] → bermasker gagal [85, 126] (`iou_prev`) |
+
+**Parameter USULAN (bukan keputusan):** **r_keep 0,90**, **r_drop 0,10** (tengah kedua celah), **d 4 px** (p95 jarak tepi seg di luar
+masker, komponen gabungan), semua lubang diisi, `piece_min_px` 30. Kisi 72 kombinasi (r_keep 0,80–0,95 × r_drop 0,02–0,10 × d 0–10;
+`ukur.json` `grid`): r_keep 0,80–0,95 memberi hasil sama (celah lebar); r_drop 0,02 memotong (bukan membuang) 1 komponen kaki f85; d
+menukar piksel seg di luar M_d yang dipertahankan (d 0: 26 884 px total / d 4: 1 606 / d 10: 105) dengan piksel seg di M_d yang dibuang
+(r_drop 0,10: 188 → 813 → 2 489 px; 188 = komponen kaki f85 / f86 / f89). Usulan pada parameter: 36 frame dipotong, 5 utuh; piksel M_f hilang 188 px total (komponen kaki f85 / f86 / f89);
+potongan dibuang 3 (9 px).
+
+**4. Prototipe M2-H (`t606_tahap1.py m2` / `metrik`).** Salinan klip3 PENUH (182 frame) di scratch: `frames/`, `depth/`, seg yang tidak
+diubah di-hard-link; seg f85–f125 = berkas baru (R → Background one-hot); `qc_report.json` asli; config = default dengan `out_dir` scratch.
+[3] + [4] klip penuh (ambang + rantai `track_id`), [5] + [6] jendela f85–f125, style default `rough-sketch`. Waktu: [3] 77,2 s, [4]
+64,2 s, [5] 11,9 s, [6] 6,3 s.
+- **Kontrol V0s** (salinan tanpa masker, cara jalan sama): `stable/` 182 frame byte-identik, strok `contours/` 182 frame sama, `strokes/`
+  PNG + SVG f85–f125 byte-identik, ambang [4] sama → perbedaan M2-H hanya dari masker.
+
+| f85–f125 (41 frame), per frame | V0 (produksi) | M2-H |
+|---|---|---|
+| strok | 57,85 | 22,51 |
+| strok di wilayah target (< 50% titik di luar M_d) | 22,54 | 22,51 |
+| strok di luar target (≥ 50% titik di luar M_d) | 35,32 (9 475 px) | **0** |
+| siluet | 3,54 (2–6) | **1,00 (tepat 1 di 41 / 41)** |
+| lubang / batas grup / oklusi | 1,59 / 44,80 / 7,93 | 0,54 / 16,90 / 4,07 |
+| kelahiran strok (semua; di wilayah target) | 17,75; 6,15 | 5,90; 5,90 |
+| strok di dalam badan (≥ 50% titik di M_f ter-erode 8 px): lubang / batas grup / oklusi (n; px) | 0,54; 117 / 14,56; 818 / 4,07; 531 | 0,54; 117 / 14,56; 818 / 4,07; 526 |
+| **garis BARU di dalam badan** (median jarak ke strok V0 > 4 px) | – | **0 strok di semua tipe, 41 / 41 frame** |
+| piksel `stable/` target hilang vs V0: di M_f / di cincin M_d − M_f | – | 4,4 (maks 145) / 36,0 (maks 347) |
+| piksel `stable/` di luar M_d | 200 104 | 37,4 (maks 389; f121–f125 seg utuh melewati M_d) |
+
+- **Kebocoran ke 141 frame di luar adegan:** `stable/` byte-identik (0 frame beda); siluet / lubang / batas grup identik; **garis oklusi
+  berbeda di 101 / 141 frame** (jumlah strok ±11 total, panjang oklusi di frame itu 74 273 → 73 301 px, −1,3%) karena ambang [4] per
+  klip bergeser (no. 1); 40 frame lain hanya beda `track_id` (penomoran ulang mulai f0). Klip tanpa titik tidak terpengaruh.
+
+**5. M1 (`scripts/t606_m1.py`, dijalankan Rio).** Langkah: `siapkan` (f85–f125 di luar M_d → (128, 128, 128); latar ±84% piksel) →
+`seg` (`python -m rotoscope.segment --work-dir work/t606_scratch/M1_seg/klip3`, 0.8B fp16 default; nvidia-smi bebas ≥ 3300 MiB dicek
+dulu, [2] mengecek lagi; lanjut per frame) → `rakit` (klip penuh, seg M1 + H usulan di f85–f125, depth + qc asli; model seg M1 wajib =
+produksi, D-009) → `render` ([3]–[6]) → `bahan` (metrik + video 4 panel). Penanda + sidik per langkah di
+`work/t606_scratch/M1_steps.json`. **Diuji tanpa GPU:** `--dry-run` (validasi lolos; daftar berkas `work/t606*` 2 790 entri identik
+sebelum / sesudah); `uji` (seg ASLI menggantikan GPU di folder terpisah; `segment --qc-only` menerima tata letak 41 frame mulai f85;
+hasil `stable/` + `strokes/` PNG + SVG **byte-identik dengan M2-H**; diulang → semua langkah dilewati). Perkiraan: seg ±13 menit GPU
+(41 × 16,5 s + muat) + ±6 menit CPU. VRAM bebas saat dicek: 2 919 MiB (< 3300 → Rio menutup aplikasi GPU dulu).
+Perintah: `python scripts\t606_m1.py --dry-run` lalu `python scripts\t606_m1.py` (PowerShell terpisah, venv aktif).
+
+**6. Bahan penilaian `work/t606/nilai/`:** `klip3_banding_V0_M2H_f085-125.mp4` + `_lambat` (foto + tepi masker SAM | V0 | M2-H; 24 /
+12 fps); setelah M1: `klip3_banding_V0_M2H_M1_f085-125.mp4` + `_lambat`. `PANDUAN.md` (panel, aturan H, yang diperhatikan, cara
+menjalankan M1) + `PENILAIAN.md` (per varian: hanya target tergambar? · garis palsu di dalam badan? · tepi target terpotong? + rentang
+frame salah · nilai 1–5; varian terbaik V0 / M2-H / M1). Isi video tidak dibuka Claude Code.
+
+**7. Rancangan produksi (untuk M2-H; TIDAK diimplementasikan).**
+- **Modul:** baru `src/rotoscope/target_mask.py` (numpy + cv2, tanpa torch): `fill_holes`, `dilate`, `apply_h` (murni, diuji
+  sendiri), `load_masks(cfg, clip)` (cek kunci memakai `isolate.build_key` / `existing_state` / `frames_fingerprint` — import di dalam
+  fungsi: `isolate` meng-import `stabilize`, jadi import tingkat modul akan melingkar), `apply_to_sums(S, tie, label, params)`.
+  `stabilize.py`: `FrameCache.raw(k)` memanggil H untuk frame adegan berklik; manifest + `frames.jsonl` mendapat blok `isolate`.
+- **YAML (section baru `target_mask`, BUKAN di bawah `stabilize`:** menambah key di `stabilize` mengubah `stabilize_hash` → `stable/`
+  semua klip basi):
+
+  | key | default | rentang | arti |
+  |---|---|---|---|
+  | `enabled` | true | bool | false = masker tidak pernah dipakai (= klip tanpa titik) |
+  | `r_keep` | 0.90 | (r_drop, 1] | r ≥ → komponen utuh |
+  | `r_drop` | 0.10 | [0, r_keep) | r ≤ → komponen dibuang |
+  | `dilate_px` | 4 | int 0–32 (px kerja) | d untuk M_d |
+  | `hole_fill_max_px` | 0 | int ≥ 0 | 0 = semua lubang diisi; N = hanya lubang ≤ N px |
+  | `piece_min_px` | 30 | int ≥ 1 | potongan C ∩ M_d dengan \|P ∩ M_f\| < N dibuang |
+  | `no_prompt` | "keep" | keep \| clear | adegan tanpa klik: digambar seperti sekarang / dikosongkan |
+- **Masker berlaku** (keputusan no. 6): `target/points.json` ada + `isolate/` ada + `existing_state` = ok (titik, sidik piksel SEMUA
+  frame, model, parameter [1b], versi lib, PNG lengkap; ±4,7 s di klip3) + `target_mask.enabled`. Tidak berlaku → [3] jalan TANPA
+  masker (byte-identik) + PERINGATAN berisi alasan + perintah `isolate --yes`. Lewat `run`, [1b] basi tanpa `--yes` sudah berhenti
+  sebelum [3].
+- **Kunci basi [3]:** key manifest baru `isolate` — HANYA ada bila masker dipakai (klip tanpa titik: manifest + output byte-identik,
+  tanpa hitung ulang): `{key_sha256 [1b], created_utc [1b], adegan berklik, section target_mask + hash}`; masuk `MANIFEST_MATCH_KEYS` →
+  beda = `stable/` basi → dihitung ulang (CPU); [4]–[6] ikut basi lewat rantai yang ada.
+- **`run` / `--preview` / `--restart-from` / `--limit`:** urutan tidak berubah; H per frame sebelum kernel → frame `--preview` /
+  `--limit` = frame run penuh (sifat prefiks tetap); `--preview` +±5 s (cek kunci). `--restart-from isolate --yes` → [3] basi lewat
+  `created_utc` [1b]; `--restart-from stabilize` = hitung ulang dengan masker. `points.json` dihapus → [1b] menghapus `isolate/` → [3]
+  basi (key `isolate` hilang) → kembali tanpa masker.
+- **Test** (`tests/test_target_mask.py` + tambahan `test_stabilize*.py` / `test_config.py` / `test_cli.py`): lubang (tertutup terisi,
+  menyentuh tepi tidak, celah diagonal 4/8-arah, batas `hole_fill_max_px`); dilasi (d 0 = identitas, elips); kelas r (batas = r_keep →
+  utuh, = r_drop → buang, utuh mempertahankan piksel di luar M_d, buang menghapus piksel di M_f); potongan (|P ∩ M_f| = N − 1 / N);
+  masker kosong → semua dibuang; F kosong; setara one-hot (sums bermasker = `group_sums` probabilitas one-hot); [3] sintetis: tanpa
+  `isolate/` → output + manifest byte-identik dengan sekarang; dengan masker → hanya target; kernel melihat frame bermasker tetangga;
+  jendela tidak melintasi batas adegan; `kosong` → peta kosong; `tanpa_prompt` keep / clear; masker basi (titik / piksel frame / manifest
+  [1b] / PNG hilang) → tanpa masker + PERINGATAN; parameter berubah → basi; QC tidak berubah; validasi YAML (rentang, enum, docs/02 =
+  default); CLI `stabilize` + `run` + `--preview`. **Mutasi (±20):** ≥ → > di r_keep / r_drop / potongan, tukar utuh / buang, tanpa
+  isi lubang, isi lubang tanpa cek tepi, d − 1, dilasi persegi, potongan diabaikan, masker sesudah kernel (`groups()` bukan `raw()`), tie
+  tidak di-nol, `S[0]` = 0 bukan 255, F dari classmap, komponen 4-arah, r memakai M bukan M_f, `tanpa_prompt` dimasker secara default,
+  `kosong` dipertahankan, cek kunci dilewati, key manifest selalu ada, `enabled` diabaikan.
+- **Teks usulan (diterapkan bersama kode di Tahap 2):**
+  - docs/01 [3] In: "+ `isolate/` (labels, `frames.jsonl`, manifest) + `target/points.json` — hanya dibaca bila ada (T-606)"; langkah
+    baru 1b "Masker target (T-606, H) sebelum kernel: …(no. 2)…; berlaku hanya bila kunci [1b] cocok; QC [2] tidak berubah"; manifest
+    `isolate` (hanya bila dipakai); `frames.jsonl` `isolate` per frame (status, kelas komponen, piksel dibuang); basi.
+  - docs/01 [1b]: "Masker BELUM dipakai [2]–[6] (T-606)" → "Masker dipakai [3] langkah 1b (T-606, H)".
+  - docs/02: blok `target_mask:` + validasi (r_drop < r_keep, int, enum).
+  - CLAUDE.md baris 1b: "Masker BELUM dipakai [2]–[6] (T-606)" → "Masker dipakai [3] (T-606)"; baris 3: "T-606: masker target [1b]
+    diterapkan per frame SEBELUM kernel temporal (H: komponen r ≥ 0,90 utuh, r ≤ 0,10 buang, gabungan dipotong M_f + 4 px; lubang
+    diisi), hanya bila kunci [1b] cocok; QC [2] tetap; tanpa masker berlaku = byte-identik; ambang [4] per klip ikut bergeser".
+- **D-012: disarankan YA** (singkat): data [1b] mengalir ke [3] (kontrak antar stage berubah), aturan QC, aturan byte-identik, arti
+  `kosong` / `tanpa_prompt`, dan efek ambang per klip. Bila Rio memilih **M1**: D-012 WAJIB dan lebih besar — [2] membaca frame bersih
+  untuk adegan berklik (frame bersih = masukan seg saja; `frames/` tetap asli untuk cut), seg bergantung pada [1b] (pick ulang = seg
+  ulang adegan itu di GPU, ±16,5 s / frame; run pertama TIDAK menambah GPU karena seg frame bersih menggantikan seg frame asli), manifest
+  seg + QC [2] berubah (QC di batas adegan perlu aturan, lihat no. 1), H tetap di [3].
+
+**F1** (`scripts/t606_hash.py`; 6 klip termasuk `target/` + `isolate/` klip3, + `out/`): `before` = `after` = 10 701 berkas, daftar hash
+byte-identik (sha256 daftar `a7e44efe…`) dan sama dengan F1 penutupan T-605 (`work/t605/after_t4_sha256.txt`); hilang 0, berubah 0,
+tambahan 0; `qc_report.json` tidak berubah (tidak ada `run` di Tahap 1).
+
+**Penyimpangan / keraguan:**
+1. **Kebocoran ambang [4] ke adegan tanpa klik** (no. 4): keputusan no. 4 "semua digambar seperti sekarang" terpenuhi untuk siluet /
+   lubang / batas grup dan `stable/`, TIDAK untuk garis oklusi (101 / 141 frame, −1,3% panjang). Pilihan: (a) terima — ambang dari isi
+   yang memang digambar (usul Claude Code); (b) ambang [4] dari data tanpa masker — butuh `stable/` tanpa masker juga (±2× [3]).
+   Perlu keputusan Rio.
+2. Gabungan tiga orang ternyata f85–f120 (36 frame), bukan f85–108 saja; f121–f125 target terpisah (utuh → tepi = seg, bukan masker).
+3. Prototipe M2 mengubah berkas seg di scratch, bukan kode [3]; kesetaraan dengan titik pasang `raw(k)` dari definisi (one-hot →
+   `S` = (255, 0, …)), belum dari kode produksi (Tahap 1 tanpa `src/`).
+4. QC: prototipe memakai `qc_report.json` asli (f121 tetap bobot 0,1). M1 juga memakai depth + QC asli; QC seg M1 (41 frame) hanya
+   dicatat.
+5. M1 = seg ulang + H di atasnya ("ikut H bila perlu" → saya pilih selalu, supaya tidak ada sisa di luar M_d). M1 tanpa H tidak dibuat.
+6. Parameter usulan dari SATU klip (klip3; klip5 dikecualikan); d dalam px kerja (tidak diskalakan ukuran subjek — terkait T-305e).
+7. Metrik "garis baru di dalam badan" = proksi (strok ≥ 50% di M_f ter-erode 8 px dan median jarak ke strok V0 > 4 px): garis yang
+   berimpit dengan garis V0 tidak terdeteksi → penilaian visual tetap penentu. Tonjolan d px ke orang sebelah di zona sentuh (sinar
+   disensor 2% batas) tidak diukur visual.
+8. Pengecekan masker berlaku mahal (sidik piksel semua frame ±4,7 s per run [3] / `--preview`).
+9. Satu cuplikan baca-saja memakai `python -` + heredoc (tidak menulis berkas); beberapa `python -c` baca-saja. Berkas repo hanya lewat
+   Edit / Write.
+
+### Hasil T-606 Tahap 1b (2026-10-17) — run M1 Rio diverifikasi + metrik + bahan 4 panel; menunggu penilaian Rio
+
+Run GPU dijalankan Rio dari PowerShell terpisah (`python scripts\t606_m1.py`). Sesi Claude Code TANPA GPU: verifikasi + analisis
+(`t606_tahap1.py m1cek`, subperintah baru, baca-saja → `work/t606/m1_cek.json`), hitung ulang `metrik` + `bahan --m1`, F1. Tanpa commit;
+tanpa perubahan `src/` / `configs/` / `tests/`; berkas repo hanya lewat Edit / Write.
+
+**Verifikasi run M1** (lengkap):
+- **Dua run.** Run 1 (06:56 UTC): `siapkan` selesai (41 frame bersih, latar abu-abu 83,6–84,9% piksel), lalu berhenti tepat sesudah
+  "[seg] mulai" TANPA pesan di log dan tanpa `run_start` di `seg/frames.jsonl` (stage [2] belum memproses apa pun). Penyebab tidak
+  tercatat: pesan berhenti cek VRAM nvidia-smi / Ctrl+C hanya ke layar, tidak ke log (kekurangan skrip). Dugaan: cek VRAM (bebas 2 919 MiB
+  sebelumnya). Run 2 (07:00 UTC): semua langkah selesai, rc 0.
+- **seg (GPU):** 41 / 41 frame (f85–f125, masing-masing tepat sekali), `finite` true di semua frame → **NaN / inf 0**; model
+  `facebook/sapiens2-seg-0.8b` @ `196a627b…` fp16 = seg produksi (dicek `rakit`, D-009); QC [2] seg M1 (41 frame, hanya dicatat) 0 gagal.
+- **Waktu:** seg 706,2 s (wall stage 692,6 s; muat model 7,8 s); per frame p50 16,48 s (inferensi 15,95 s), frame pertama 26,1 s, maks
+  26,1 s; `rakit` 11,5 s; `render` 129,3 s ([3] 64,0 / [4] 52,4 / [5] 8,5 / [6] 4,4 s); `bahan` 23,9 s. Total run 2 ±14,5 menit.
+- **VRAM:** bebas sebelum muat 3 371 MiB (nvidia-smi) / 3 313,7 MiB (torch; syarat 3 300); reserved maks 3 276 MiB, allocated maks
+  3 013,9 MiB (= T-602); **puncak nvidia-smi 4 066 / 4 096 MiB** (343 sampel); beda argmax kuantisasi maks 0,0034%.
+- **Keluaran scratch M1:** `stable/` 182 + 182, `contours/` 182, `strokes/` 41 PNG + 41 SVG, `klip3.preview_85-125.mp4` (out_dir
+  scratch); cut = produksi (49, 85, 126, 134, 146, 154, 166, 174).
+- **Hitung ulang Claude Code** (`metrik --varian M2H,M1`, `bahan --m1`): `metrik.json` dan 4 video **byte-identik** dengan keluaran
+  run Rio.
+
+**Metrik f85–f125 (41 frame, per frame; definisi sama dengan M2-H, `metrik.json`):**
+
+| | V0 | M2-H | M1 |
+|---|---|---|---|
+| strok (min–maks) | 57,85 (34–75) | 22,51 (17–29) | 20,78 (13–34) |
+| strok di wilayah target / di luar target | 22,54 / 35,32 | 22,51 / **0** | 20,78 / **0** |
+| siluet | 3,54 (2–6) | **1,00** (41 / 41) | **1,00** (41 / 41) |
+| lubang / batas grup / oklusi | 1,59 / 44,80 / 7,93 | 0,54 / 16,90 / 4,07 | 0,46 / 15,98 / 3,34 |
+| kelahiran strok: semua; di wilayah target | 17,75; 6,15 | 5,90; 5,90 | 6,10; 6,10 |
+| kelahiran: lubang / batas grup / oklusi | 0,18 / 14,45 / 2,50 | 0,05 / 4,65 / 1,20 | 0,13 / 4,75 / 1,23 |
+| strok di dalam badan (n; px): lubang / batas grup / oklusi | 0,54; 117 / 14,56; 818 / 4,07; 531 | 0,54; 117 / 14,56; 818 / 4,07; 526 | 0,44; 92 / 12,93; 813 / 3,27; 358 |
+| **garis BARU di dalam badan** (median jarak ke strok V0 > 4 px) | – | **0** | **86 strok total: 77 batas grup (2 091 px) + 9 oklusi (453 px), di 37 / 41 frame (maks 6 + 3 per frame); garis tertutup baru 0** |
+| piksel `stable/` hilang vs V0: di M_f / cincin M_d − M_f (maks) | – | 4,4 (145) / 36,0 (347) | 61,2 (348) / 69,6 (652) |
+| piksel `stable/` di luar M_d (maks) | 200 104 | 37,4 (389) | 672,8 (1 325; 41 / 41 frame) |
+
+**Analisis tambahan (`m1cek`, data — bukan penilaian visual):**
+- **Tepi M1 mengikuti batas abu-abu.** Cincin M_d − M_f (4 px, ±11 801 px / frame) tertutup foreground: seg asli 41,3%, **seg M1 80,9%**
+  (`stable/`: V0 41,4%, M2-H 41,1%, M1 80,4%); M_f tertutup 98,4% (asli) → 99,4% (M1). Artinya tepi siluet M1 lebih sering berada di tepi
+  masker + 4 px (tepi foto | abu-abu) daripada di tepi seg asli; 672,8 px / frame bahkan melewati M_d.
+- **H hampir tidak bekerja di M1:** 40 / 41 frame = satu komponen r ≥ 0,90 → utuh (0 px dibuang); f122 satu komponen dipotong (38 px).
+- **Label grup di dalam M_f:** 98,27% piksel foreground sama dengan seg asli; background di dalam M_f 2 131 → 784 px / frame (lubang
+  berkurang), kaki / lengan kiri lebih luas. "Garis baru" M1 = batas grup / oklusi yang bergeser > 4 px dari garis V0 karena seg
+  dihitung ulang — belum tentu garis palsu.
+- **Ambang [4] per klip:** T_high V0 0,013942 → M2-H 0,014078 (+1,0%) → **M1 0,017448 (+25,1%)**; T_low +1,5% / +7,0%. Sumber: wilayah
+  persentil (foreground ter-erode 5 px) adegan M1 berisi 288 956 nilai lebih banyak dari M2-H, **75,5% di atas T_high V0** (150 564 di
+  M_f, 138 109 di cincin) — tepi kedalaman orang kini masuk foreground ter-erode. Di adegan: nilai > T_high V0 = 5,4% (V0), 6,2% (M2-H),
+  9,7% (M1).
+- **Kebocoran ke 141 frame tanpa klik (M1):** `stable/` identik (0 frame beda); **garis oklusi berbeda di 137 / 141 frame** (jumlah strok
+  ±157, panjang oklusi di frame itu 96 555 → 76 691 px, **−20,6%**); strok non-oklusi beda di 3 frame (f126–f128: siluet dengan bentuk sama,
+  hanya urutan / titik awal — pencocokan `track_id` lintas cut); 4 frame lain hanya beda `track_id`. (M2-H: 101 frame, −1,3%.)
+
+**Bahan penilaian `work/t606/nilai/`:** `klip3_banding_V0_M2H_M1_f085-125.mp4` (foto + tepi masker SAM | V0 | M2-H | M1, 24 fps, 41
+frame) + `klip3_banding_V0_M2H_M1_f085-125_lambat.mp4` (12 fps); tetap ada `klip3_banding_V0_M2H_f085-125.mp4` + `_lambat`;
+`PANDUAN.md` + `PENILAIAN.md` (template, bagian M1 sudah ada). Isi video tidak dibuka Claude Code.
+
+**F1** (`t606_hash.py after_m1`): 10 701 berkas, daftar hash byte-identik dengan `before` Tahap 1 dan F1 penutupan T-605 (sha256 daftar
+`a7e44efe…`); hilang 0, berubah 0, tambahan 0; `qc_report.json` tidak berubah. Scratch `work/t606_scratch/` kini 3 012 berkas baru
+(1,58 GB) + 2 748 hard link; `work/t606/` 11,3 MB.
+
+**Penyimpangan / keraguan:**
+1. Penyebab berhentinya run 1 tidak tercatat di log (skrip tidak menulis pesan berhenti ke log); run 2 lengkap, jadi hasil tidak
+   terpengaruh.
+2. **Kebocoran ambang [4] jauh lebih besar dengan M1** (−20,6% panjang oklusi di 137 / 141 frame tanpa klik) — menambah bobot keraguan
+   no. 1 Tahap 1 bila M1 dipilih.
+3. **M1 ≈ seg ulang saja:** H hampir tidak memotong (1 / 41 frame); tepi M1 cenderung = masker + 4 px (batas abu-abu), sehingga bentuk
+   tepi M1 lebih bergantung pada masker SAM daripada M2-H.
+4. Metrik "garis baru" menandai 86 strok M1 (batas grup / oklusi bergeser karena seg baru), 0 garis tertutup; proksi, bukan penilaian
+   visual.
+5. VRAM ketat: puncak nvidia-smi 4 066 / 4 096 MiB (T-602: 3 919–3 942); torch bebas sebelum muat 3 313,7 MiB, hanya 13,7 MiB di atas
+   syarat 3 300.
+6. Frame pertama seg 26,1 s (T-602: ±21 s); lainnya = T-602 (16,4–16,5 s).
+7. Video 4 panel dibuat oleh langkah `bahan` di run Rio (skrip Claude Code) dan dibuat ulang Claude Code → byte-identik.
+8. `m1cek` = subperintah baru di `scripts/t606_tahap1.py` (baca-saja), ditambahkan di Tahap 1b.
+
+### Penilaian Rio T-606 Tahap 1b (2026-10-17)
+
+Dicatat SEBELUM Tahap 1c dikerjakan. Video `work/t606/nilai/klip3_banding_V0_M2H_M1_f085-125.mp4` + `_lambat`, template
+`work/t606/nilai/PENILAIAN.md`.
+
+| varian | hanya target tergambar? | garis palsu di dalam badan? | tepi target terpotong? | frame salah | nilai 1–5 |
+|---|---|---|---|---|---|
+| V0 (sekarang) | tidak | tidak | tidak | – | 2 |
+| **M2-H** | ya | tidak | **YA** | 0 | **4 — varian terbaik** |
+| M1 | ya | tidak | tidak | – | 3 |
+
+**Keputusan / catatan Rio:**
+1. Varian terbaik = **M2-H**.
+2. **Pergeseran ambang [4] di adegan tanpa klik DITERIMA** (keraguan no. 1 Tahap 1, pilihan (a): ambang dari isi yang memang digambar).
+3. **M2-H belum lolos kriteria keputusan no. 7** ("tepi target tidak terpotong") → **Tahap 1c menguji d lebih lebar.**
+
+**Lingkup Tahap 1c (CPU, scratch; tanpa GPU, tanpa perubahan `src/` / `configs/` / `tests/`):**
+1. M2-H di scratch untuk klip3 f85–f125 dengan **d = 4 (acuan), 8, 12**; parameter lain sama (r_keep 0,9, r_drop 0,1, piece_min 30).
+   **d = 20 (p99)** hanya di tabel metrik.
+2. Metrik per d: piksel seg asli target yang terpotong (di luar M_d) per frame + lokasi terbanyak (bagian tubuh / grup); piksel orang lain
+   yang ikut (zona sentuh); strok di wilayah target, garis baru di dalam badan, kelahiran strok.
+3. Video `work/t606/nilai/klip3_banding_d4_d8_d12_f085-125.mp4` + `_lambat` (foto + tepi masker | d4 | d8 | d12), label besar.
+4. `PENILAIAN_1c.md` per d: tepi target terpotong? · orang lain ikut tergambar? · nilai 1–5; lalu d terbaik.
+5. F1 identik; log docs/05.
+
+### Hasil T-606 Tahap 1c (2026-10-17) — variasi d; menunggu penilaian Rio
+
+CPU saja, scratch; tanpa GPU, tanpa commit, tanpa perubahan `src/` / `configs/` / `tests/`; berkas repo hanya lewat Edit / Write. Alat
+(`scripts/t606_tahap1.py`, F3): varian `M2H_d<N>` di `m2`, `metrik --out`, subperintah baru `tepi` dan `bahan1c`; `overshoot_rays`
+dapat mencatat piksel per sinar. Keluaran: `work/t606/tepi_1c.json`, `metrik_1c.json` (`metrik.json` Tahap 1b tidak ditimpa),
+`m2_run.json`, `bahan.json`, `nilai/`.
+
+**Render:** `M2H` (d 4 = acuan Tahap 1b, salinan scratch dipakai ulang, sidik sama) + `M2H_d8` / `M2H_d12` / `M2H_d20` (klip3 penuh di
+scratch, seg f85–f125 dibatasi H; r_keep 0,9, r_drop 0,1, piece_min 30, lubang diisi); [3] 64,8–65,5 s, [4] 54,6–57,5 s, [5] 8,9–9,3 s,
+[6] 4,4–4,9 s per varian. Kelas komponen tidak bergantung d (r memakai M_f): f85–f120 dipotong, f121–f125 utuh di semua d.
+
+**Definisi metrik tepi** (`tepi`, seg MENTAH sebelum [3]; sinar normal dari batas M_f seperti Tahap 1, maks 40 px):
+- *tepi seg target* (rim) = piksel F di luar M_f pada sinar yang BERAKHIR ≤ 40 px;
+- *zona sentuh* = piksel F di luar M_f pada sinar yang DISENSOR (F berlanjut ≥ 40 px → orang sebelah);
+- *target terpotong* = rim di komponen gabungan yang tidak dipertahankan H; *orang lain ikut* = zona sentuh yang dipertahankan H;
+  *batas atas orang lain ikut* = semua piksel dipertahankan di luar M_f yang bukan rim.
+Metrik strok = definisi Tahap 1 (wilayah tetap: M_f, M_d dengan d 4, M_f ter-erode 8 px), supaya antar d sebanding.
+
+| f85–f125, per frame | d 4 (acuan) | d 8 | d 12 | d 20 (p99, tabel saja) |
+|---|---|---|---|---|
+| **seg asli target terpotong** (maks, frame) | 557 (1 644, f107) | 372 (1 190, f107) | 257 (845, f107) | 103 (368, f109) |
+| % tepi seg target terpotong | 13,4% | 8,9% | 6,2% | 2,5% |
+| frame terpotong ≥ 100 px / > 0 px | 36 / 36 | 32 / 36 | 29 / 36 | 18 / 35 |
+| lokasi terpotong (grup) | torso 83,7%, lengan kanan 14,4%, lengan kiri 1,0%, wajah 0,7%, rambut 0,2% | torso 83,6%, lengan kanan 16,1%, lengan kiri 0,3% | torso 83,0%, lengan kanan 16,9%, lengan kiri 0,2% | torso 82,2%, lengan kanan 17,8% |
+| sisi gambar kiri / kanan (dari pusat masker) | 33 / 67% | 30 / 70% | 28 / 72% | 27 / 73% |
+| sinar tepi (komponen gabungan) lebih jauh dari d | 4,07% | 1,88% | 1,53% | 0,96% |
+| **orang lain ikut (zona sentuh)** (maks, frame) | 163 (419, f116) | 322 (822, f116) | 479 (1 231, f116) | 776 (1 957, f116) |
+| batas atas orang lain ikut (maks) | 638 (1 141) | 895 (1 710) | 1 199 (2 401) | 1 885 (3 950) |
+| piksel `stable/` di luar M_d d 4 | 37 | 468 | 887 | 1 726 |
+| strok total / di wilayah target | 22,51 / 22,51 | 22,71 / 22,59 | 23,46 / 23,20 | 23,51 / 23,22 |
+| strok di luar target (px) | 0 | 0,12 (1,5) | 0,27 (5,0) | 0,29 (8,4) |
+| siluet | 1,00 (41 / 41) | 1,00 | 1,00 | 1,00 |
+| lubang / batas grup / oklusi | 0,54 / 16,90 / 4,07 | 0,56 / 17,07 / 4,07 | 0,59 / 17,15 / 4,73 | 0,61 / 17,17 / 4,73 |
+| lubang di luar masker (zona sentuh), total | 0 | 1 (f108) | 2 (f108) | 3 (f107–f108) |
+| **garis baru di dalam badan** | 0 | 0 | 0 | 0 |
+| kelahiran strok: semua / di wilayah target | 5,90 / 5,90 | 6,10 / 6,05 | 6,23 / 6,13 | 6,23 / 6,13 |
+| T_high [4] per klip (vs V0 0,013942) | 0,014078 (+1,0%) | 0,014196 (+1,8%) | 0,014221 (+2,0%) | 0,014251 (+2,2%) |
+| frame tanpa klik dengan oklusi beda (panjang) | 101 / 141 (−1,3%) | 109 (−2,4%) | 112 (−2,4%) | 115 (−2,5%) |
+
+Di semua d: `stable/` di luar adegan identik, strok non-oklusi di luar adegan identik (beda hanya oklusi + `track_id`).
+
+**Bacaan data (bukan penilaian visual):** d lebih lebar → tepi target terpotong turun (557 → 103 px / frame), orang lain ikut naik
+(163 → 776 px / frame, terbanyak di f116), lubang kecil baru muncul di zona sentuh f107–f108 (d ≥ 8). Bahkan d 20 masih memotong 103 px /
+frame di 35 frame: sebagian tepi seg target melewati masker > 20 px (badan / baju dan lengan kanan, sisi kanan gambar) — kemungkinan
+bagian yang tidak tercakup masker SAM, jadi tidak tuntas dengan d saja.
+
+**Bahan:** `work/t606/nilai/klip3_banding_d4_d8_d12_f085-125.mp4` (24 fps) + `_lambat` (12 fps): foto + tepi masker | d 4 (acuan) | d 8
+| d 12, label besar. `work/t606/nilai/PENILAIAN_1c.md`: per d tepi terpotong? · orang lain ikut tergambar? · nilai 1–5; lalu d terbaik
+(+ petunjuk lokasi dari data). Isi video tidak dibuka Claude Code.
+
+**F1** (`t606_hash.py before_1c` / `after_1c`): 10 701 berkas, byte-identik satu sama lain dan dengan F1 penutupan T-605 (hilang 0,
+berubah 0, tambahan 0; `qc_report.json` tidak berubah). Scratch `work/t606_scratch/` kini 5 202 berkas baru (2,75 GB) + 4 686 hard link.
+
+**Penyimpangan / keraguan:**
+1. Penilaian Tahap 1b untuk M2-H berbunyi "tepi terpotong YA" dengan "frame salah 0" — dicatat apa adanya; tidak jelas apakah 0 hanya untuk
+   "hanya target".
+2. "Target terpotong" dan "orang lain ikut" dari sinar normal = perkiraan: rim bisa memuat bagian kecil orang sebelah yang berakhir
+   ≤ 40 px, dan zona sentuh bisa memuat bagian target yang lolos dari masker > 40 px.
+3. Metrik strok memakai wilayah tetap d 4 → "strok di luar target" untuk d besar sebagian adalah tepi target yang dipulihkan, bukan orang
+   lain.
+4. d 20 dirender penuh (bukan hanya dihitung) karena metrik strok butuh [3]–[4]; tidak masuk video.
+5. Ambang [4] per klip bergeser sedikit lebih banyak saat d naik (+1,0% → +2,2%); pergeseran di adegan tanpa klik sudah DITERIMA Rio.
+
+### Keputusan T-606 setelah Tahap 1c (2026-10-19) — Tahap 2–3 dimulai
+
+Dicatat SEBELUM kode produksi ditulis.
+
+**Penilaian Rio Tahap 1c** (video `work/t606/nilai/klip3_banding_d4_d8_d12_f085-125.mp4` + `_lambat`, template `PENILAIAN_1c.md`):
+
+| d | tepi target terpotong? | orang lain ikut tergambar? | nilai 1–5 |
+|---|---|---|---|
+| **4** | tidak | tidak | **4 — terbaik** |
+| 8 | (tidak dicatat) | (tidak dicatat) | 3 |
+| 12 | (tidak dicatat) | (tidak dicatat) | 2 |
+
+- Rio mengonfirmasi: penilaian 1c **MENGGANTIKAN** "tepi terpotong ya" untuk M2-H di 1b (render yang sama: panel d 4 = salinan scratch
+  M2-H Tahap 1b, sidik sama). **Jadi M2-H d 4 lolos semua kriteria keputusan no. 7** (hanya target tergambar, tanpa garis palsu di dalam
+  badan, tepi target tidak terpotong).
+- Tidak ada klik tambahan.
+
+**Keputusan Rio (final):**
+1. **Mode M2-H:** d 4, r_keep 0,9, r_drop 0,1, piece_min 30, semua lubang masker diisi. **M1 tidak dipakai.**
+2. **Aktif otomatis** bila masker [1b] berlaku; klip tanpa titik byte-identik.
+3. **Adegan tanpa klik** digambar seperti biasa (opsi YAML `clear`); **frame `kosong` tidak digambar.**
+4. **QC tidak dihitung ulang**; pergeseran ambang [4] ±1% diterima.
+5. **Masker tidak berlaku saat [3]** → [3] jalan tanpa masker + PERINGATAN.
+6. **D-012** + docs/01 + docs/02 + CLAUDE.md.
+7. **Test + ±20 mutasi**, byte-identik tanpa titik, run nyata klip3 = prototipe d 4.
+8. **Rio mengecek klip3 penuh** (video produksi berdampingan).
+9. **Metrik T-606 disimpan ke berkas ter-track** (`scripts/t606_data.json`).
+
+**Lingkup Tahap 2–3 (tanpa GPU, tanpa commit):** Tahap 2 = `src/rotoscope/target_mask.py` dipasang di `FrameCache.raw(k)` [3] sebelum
+kernel; section YAML `target_mask` + validasi + `configs/default.yaml` + docs/02; key manifest [3] `isolate` hanya bila masker dipakai;
+keputusan kontrak [3]; test (H, integrasi, basi, peringatan, config, byte-identik tanpa titik) + ±20 mutasi (tiap mutan menggagalkan
+≥ 1 test) + suite penuh; teks docs/01 / docs/02 / CLAUDE.md / D-012. Tahap 3 = `run` klip3 (CPU; [1b] berlaku → dilewati; [3]–[6]
+dihitung ulang) dibandingkan dengan prototipe d 4; klip lain 0 diproses + `out/` byte-identik; video produksi berdampingan klip3 penuh +
+`PANDUAN_produksi.md`; `scripts/t606_data.json`; F1 (yang berubah hanya klip3 `stable/` / `contours/` / `strokes/` / `out/` + `created_utc`
+`qc_report.json`).
+
+### D-012 — Masker target [1b] dipakai di [3] (hibrida H, sebelum kernel temporal)
+**Tanggal:** 2026-10-19 (keputusan Rio T-606 "setelah Tahap 1c" no. 1–6; diterapkan sejak T-606 Tahap 2)
+**Konteks:** D-011 menambah [1b] yang hanya MENGHASILKAN masker target. Di klip multi-orang (klip3 f85–f120) Sapiens2-seg menyatukan tiga
+orang dalam satu blob, jadi memilih komponen utuh tidak cukup; memotong per piksel membuat lubang kecil masker menjadi garis palsu (T-605).
+Prototipe T-606 di klip3: V0 nilai 2, M1 (frame dibersihkan + seg ulang, GPU) nilai 3, **M2-H d 4 nilai 4 — lolos semua kriteria**.
+**Keputusan (Rio):**
+- **Tempat:** stage [3] `stabilize`, per frame, di `FrameCache.raw(k)` tepat sesudah `group_sums` — SEBELUM kernel temporal, jadi masker ikut
+  dihaluskan. Modul `target_mask.py` (numpy + cv2, tanpa torch). Data [1b] (`isolate/`) kini masukan [3]; [2] / [2c] tidak berubah.
+- **Algoritma H** (per frame adegan berklik): F = foreground seg mentah; M_f = masker [1b] + lubang terisi; M_d = M_f + d px; komponen
+  8-arah C dari F dengan r = |C ∩ M_f| / |C|: r ≥ r_keep → utuh, r ≤ r_drop → dibuang, di antaranya → C ∩ M_d (potongan dengan
+  |P ∩ M_f| < piece_min dibuang). Piksel dibuang → background one-hot. Default: d 4, r_keep 0,9, r_drop 0,1, piece_min 30, semua lubang.
+- **Berlaku hanya bila masker [1b] berlaku:** `target/points.json` + `isolate/` ada dan kunci manifest [1b] = titik + sidik piksel semua
+  frame + model + parameter SEKARANG (fungsi [1b] yang sama). Tidak berlaku → [3] tanpa masker + PERINGATAN. Klip tanpa titik → tanpa
+  masker, output dan manifest [3] byte-identik (key manifest `isolate` hanya ditulis bila masker dipakai; kontrak [3] tidak naik).
+- **Arti status:** `kosong` → tidak menggambar apa pun; `tanpa_prompt` → digambar seperti biasa (`target_mask.no_prompt: keep`, default)
+  atau dikosongkan (`clear`).
+- **QC [2] tidak dihitung ulang** (bobot temporal tetap dari classmap tanpa masker). **Ambang [4] per klip** ikut bergeser karena
+  foreground berubah (klip3 T_high +1,0%; garis oklusi adegan tanpa klik −1,3%) — diterima.
+- **Tidak berubah:** D-009 (model seg / depth), D-010 (fallback pose ditunda), D-011 ([1b] tetap satu-satunya pembuat masker).
+**Alternatif ditolak:**
+- **M1** (frame di luar masker → abu-abu, seg 0.8B diulang): nilai 3; tepi mengikuti batas abu-abu (seg menutup 80,9% cincin 4 px);
+  ambang [4] +25% (garis oklusi adegan tanpa klik −20,6%); seg bergantung pada [1b] (pick ulang = seg ulang di GPU).
+- memotong per piksel (lubang masker → garis palsu); memilih komponen utuh saja (blob tiga orang tidak terpisah);
+- d 8 / d 12 (nilai 3 / 2: orang sebelah lebih banyak ikut, lubang kecil di zona sentuh);
+- QC dihitung ulang pada classmap bermasker (f85 + f126 gagal `iou_prev` di batas adegan).
+**Risiko:**
+- parameter dari SATU klip (klip3); d dalam px kerja (tidak diskalakan ukuran subjek — terkait T-305e);
+- bagian target yang tidak tercakup masker > d px terpotong (klip3 d 4: ±13% tepi seg yang melewati masker);
+- cek kunci [1b] di setiap run [3] membaca piksel semua frame (±4,7 s di klip3);
+- masker basi (pick ulang tanpa `isolate --yes`) → [3] menggambar semua orang dengan PERINGATAN (lewat `run`, [1b] sudah berhenti).
+
+**Penyimpangan Tahap 2 — DITERIMA Rio (2026-10-19):** blok manifest [3] `isolate` memakai **`labels_sha256`** (sha256 gabungan nama +
+sha256 byte PNG label frame `target` / `kosong`) sebagai penanda isi masker, BUKAN `created_utc` manifest [1b] seperti di rancangan
+Tahap 1. Alasan: `created_utc` beresolusi detik (perubahan dalam detik yang sama tidak terdeteksi; terlihat di test) dan bukan isi; dengan
+sidik isi, [1b] yang diulang dengan hasil byte-identik tidak membuat [3] basi, sedangkan label yang berubah selalu membuat basi.
+
+### Hasil T-606 Tahap 2–3 (2026-10-19) — produksi M2-H; menunggu cek Rio klip3 penuh
+
+Tanpa GPU; tanpa commit; semua berkas repo lewat Edit / Write (data ter-track ditulis lewat Write lalu dicek byte-identik).
+
+**Berkas:**
+- **baru:** `src/rotoscope/target_mask.py` (10 313 B), `tests/test_target_mask.py` (30 fungsi test, 47 kasus), `scripts/t606_mutations.py`,
+  `scripts/t606_tahap3.py`, `scripts/t606_data.py`, `scripts/t606_data.json` (17 712 B); dari Tahap 1: `scripts/t606_h.py`,
+  `t606_hash.py`, `t606_m1.py`, `t606_tahap1.py`;
+- **diubah:** `src/rotoscope/stabilize.py`, `config.py`, `configs/default.yaml`, `cli.py` (komentar graf dependensi), `isolate.py`
+  (docstring), `tests/test_isolate.py` (test_34), docs/01, docs/02, docs/04, docs/05, CLAUDE.md.
+
+**Implementasi:**
+- `target_mask.py`: `fill_holes`, `dilate`, `component_class`, `apply_h`, `to_background` (murni); `MaskSet.needs` / `apply`; `labels_sha256`,
+  `manifest_block`, `load_masks` (cek kunci memakai `isolate.build_key` / `existing_state` / `frames_fingerprint`; `isolate` di-import di dalam
+  fungsi karena isolate meng-import stabilize).
+- `stabilize.py`: `FrameCache.raw(k)` — sesudah `group_sums`, bila `masks.needs(index)`: F = `group_argmax(sums, tie) ≠ 0`, lalu
+  `masks.apply` mengubah jumlah grup + grup seri di tempat (SEBELUM kernel); `build_manifest` menambah key `isolate` hanya bila masker
+  dipakai; `MANIFEST_MATCH_KEYS` + `isolate`; `frames.jsonl` mendapat `isolate` hanya di frame bermasker; satu baris log saat dipakai.
+- `config.py`: `TargetMaskConfig` (section `target_mask` di luar `stabilize`) + validasi; `configs/default.yaml` + docs/02 (blok YAML + tabel).
+
+**Keputusan kontrak [3]: TIDAK naik.** Menaikkan versi / menambah field yang SELALU ditulis membuat manifest semua klip berbeda → `stable/`
+semua klip basi → [3]–[6] dihitung ulang dan MP4 di-encode ulang, walau pikselnya sama. Dengan key `isolate` hanya bila masker dipakai,
+klip tanpa titik: manifest lama = manifest baru (key tidak ada di keduanya) → tidak dihitung ulang; section `target_mask` di luar
+`stabilize` → `stabilize_hash` tidak berubah. Terbukti di run nyata: 5 klip tanpa titik → semua stage 0 diproses, `out/` byte-identik.
+
+**Test:**
+- `tests/test_target_mask.py` (47 kasus):
+  - H: lubang (tertutup / menyentuh tepi / diagonal / batas ukuran), dilasi elips, batas r, utuh / buang / potong, aturan potongan
+    (29 / 30 px), lubang sebelum r + potong, keterhubungan 8-arah, masker / F kosong, setara one-hot;
+  - MaskSet: `needs`, `kosong`, `no_prompt` keep / clear, label hilang → galat;
+  - integrasi [3] dengan [1b] ASLI + SAM tiruan: hanya target di adegan berklik + adegan lain sama; setara prototipe one-hot (α 0,7 dan
+    α 0,3 / boil 0); frame `kosong` kosong; `clear`; masker tidak berlaku (5 sebab) → PERINGATAN + byte-identik tanpa titik;
+    `enabled: false`; basi (masker muncul / hilang / parameter / label berubah, bukan [1b] diulang identik); QC tidak berubah;
+    `frames.jsonl`; klik adegan kedua (komponen utuh); `--limit` prefiks;
+  - config (default = keputusan Rio, 12 penolakan, tepi rentang, section di style ditolak); tanpa torch.
+- `tests/test_isolate.py::test_34` disesuaikan dengan kontrak baru (dengan titik → [3]–[6] berubah; `target_mask.enabled: false` → byte-identik
+  dengan tanpa titik) dan distabilkan (keluaran CPU dihapus sebelum run kedua; lihat penyimpangan no. 2).
+- **Suite penuh** — 6 kelompok berkas test, berurutan di foreground, 33 berkas tepat sekali (partisi dicek):
+
+  | kelompok | lolos / skip / gagal | detik |
+  |---|---|---|
+  | 1 cli, clip_identity, config, cut_diff, depth | 349 / 1 / 0 | 24,0 |
+  | 2 export, export_paper, export_strokes, ingest | 112 / 0 / 0 | 109,7 |
+  | 3 isolate, noise, paper, pick, presets, preview (diulang sesudah test_34 distabilkan) | 229 / 2 / 0 | 28,6 |
+  | 4 segment, segment_qc, stabilize, stabilize_temporal, stage_common, target_mask, temporal_metrics, track | 343 / 1 / 0 | 51,7 |
+  | 5 stylize (5 berkas) | 252 / 0 / 0 | 188,0 |
+  | 6 vectorize (5 berkas) | 185 / 0 / 0 | 157,9 |
+  | **total** | **1 470 / 4 / 0** | ±560 |
+
+  Skip = 2 test GPU lama + 2 test model nyata [1b] (sama dengan T-605).
+- **Mutasi** (`scripts/t606_mutations.py`, 3 potongan berurutan 177 / 167 / 156 s; test = `test_target_mask.py` + test_34): kontrol lolos
+  (48 lolos); **29 / 29 mutan menggagalkan ≥ 1 test**:
+  01 r_keep `>=`→`>` · 02 r_drop `<=`→`<` · 03 utuh / buang tertukar · 04 lubang tidak diisi · 05 isi lubang tanpa cek tepi · 06 batas lubang
+  `<=`→`<` · 07 d − 1 · 08 dilasi persegi · 09 aturan potongan diabaikan · 10 potongan `>=`→`>` · 11 r memakai M · 12 komponen 4-arah ·
+  13 M_d dari M · 14 grup seri tidak di-nol · 15 background one-hot 0 · 16 tanpa_prompt selalu dikosongkan · 17 `clear` diabaikan ·
+  18 `kosong` tidak dimasker · 19 cek kunci [1b] dilewati · 20 `enabled` diabaikan · 21 parameter tidak masuk blok · 22 `labels_sha256`
+  tidak masuk blok · 23 blok tidak dibandingkan · 24 key `isolate` selalu ditulis · 25 F dari classmap · 26 indeks frame bergeser 1 ·
+  27 masker tidak sampai kernel · **28 masker hanya di frame tengah jendela** (lolos di run pertama → test kesetaraan diperketat dengan α 0,3
+  + boil 0; kini gagal di `test_masking_before_kernel_equals_one_hot_inputs[over1]`) · 29 validasi r_drop < r_keep dihapus.
+
+**Run nyata Tahap 3 (CPU):**
+- **klip3** (`python -m rotoscope run samples\klip3.mp4`, tanpa `--yes`; rc 0, 255 s): [1b] up-to-date tanpa GPU (3,8 s); [2] 0 diproses (QC
+  1 / 182, f121, sama); [2c] 0 diproses; [3] "masker target [1b] dipakai … f85–f125 (target 41, kosong 0); tanpa_prompt 141 = keep" →
+  basi (`isolate.*` None → isi) → 182 diproses (73,8 s); [4] 182 (55,3 s; T_high 0,014078, T_low 0,004271 = prototipe); [5] 182 (55,3 s);
+  [6] di-encode ulang (19,6 s), SVG 141 disalin.
+- **Verifikasi** (`t606_tahap3.py cek`): f85–f125 `stable/` + `contours/` + `strokes/` PNG + SVG **byte-identik dengan prototipe M2-H d 4**
+  (0 beda); seluruh klip `stable/` + `contours/` = prototipe (0 beda); frame di luar adegan: `stable/` identik dengan sebelum T-606 (0 frame
+  beda); **garis oklusi di luar adegan berubah di 101 / 141 frame** (691 → 680 strok, panjang 74 273 → 73 301 px, −1,31%), strok non-oklusi
+  0 frame beda, 40 frame hanya `track_id`; PNG strokes berubah di 141 frame (41 adegan + 100 oklusi; f143 oklusinya berubah tetapi render
+  PNG sama).
+- **test, test_short, Klip2, klip4, klip5** (berurutan): rc 0 (36 / 24 / 21 / 52 / 38 s); [1b] "points.json tidak ada — dilewati"; [2] / [2c]
+  / [3] / [4] / [5] 0 diproses; [6] up-to-date, SVG 0 disalin.
+
+**Bahan:** `work/t606/nilai/klip3_produksi_berdampingan.mp4` (182 frame, 24 fps) + `_lambat` (12 fps): foto (+ tepi masker di f85–f125) |
+sebelum T-606 | sesudah T-606, label besar; `PANDUAN_produksi.md` + `PENILAIAN_produksi.md` (sama dengan d 4 yang dinilai? · masalah
+baru? (detik) · nilai 1–5). Isi video tidak dibuka Claude Code.
+
+**Data ter-track (keputusan no. 9):** `scripts/t606_data.json` (17 712 B, format `t606-data/1`): parameter H, ukur klip3 (r, komponen
+gabungan per frame, lubang, jarak tepi, QC bermasker), metrik V0 / M2-H d 4 / M1 / d 8 / d 12 / d 20, tepi per d, run M1 (waktu / VRAM /
+NaN), analisis M1, penilaian Rio 1b + 1c, verifikasi produksi klip3, mutasi, suite. Disusun `scripts/t606_data.py susun`, ditulis lewat
+Write, `t606_data.py cek` = byte-identik.
+
+**F1** (`t606_hash.py before_t3` / `after_t3`): `before_t3` = 10 701 berkas, byte-identik dengan F1 Tahap 1 + penutupan T-605. `after_t3`:
+hilang 0, tambahan 0; berubah HANYA di yang diizinkan (0 di luar pola):
+
+| folder | berubah |
+|---|---|
+| `work/clips/klip3/stable/` | 84 (41 `groups` + 41 `depth_smooth` adegan + `manifest.json` + `frames.jsonl`) |
+| `work/clips/klip3/contours/` | 185 (182 frame + `manifest.json` + `clip_stats.json` + `frames.jsonl`) |
+| `work/clips/klip3/strokes/` | 284 (141 PNG + 141 SVG + `manifest.json` + `frames.jsonl`) |
+| `out/klip3.mp4`, `out/klip3.export.json` | 1 + 1 |
+| `out/svg/klip3/` | 142 (141 SVG + penanda) |
+| `qc_report.json` 6 klip | 6 — dibuktikan HANYA `created_utc` (sha256 ternormalisasi sama) |
+
+`out/` klip lain, `isolate/` + `target/` klip3, dan semua berkas lain identik.
+
+**Penyimpangan / keraguan:**
+1. `labels_sha256` menggantikan `created_utc` [1b] di blok manifest [3] — DITERIMA Rio (2026-10-19).
+2. **test_34 tidak stabil (1 / 21 gagal) sebelum distabilkan:** manifest [4] merujuk [3] lewat `stable_created_utc` (resolusi detik); di klip
+   4 frame dua run [3] bisa jatuh di detik yang sama sehingga [4] tidak melihat [3] berubah. Sifat rantai lama ([3] → [4], juga [4] → [5]),
+   tidak terjadi di klip nyata (satu run [3] puluhan detik); test diperbaiki dengan menghapus keluaran CPU sebelum run kedua; [4] tidak
+   diubah (modul lain) → usul backlog.
+3. Suite + mutasi pertama dihentikan Claude Code karena memori sistem (dijalankan bersamaan); diulang berurutan di foreground.
+4. Mutan 14 (grup seri tidak di-nol) hanya tertangkap test unit: di pipeline piksel yang dibuang tidak pernah seri (background 255 vs 0),
+   jadi hampir setara; tetap dipertahankan supaya identik dengan prototipe (classmap 0).
+5. Frame `kosong` yang sekaligus gagal QC (bobot 0,1) bisa terisi tetangga lewat kernel (didokumentasikan di docs/01).
+6. Di luar modul [3]: `cli.py` (komentar) dan `isolate.py` (docstring) — tanpa perubahan perilaku; `tests/test_isolate.py` disesuaikan.
+7. Cek kunci [1b] di setiap run [3] klip bertitik (±4 s di klip3: sidik piksel 182 frame).
+8. Run Tahap 3 menulis ulang `qc_report.json` keenam klip (perilaku [2] lama, backlog yang sudah ada).
+
+### Keputusan akhir T-606 (2026-10-19) — DONE
+
+Dicatat SEBELUM scratch dihapus. Tanpa GPU; tanpa perubahan `src/` / `configs/` / `tests/` di Tahap 4.
+
+**Penilaian Rio** (video `work/t606/nilai/klip3_produksi_berdampingan.mp4` + `_lambat`, template `PENILAIAN_produksi.md`):
+- hasil sama dengan d 4 yang dinilai: **ya**;
+- ada masalah baru: **tidak**;
+- nilai klip3: **4**.
+
+**Keputusan:**
+1. **T-606 DONE.** Mode produksi = M2-H (seg asli dibatasi masker [1b] di [3] sebelum kernel temporal; d 4, r_keep 0,9, r_drop 0,1,
+   piece_min 30, semua lubang diisi; D-012). Kriteria keputusan T-606 no. 7 terpenuhi (penilaian 1c d 4 + cek produksi); klip tanpa titik
+   byte-identik (5 klip, run nyata).
+2. **Rangkaian fitur pick selesai:** T-604 (CLI `pick`: klik target → `target/points.json`) → T-605 ([1b] isolasi SAM 2.1 tiny → `isolate/`,
+   D-011) → T-606 (masker dipakai di [3], D-012).
+3. **Batas yang diketahui:**
+   - kerumunan / video kualitas rendah / zoom (klip5): masker [1b] salah → klip seperti ini harus diolah terpisah dulu (backlog
+     "pengolahan khusus klip5");
+   - adegan tanpa klik digambar seperti biasa (semua orang; opsi `target_mask.no_prompt: clear` untuk mengosongkan);
+   - ambang [4] per klip ikut bergeser ±1% karena foreground adegan berklik berubah → garis oklusi adegan tanpa klik sedikit berubah
+     (klip3 −1,31% panjang, 101 / 141 frame; diterima);
+   - cek basi [4] (dan [4] → [5]) memakai cap waktu manifest hulu beresolusi detik (backlog "Basi hilir berbasis `created_utc`").
+
+**Pelaksanaan penutupan (Tahap 4, 2026-10-19; tanpa GPU):**
+- **Dokumen:** docs/01 [3] langkah 1b (status `DONE` + hasil cek produksi), CLAUDE.md baris 1b dan 3 (T-606 DONE), docs/05 (T-606 DONE,
+  rekonsiliasi, task berikutnya "ditentukan di chat").
+- **F4:**
+  - `T606-prompt.md` (5 428 B, tidak ter-track) dihapus;
+  - `work/t606_scratch/` dihapus: 10 254 berkas — 5 568 berkas baru (2 805 559 117 B: salinan klip3 V0s / M2H / M2H_d8 / M2H_d12 /
+    M2H_d20 / M1 / uji_M1, seg M1 + uji, strokes / contours sebelum T-606, log) + 4 686 hard link ke berkas sumber (3 824 306 592 B semu,
+    tanpa ruang tambahan; sumber tidak terpengaruh — F1);
+  - disk C: bebas 23,97 → 26,73 GiB;
+  - `work/t606/` dipertahankan sebagai arsip (46 berkas, 35 018 245 B): `nilai/` (8 video + `PANDUAN.md`, `PENILAIAN.md`,
+    `PENILAIAN_1c.md`, `PANDUAN_produksi.md`, `PENILAIAN_produksi.md`), daftar hash F1, `ukur.json`, `metrik.json`, `metrik_1c.json`,
+    `tepi_1c.json`, `m1_cek.json`, `cek_t3.json`, `sebelum_t3.json`, `mutations.json`, `m1_run.log`, log run Tahap 3, `t606_data.json`.
+  - `scripts/t606_data.py cek` sesudah F4: `scripts/t606_data.json` tetap byte-identik (hanya membaca `work/t606/`).
+- **Skrip F3 yang bergantung pada scratch yang dihapus:**
+  - `t606_tahap1.py`: `metrik`, `bahan`, `bahan1c`, `m1cek` butuh varian scratch (M2H, M2H_d*, M1) → gagal sampai `m2` dijalankan ulang;
+    `m2` membuat ulang salinan dari klip3 (CPU, ±3 menit per varian); **catatan:** `metrik` memakai produksi klip3 sebagai V0, dan produksi
+    kini SUDAH bermasker → pembanding V0 tidak lagi "sebelum T-606"; `ukur` dan `tepi` mandiri (seg + `isolate/` klip3);
+  - `t606_m1.py`: langkah sesudah `siapkan` butuh `M1_seg/` + `M1_steps.json` → dijalankan ulang = seg 0.8B GPU ±13 menit;
+  - `t606_tahap3.py`: `cek` / `bahan` butuh `sebelum/` + prototipe M2H → gagal; `simpan` menolak (klip3 `stable/` sudah bermasker);
+    `prasyarat` mandiri;
+  - mandiri: `t606_hash.py`, `t606_mutations.py`, `t606_data.py`, `t606_h.py` (pustaka).
+- **F1** (`t606_hash.py after_t4`): 10 701 berkas, daftar hash byte-identik dengan `after_t3` (sha256 daftar `13b66778…`) → tidak ada
+  perubahan baru di `work/clips/` dan `out/` sejak run Tahap 3.
+
 ## Pitfall yang sudah diketahui
 
 ### P-001 — Temporal flicker / boiling 🔴 RISIKO TERTINGGI

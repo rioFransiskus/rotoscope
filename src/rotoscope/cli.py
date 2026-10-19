@@ -72,7 +72,7 @@ LABELS = {"ingest": "[1] ingest", "isolate": "[1b] isolate", "segment": "[2] seg
 MODULES = {"isolate": "rotoscope.isolate", "segment": "rotoscope.segment", "depth": "rotoscope.depth"}
 
 # Graf dependensi: ingest → {isolate, segment, depth} → stabilize → vectorize → stylize → export; depth TIDAK bergantung
-# pada segment; dalam T-605 tidak ada stage yang membaca isolate/ (T-606). --restart-from X = stage X (+ semua stage hilir
+# pada segment; [3] stabilize membaca isolate/ (T-606, D-012; masker berubah → stable/ basi lewat manifest). --restart-from X = stage X (+ semua stage hilir
 # kalau X = ingest) dijalankan dengan --restart. Hilir CPU yang basi dihitung ulang otomatis oleh stage-nya (prinsip #4);
 # cli tidak menghapusnya. ingest selalu menulis ulang.
 RESTART_SCOPE = {"ingest": ("isolate", "segment", "depth", "stabilize", "vectorize", "stylize", "export"),
