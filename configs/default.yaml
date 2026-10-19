@@ -101,6 +101,8 @@ stabilize:
     log_eps: 1.0e-6          # log(max(d, eps)) — hanya menahan disparity ≤ 0 (min klip uji 0.64)
     iqr_min: 0.01            # SEMENTARA — batas bawah pembagi IQR (log) foreground, dikalibrasi di T-302
     temporal: false          # EMA kedalaman; hanya berlaku kalau temporal.enabled. Tetap MATI (tanpa flow: ghost edge, id oklusi ×3; flow ditolak di T-303)
+  hole_fill:
+    enabled: true            # T-305f (VF): lubang background yang SELURUH cincinnya grup face → diisi face (sesudah kernel + mode filter, hanya peta grup; kedalaman tidak)
 
 # ── VECTORIZE [4] ──────────────────────────────────
 vectorize:

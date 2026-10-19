@@ -4182,6 +4182,352 @@ Dicatat SEBELUM scratch dihapus. Tanpa GPU; tanpa perubahan `src/` / `configs/` 
 - **F1** (`t606_hash.py after_t4`): 10 701 berkas, daftar hash byte-identik dengan `after_t3` (sha256 daftar `13b66778…`) → tidak ada
   perubahan baru di `work/clips/` dan `out/` sejak run Tahap 3.
 
+### Keputusan T-305f (VF: isi lubang di dalam muka, stage [3]), 2026-10-19 — Tahap 1 berjalan
+
+Dicatat SEBELUM skrip / kode ditulis. **Konteks:** T-305 induk Tahap 1b ("Aturan simulasi Tahap 1b", "Hasil Tahap 1b (diagnosis klip5)";
+`scripts/t305_1b.py`): "lingkaran di tengah muka" klip5 = lubang siluet, karena seg melabeli sebagian muka sebagai background. Aturan VF:
+wilayah background yang tidak menyentuh tepi frame dan seluruh cincin 1 px-nya berlabel grup face → diisi face, pada peta grup stabil
+(masukan [4]). Prototipe: klip5 18 / 23 lubang hilang (5 tidak terisi karena cincinnya menyentuh baju); `test`, Klip2, klip4 tidak berubah;
+klip3 1 piksel di f97, tetapi garis, gambar, dan MP4 identik byte. Rio menilai VF: lingkaran hilang tanpa merusak bagian lain (diterima).
+T-606 memasang masker target di `FrameCache.raw(k)` SEBELUM kernel [3]; VF dibandingkan di dua tempat (no. 2).
+
+**Keputusan Rio (final, 2026-10-19):**
+1. **Aturan PERSIS seperti prototipe** yang dinilai Rio; 5 lubang yang cincinnya menyentuh baju tetap TIDAK diisi.
+2. **Tempat pasang:** Tahap 1 membandingkan sesudah kernel [3] (P-post, seperti prototipe) vs sebelum kernel (P-pre, di `raw(k)`, seperti
+   T-606). Default: sesudah kernel, kecuali data menunjukkan alasan kuat.
+3. **Default AKTIF untuk semua klip** (perbaikan), dengan sakelar YAML untuk mematikan.
+4. **Dampak:** `stable/` semua klip basi → [3]–[6] dihitung ulang di CPU. Klip tanpa lubang muka harus identik isi dengan sekarang
+   (dibuktikan).
+5. **Uji:** test + mutasi; ukur di 6 klip (frame berubah, lubang terisi, lubang tidak terisi). Rio menilai video klip5 f0–f91
+   sebelum / sesudah.
+6. **Kriteria (ditetapkan sekarang):** lingkaran di muka klip5 hilang di frame yang lubangnya terisi, tanpa merusak bagian lain; klip lain
+   tidak berubah secara visual.
+
+**Aturan Tahap 1:** CPU saja; klip asli dan `out/` hanya dibaca; simulasi hanya di `work/t305f_scratch/` (ter-ignore lewat `work/`); keluaran
+analisis + F1 di `work/t305f/`; skrip `scripts/t305f_*.py`; tanpa perubahan `src/`, `configs/`, `tests/`; tanpa commit; tidak membuka PNG / MP4;
+semua berkas repo hanya lewat Edit / Write (tanpa `python -` / `python -c` penulis berkas, `cat >>`, `sed`, heredoc, `printf`, `echo >`,
+`Set-Content`; keluaran skrip yang dijalankan boleh); proses berat berurutan di foreground. **F1:** sha256 berkas lama 6 klip (`test`,
+`test_short`, Klip2, klip3, klip4, klip5) + `out/`, sebelum = sesudah (`qc_report.json` dikecualikan hanya untuk `created_utc`, dibuktikan
+bila berubah).
+
+### Hasil T-305f Tahap 1 (2026-10-19) — tempat pasang dibandingkan; rekomendasi = kandidat, menunggu keputusan Rio
+
+Skrip `scripts/t305f_tahap1.py` (`sim`, `render`, `lines`, `ringkas`) + `scripts/t305f_hash.py` (F1). [3] dihitung **in-process** dari input
+produksi (`FrameCache` asli + masker T-606 bila berlaku; folder klip hanya dibaca), varian ditulis ke `work/t305f_scratch/<VAR>/<klip>/`
+(berkas `stable/` yang sama dengan produksi di-hard-link), [4] + [5] seluruh klip di salinan. Keluaran analisis `work/t305f/`
+(`sim_<klip>.json`, `lines.json`, `ringkas.json`, `render.json`, F1). CPU saja.
+
+**Aturan VF persis** (`scripts/t305_1b.py::vf_fill`, dipakai apa adanya oleh skrip Tahap 1):
+1. Masukan = peta grup uint8 (0 = background, 1..G = urutan `groups:`); grup isi = id grup bernama `face` di `groups:` (default: kelas
+   Face_Neck, Eyeglass, bibir, gigi, lidah).
+2. Kandidat = komponen **4-arah** piksel background (`connectedComponentsWithStats`, connectivity 4 = konektivitas lubang [4]).
+3. Kandidat yang bbox-nya menyentuh tepi frame (x = 0, y = 0, x + w ≥ W, y + h ≥ H) dilewati.
+4. Cincin = dilasi 3 × 3 (tetangga **8-arah**) komponen dikurangi komponen itu, dibaca dari peta MASUKAN (bukan peta yang sedang diisi;
+   urutan komponen tidak berpengaruh). Piksel background lain yang hanya bersentuhan diagonal ikut di cincin → komponen tidak diisi.
+5. **Seluruh** piksel cincin = face → seluruh komponen diisi face. Tanpa batas ukuran; tanpa ambang lain.
+
+**Kontrol:** [3] in-process byte-identik dengan `stable/` produksi di **6 / 6 klip** (groups + depth_smooth: 283 + 119 + 122 + 182 + 217 +
+133 frame). Varian:
+- **PB** = P-post, keluaran saja: VF pada peta grup akhir (sesudah kernel + pulau + mode), `depth_smooth` tidak berubah (= prototipe 1b);
+- **PA** = P-post, peta terisi juga dipakai statistik foreground kedalaman (median log disparity);
+- **PR** = P-pre: VF pada argmax mentah di `raw(k)` sesudah masker T-606; piksel terisi → jumlah grup face one-hot (255) + grup seri face,
+  SEBELUM kernel.
+
+**Tabel P-post vs P-pre (`stable/`; seluruh klip):**
+
+| klip | PB frame berubah (wilayah; px) | PR: frame argmax mentah terisi (wilayah; px) | PR frame berubah (px) | PR berubah TANPA isi sendiri (tetangga lewat kernel) | PB ≠ PR frame (px) | PA: frame `depth_smooth` berubah |
+|---|---|---|---|---|---|---|
+| test (283) | 0 | 0 | 0 | — | 0 | 0 |
+| test_short (119) | 0 | 0 | 0 | — | 0 | 0 |
+| Klip2 (122) | 0 | 0 | 0 | — | 0 | 0 |
+| klip3 (182, masker T-606) | **0** | 39 (60; 141) | **17 (78)** | 7 frame (14 px): f50, 60, 76, 82, 94, 96, 113 | 17 (78) | 0 |
+| klip4 (217) | 0 | 0 | 0 | — | 0 | 0 |
+| **klip5 (133)** | **28 (44; 16 427)** | 52 (388; 12 189) | 52 (12 958) | 6 frame (81 px): f27, 33, 39–40, 52, 71 | 48 (8 133) | 13 (Δ maks 0,0044) |
+
+- **PB klip5 f0–f91 = prototipe persis:** 27 frame, 38 wilayah, 16 179 px (= `work/t305/1b/vfscan.json`); peta grup, strok contours, dan PNG
+  strokes f0–f91 **byte-identik dengan render prototipe VF 1b** (0 beda). Tambahan di luar lingkup prototipe: f101 (6 wilayah kecil, 248 px;
+  sesudah cut ke objek lain).
+- **klip3:** prototipe 1b mengubah 1 px di f97; peta produksi klip3 sekarang (bermasker T-606) tidak punya lubang yang memenuhi aturan → PB 0.
+  Lubang kecil bercincin ≥ 50% face di klip3: 9 (semua < 200 px, tidak digambar, tidak terisi karena cincin tidak 100% face).
+
+**Garis / gambar** ([4] + [5] seluruh klip di salinan; dibanding produksi):
+
+| varian / klip | frame PNG strokes berubah | geometri strok berubah DI LUAR frame `stable/` berubah | lubang muka Q1 (prod → varian) | T_high |
+|---|---|---|---|---|
+| PB klip5 | 22: f0–5, 11–14, 18–21, 25, 28–30, 68, 101, 108, 124 | f4–5 (lubang yang sama, titik awal lain: rantai anchor / track karena lubang f3 hilang), f14, 68, 108, 124 (1 strok oklusi bergeser per frame: ambang klip) | **23 → 5** (sisa f4–5, f28–30; f0–f91 = prototipe) | 0,011866 → 0,011857 |
+| PA klip5 | 24 (PB + f10, f22) | sama dengan PB | 23 → 5 | 0,011866 → 0,011857 |
+| PR klip5 | 50 | f41–44, 46–47 (geometri), f68, 124 | **23 → 10** (sisa juga f11, f18–21) | 0,011866 → 0,011860 |
+| PR klip3 | **13** (f18, 28, 56, 60–61, 76, 81–84, 94, 113, 140) | — | 0 → 0 | 0,0140782 → 0,0140781 |
+
+- Strok contours klip5 berbeda di 133 / 133 frame untuk semua varian, tetapi di luar frame di tabel hanya `track_id` (penomoran ulang karena
+  strok lubang hilang); jumlah strok per tipe PB: silhouette_hole 224 → 206, tipe lain sama (silhouette 494, group_boundary 2184, occlusion
+  1352).
+- Q1 = definisi 1b (strok silhouette_hole dengan ≥ 50% cincin luar 1–4 px = face). Definisi peta (cincin 1 px ≥ 50% face, ≥ 200 px) menemukan
+  27 lubang di klip5 (f0–f91: 26): PB mengisi 18, sisa 9 — f4–5 (torso 12 / 16 px cincin, = prototipe), f28–30 (torso 41–47 px), dan f2, f17,
+  f32, f101 (face hanya 51%, sisanya torso / rambut; tidak terhitung Q1).
+
+**Waktu tambahan per frame** (median / p95, ms; [3] sendiri ±343 ms / frame di 720 × 1280): PB **3,3–3,5 / 3,8–4,4** (480 × 854: 1,6; Klip2:
+1,3) ≈ +1%; PR (argmax mentah + VF + one-hot) **38,5–46,5 / 52–61** (≈ 13×); PA = PB + normalisasi kedalaman ulang di frame terisi.
+
+**Rekomendasi (kandidat, BUKAN keputusan): P-post keluaran saja (PB).** Alasan data:
+1. **Persis prototipe yang dinilai Rio** (keputusan no. 1): klip5 f0–f91 byte-identik sampai PNG strokes. PR dan PA tidak.
+2. **Klip tanpa lubang muka tidak berubah** (keputusan no. 4 / 6): PB mengubah 0 frame di 5 klip; PR mengubah klip3 (17 frame `stable/`,
+   13 frame PNG) karena bintik background mentah di dalam muka diisi lalu ikut kernel.
+3. **PR menutup lebih sedikit lingkaran** (13 vs 18 dari 23): di argmax mentah cincin lubang lebih sering menyentuh grup lain; frame
+   tetangga ikut berubah lewat kernel (6 frame klip5, 7 frame klip3).
+4. **Biaya:** PB +3,4 ms / frame vs PR +40–47 ms.
+5. **PA tidak memberi manfaat** (lubang sama dengan PB) tetapi menambah 2 frame berubah (f10, f22: oklusi lewat statistik kedalaman).
+Tidak ada alasan kuat untuk sebelum kernel → default keputusan no. 2 (sesudah kernel) didukung data.
+
+**Kontrak / basi (usulan):**
+- [3] **tidak punya `ALGO_REV`** (hanya [4] dan [5]); basi [3] digerakkan `stabilize_hash` (seluruh section) + `MANIFEST_MATCH_KEYS`. Usulan:
+  **tanpa `ALGO_REV` baru** — parameter di section `stabilize` → `stabilize_hash` semua klip berubah → `stable/` basi sekali (peringatan
+  `stabilize_hash: lama → baru`) → [4] basi (`stabilize_hash` + `stable_created_utc`) → [5] → [6]. Alternatif: konstanta `ALGO_REV` [3]
+  + key manifest `algo_rev` (manifest lama tanpa key → basi); hasilnya sama untuk T-305f, tetapi menambah mekanisme kedua.
+- **YAML:** `stabilize.hole_fill.enabled` (bool, default **true**) dan `stabilize.hole_fill.group` (string, default **"face"**, harus nama grup
+  di `groups:`; preseden `vectorize.depth_lines.exclude_groups`). Aturan (4-arah / cincin 8-arah / tepi frame / 100% / tanpa batas ukuran) =
+  konstanta struktural, bukan parameter. `enabled: false` → peta grup = sebelum T-305f (isi identik; tetap dihitung ulang sekali karena hash).
+- **Tempat di kode:** `run_stabilize`, sesudah `cache.final_depth(pos)` dan sebelum `write_groups` (kedalaman memakai peta sebelum VF = PB);
+  fungsi murni `fill_group_holes(gmap, group_id) → (peta, wilayah, px)`. `stable/frames.jsonl` + `hole_fill_regions`, `hole_fill_px`;
+  `fg_px` = peta yang ditulis.
+- **Interaksi T-606:** urutan masker (`raw(k)`, sebelum kernel) → kernel → argmax → pulau → mode → VF → tulis. Kunci terpisah: VF di
+  `stabilize_hash`, masker di key `isolate`; tidak saling mengubah. Frame `kosong` tetap kosong (background menyentuh tepi → tidak diisi).
+  klip3 bermasker: VF 0 frame. `--limit` / `--preview`: VF per frame tanpa jendela → frame prefiks = run penuh.
+
+**Test + mutasi (rancangan Tahap 2):** berkas baru `tests/test_stabilize_hole_fill.py` + oracle salinan prototipe `tests/hole_fill_oracle.py`:
+- unit: lubang tertutup terisi; menyentuh tiap tepi frame tidak; satu piksel cincin grup lain tidak; tetangga background diagonal tidak;
+  dua komponen bersentuhan diagonal dinilai terpisah dari peta masukan; tanpa batas ukuran; grup lain (`group: torso`); peta tanpa face /
+  kosong; jumlah wilayah / px; setara oracle pada peta acak (seed tetap);
+- integrasi [3] (klip sintetis): lubang muka mentah → `stable/groups` terisi, `depth_smooth` byte-identik dengan `enabled: false`; klip tanpa
+  lubang → `enabled` true = false byte-identik; `frames.jsonl`; `--limit` prefiks; masker T-606 + VF (frame `kosong` tetap kosong);
+- basi: `enabled` / `group` berubah → basi; manifest lama tanpa `hole_fill` → basi sekali;
+- config: default, grup tidak dikenal / bukan string / `enabled` bukan bool ditolak; blok YAML docs/02 sinkron.
+- **±16 mutan** (`scripts/t305f_mutations.py`): komponen 8-arah · cincin 4-arah · cek tepi dihapus · tepi `>=` → `>` · `all` → `any` · isi
+  id salah · cincin dibaca dari peta yang sedang diisi · VF sebelum mode filter · VF di `raw(k)` · VF ikut statistik kedalaman · `enabled`
+  diabaikan (selalu aktif / selalu mati) · `group` diabaikan · batas ukuran disisipkan · `frames.jsonl` tidak diisi · validasi grup dihapus.
+
+**Teks usulan dokumen (ditulis di Tahap 2):**
+- **docs/01 [3]**, langkah baru sesudah langkah 5: "5b. **Isi lubang grup (VF, T-305f):** komponen background 4-arah yang tidak menyentuh
+  tepi frame dan seluruh cincin 1 px (8-arah, dibaca dari peta sebelum diisi) = grup `stabilize.hole_fill.group` (default face) → diisi
+  grup itu; tanpa batas ukuran. Pada peta akhir (sesudah kernel, pulau, mode), hanya untuk `stable/groups`; normalisasi kedalaman memakai
+  peta sebelum VF. Lubang yang cincinnya menyentuh grup lain (mis. baju) tidak diisi." + baris basi: "`stabilize.hole_fill.*` ada di
+  `stabilize_hash`; T-305f membuat `stable/` semua klip basi sekali; isi klip tanpa lubang tidak berubah." + `frames.jsonl`.
+- **docs/02**: blok YAML `hole_fill:` (enabled true, group "face") + baris validasi `stabilize.hole_fill.enabled` (bool) dan
+  `stabilize.hole_fill.group` (nama di `groups:`).
+- **CLAUDE.md** baris 3: "T-305f: VF = lubang background yang seluruh cincinnya grup face diisi face, sesudah kernel + mode filter, hanya
+  peta grup (kedalaman tidak); `stabilize.hole_fill.enabled` (default true) / `group` (face); basi lewat `stabilize_hash`."
+
+**Rencana Tahap 2–3:**
+- **Tahap 2:** `stabilize.py` + `config.py` + `configs/default.yaml` + docs/02 blok YAML; test + mutasi; suite penuh per potongan berkas
+  (< 8 menit per potongan, berurutan).
+- **Tahap 3 (CPU):** salin `out/klip5.mp4` ke `work/t305f/` (pembanding "sebelum"); `python -m rotoscope run samples/<klip>.mp4` untuk 6 klip
+  berurutan, tanpa `--yes` ([1b] klip3 up-to-date → tanpa GPU; [2] / [2c] dilewati) → [3]–[6] dihitung ulang (perkiraan ±25 menit total).
+  **Bukti identik isi** vs F1 `before`: 5 klip — `stable/groups` + `depth_smooth`, PNG + SVG strokes, `out/svg/`, MP4 byte-identik;
+  contours: isi strok identik (beda hanya hash / cap waktu / manifest); klip5 — berubah HANYA frame PB (28 `groups`, 0 `depth_smooth`),
+  contours / strokes byte-identik dengan salinan PB Tahap 1. **Video** `work/t305f/nilai/klip5_f000-091.mp4` (FOTO | SEBELUM | SESUDAH,
+  label besar, bar detik) + `_lambat_0.5x` + `PENILAIAN.md` (lingkaran di muka hilang? (detik) · bagian lain rusak? (detik) · klip lain
+  berubah secara visual? · setuju default aktif?).
+
+**F1:** `before` = 10 701 berkas, identik dengan F1 penutupan T-606; `after` (sesudah semua sim + render): hilang 0, berubah 0, tambahan 0;
+`qc_report.json` tidak berubah. `src/`, `configs/`, `tests/` tidak berubah.
+
+**Penyimpangan / keraguan:**
+1. Selain P-post / P-pre diukur sub-varian PA (tidak diminta) untuk memutuskan apakah kedalaman ikut peta terisi.
+2. "Lubang tidak terisi" bergantung definisi: Q1 (1b) 5, definisi peta 9; yang dilaporkan prototipe = Q1.
+3. f101 klip5 (sesudah cut) ikut berubah di produksi; tidak termasuk bahan yang dinilai Rio di 1b (lingkup f0–f91).
+4. Oklusi bergeser di f14 / 68 / 108 / 124 klip5 karena ambang per klip turun 0,08% — efek global kecil yang juga ada di prototipe (f14, 68).
+5. Nama parameter `hole_fill.group` = usulan; alternatif: hanya `enabled`, grup "face" sebagai konstanta.
+
+### Keputusan T-305f setelah Tahap 1 (2026-10-19) — Tahap 2–3 dimulai
+
+Dicatat SEBELUM kode produksi ditulis.
+
+**Keputusan Rio (final):**
+1. **Tempat pasang = PB:** sesudah kernel (peta grup akhir sesudah pulau + mode), HANYA peta grup yang ditulis (`stable/groups`);
+   normalisasi kedalaman memakai peta sebelum VF (`depth_smooth` tidak berubah).
+2. **Tanpa `ALGO_REV` [3].** Parameter di section `stabilize` → `stabilize_hash` berubah → semua klip dihitung ulang sekali; hasil 5 klip
+   tanpa lubang (`test`, `test_short`, Klip2, klip3, klip4) harus byte-identik.
+3. **Parameter hanya `stabilize.hole_fill.enabled`** (default `true`); grup "face" = konstanta kode (bukan parameter YAML).
+4. **Lubang yang tidak terisi diterima apa adanya:** 5 menurut definisi prototipe (Q1: f4–5, f28–30, cincin menyentuh baju); 4 lainnya
+   (definisi peta: f2, f17, f32, f101) cincinnya hanya ±51% face.
+5. **Varian PA DITOLAK** (kedalaman tidak ikut peta terisi).
+6. **Video penilaian = klip5 PENUH (f0–f132)**, bukan hanya f0–f91.
+
+**Lingkup Tahap 2–3 (tanpa GPU, tanpa commit):** Tahap 2 = VF di `run_stabilize` sesudah `final_depth`, sebelum `write_groups`;
+`frames.jsonl` + `hole_fill_regions` / `hole_fill_px`; config + validasi + `configs/default.yaml` + docs/02; `tests/test_stabilize_hole_fill.py`
++ oracle salinan prototipe (`vf_fill`); ±16 mutan (tiap mutan menggagalkan ≥ 1 test); suite penuh per potongan; teks docs/01 + CLAUDE.md.
+Tahap 3 = `out/klip5.mp4` lama disimpan di `work/t305f/` sebagai pembanding; `run` 6 klip berurutan tanpa `--yes`; 5 klip byte-identik
+(`stable/`, PNG + SVG, `out/svg/`, MP4; isi strok contours); klip5 berubah hanya di frame PB = salinan PB Tahap 1; bahan
+`work/t305f/nilai/klip5_penuh_berdampingan.mp4` + `_lambat` (FOTO | SEBELUM | SESUDAH, f0–f132) + `PENILAIAN.md`. **F1:** berkas lama identik
+kecuali yang memang berubah (klip5 `stable/` / `contours/` / `strokes/` / `out/`; manifest semua klip karena hash; `created_utc`
+`qc_report.json`), dilaporkan per folder.
+
+### Hasil T-305f Tahap 2–3 (2026-10-19) — VF produksi (PB); menunggu penilaian Rio klip5 penuh
+
+Tanpa GPU; tanpa commit; semua berkas repo lewat Edit / Write.
+
+**Berkas:**
+- **diubah:** `src/rotoscope/stabilize.py`, `src/rotoscope/config.py`, `configs/default.yaml`, `tests/test_config.py`
+  (`test_groups_replaced_whole`), docs/01, docs/02, docs/04, docs/05, CLAUDE.md;
+- **baru:** `tests/test_stabilize_hole_fill.py` (31 fungsi test, 86 kasus), `tests/hole_fill_oracle.py` (salinan `vf_fill` prototipe),
+  `scripts/t305f_mutations.py`, `scripts/t305f_tahap3.py`; dari Tahap 1: `scripts/t305f_hash.py`, `scripts/t305f_tahap1.py`.
+
+**Implementasi:**
+- `stabilize.py`: `fill_group_holes(gmap, group_id)` (fungsi murni, aturan prototipe); `hole_fill_group_id(cfg)`. Di `run_stabilize` VF
+  dipanggil sesudah `cache.final_depth(pos)` dan sebelum `write_groups`, pada salinan peta (cache tidak berubah, jadi kedalaman tetap dari
+  peta sebelum VF). `frames.jsonl` + `hole_fill_regions` / `hole_fill_px` (hanya bila aktif); `fg_px` = peta yang ditulis. Log run
+  "…, VF face)" dan per frame "VF n wil / px".
+- `config.py`: `HoleFillConfig(enabled = True)` di `StabilizeConfig.hole_fill`; konstanta `HOLE_FILL_GROUP = "face"`; validasi
+  `enabled` true tanpa grup `face` di `groups:` → ConfigError (preseden `exclude_groups`). `configs/default.yaml` + blok YAML docs/02
+  (`stabilize.hole_fill.enabled: true`) + baris validasi docs/02.
+- **Tanpa `ALGO_REV` [3]; manifest [3] tanpa key baru** — `hole_fill` ada di dict `stabilize` → `stabilize_hash` 7ac41b8db42a →
+  ef66832865e2 di keenam klip.
+
+**Test** (`tests/test_stabilize_hole_fill.py`):
+- unit: lubang tertutup (masukan tidak diubah); menyentuh tiap tepi frame (4); satu piksel cincin grup lain di sisi / pojok diagonal;
+  tetangga background diagonal (komponen terpisah, saling memblokir); tanpa batas ukuran (1 px, 150 × 150); lubang berisi pulau grup
+  lain; lubang bersarang; grup lain hanya bila diminta; peta tanpa lubang (3); **setara oracle prototipe pada 40 peta acak × 2 grup** +
+  penjaga (peta acak memuat lubang terisi dan tidak terisi); `hole_fill_group_id`;
+- integrasi [3] (klip sintetis 10 frame, temporal default, cut f6): lubang muka T dan N terisi, hanya background → face, `depth_smooth`
+  byte-identik dengan `enabled: false` + penjaga (kedalaman dari peta terisi memang berbeda); `enabled: false` = `clean_groups` apa adanya
+  (perilaku lama, tanpa key `hole_fill` di log); klip tanpa lubang: aktif = mati byte-identik; bintik Torso 1 px di cincin dihapus
+  filter pulau lalu VF mengisi (membedakan VF sesudah pulau / mode dari P-pre dan VF sebelum pulau); `frames.jsonl` + pesan log;
+  `--limit` prefiks; masker T-606 ([1b] ASLI + SAM tiruan): lubang target terisi, N dibuang di adegan berklik, N digambar + terisi di
+  adegan tanpa klik; frame `kosong` tetap kosong;
+- basi: `enabled` berubah → basi dua arah; manifest lama tanpa `hole_fill` (hash section lama) → basi sekali lalu tidak; hash hanya
+  `stabilize` yang berubah;
+- config: default true; `enabled` bukan bool ditolak (5); `hole_fill.group` ditolak (bukan parameter); `groups` tanpa face → ConfigError,
+  dengan `enabled: false` diterima; section YAML terbaca;
+- klip nyata (6, dilewati bila `stable/` belum dihitung dengan VF): VF lagi tidak mengubah frame mana pun (idempoten).
+- **Mutasi** (`scripts/t305f_mutations.py`, 2 potongan berurutan): kontrol lolos (80 lolos / 6 skip); **19 / 19 mutan menggagalkan ≥ 1
+  test**: 01 komponen 8-arah · 02 cincin 4-arah · 03 cek tepi dihapus · 04 tepi atas / kiri tidak dicek · 05 tepi kanan `>=`→`>` ·
+  06 tepi bawah `>=`→`>` · 07 `all`→`any` · 08 id isi salah · 09 batas ukuran disisipkan · 10 VF sebelum filter pulau · 11 VF di
+  `raw(k)` (P-pre) · 12 VF ikut statistik kedalaman (PA) · 13 `enabled` diabaikan · 14 VF tidak pernah jalan · 15 grup pengisi salah ·
+  16 `hole_fill` tidak ikut `stabilize_hash` · 17 `frames.jsonl` tanpa `hole_fill` · 18 `fg_px` tidak ikut piksel terisi · 19 validasi
+  grup face dihapus. Dua mutan SETARA tidak dimasukkan (dijelaskan di docstring skrip): cincin dibaca dari peta yang sedang diisi; VF
+  sebelum `final_depth` di loop.
+- **Suite penuh** — 6 potongan, berurutan di foreground, 34 berkas test tepat sekali:
+
+  | potongan | lolos / skip / gagal | detik |
+  |---|---|---|
+  | 1 cli, clip_identity, config, cut_diff, depth | 349 / 1 / 0 | 24,3 |
+  | 2 export, export_paper, export_strokes, ingest | 112 / 0 / 0 | 105,5 |
+  | 3 isolate, noise, paper, pick, presets, preview | 229 / 2 / 0 | 29,5 |
+  | 4 segment, segment_qc, stabilize, stabilize_hole_fill, stabilize_temporal, stage_common, target_mask, temporal_metrics, track | 423 / 7 / 0 | 48,9 |
+  | 5 stylize (5 berkas) | 252 / 0 / 0 | 170,9 |
+  | 6 vectorize (5 berkas) | 185 / 0 / 0 | 147,2 |
+  | **total** | **1 550 / 10 / 0** | ±526 |
+
+  Skip = 4 test GPU / bobot SAM (sama dengan T-606) + 6 test klip nyata VF (sebelum run Tahap 3). Sesudah run Tahap 3:
+  `test_stabilize_hole_fill.py` + `test_preview.py` + `test_clip_identity.py` = **154 lolos, 0 skip** (6 test klip nyata berjalan + lolos).
+
+**Run nyata Tahap 3 (CPU, `python -m rotoscope run samples/<klip>.mp4` tanpa `--yes`, berurutan; log `work/t305f/run/`):**
+
+| klip | rc, wall | [3] basi | [3] / [4] / [5] / [6] (s) | SVG disalin |
+|---|---|---|---|---|
+| test | 0, 196,9 s | `stabilize_hash` 7ac41b8db42a → ef66832865e2 | 47,6 / 28,5 / 59,2 / 26,4 | 0 |
+| test_short | 0, 91,5 s | sama | 20,0 / 12,8 / 24,0 / 11,8 | 0 |
+| Klip2 | 0, 61,8 s | sama | 15,8 / 9,4 / 12,2 / 3,2 | 0 |
+| klip3 | 0, 254,2 s ([1b] up-to-date tanpa GPU; masker dipakai f85–f125) | sama | 70,5 / 54,2 / 61,1 / 23,8 | 0 |
+| klip4 | 0, 253,7 s | sama | 80,3 / 52,1 / 50,1 / 24,4 | 0 |
+| klip5 | 0, 203,3 s | sama | 57,4 / 44,3 / 47,7 / 17,0 | 22 |
+
+[2] / [2c] 0 diproses di semua klip (stderr hanya PERINGATAN QC lama: klip3 f121, klip5 6 frame).
+
+**Verifikasi** (`scripts/t305f_tahap3.py cek` → `work/t305f/cek_t3.json`; pembanding dibuat sebelum run: F1 `before_t3`, salinan
+`contours/` lama, salinan `out/klip5.mp4` lama):
+- **5 klip tanpa lubang (`test`, `test_short`, Klip2, klip3, klip4):** `stable/groups` + `depth_smooth`, PNG + SVG strokes, `out/svg/`,
+  dan **MP4 byte-identik**; strok contours identik di semua frame (JSON frame berbeda HANYA di `source` + `prev_sha256`); T_high / T_low
+  sama; manifest [3] berbeda hanya `created_utc`, `stabilize` (+ `hole_fill`), `stabilize_hash`; `frames.jsonl` 0 wilayah VF.
+- **klip5:** peta grup berubah di **28 frame** (f0–3, 6, 10–13, 15, 18–25, 28–31, 38, 45, 48, 63–64, **101**; 44 wilayah, 16 427 px);
+  `depth_smooth` 0; geometri strok + PNG + SVG + `out/svg` berubah di **22 frame** (f0–5, 11–14, 18–21, 25, 28–30, 68, **101, 108,
+  124**); strok berbeda di 133 / 133 frame, di luar 22 frame itu hanya `track_id` (penomoran ulang karena strok lubang hilang); T_high
+  0,011866 → 0,011857, T_low 0,0066732 → 0,0066717. **Sama dengan salinan PB Tahap 1:** `stable/` (peta + kedalaman), strok contours, PNG +
+  SVG strokes byte-identik di 133 / 133 frame, `clip_stats` sama.
+
+**Bahan** `work/t305f/nilai/`: `klip5_penuh_berdampingan.mp4` (FOTO | SEBELUM | SESUDAH, f0–f132, 1644 × 1146, 133 frame, 24 fps; label
+besar, panel kanan "SESUDAH +VF" di frame yang diisi, bar detik + frame) + `klip5_penuh_berdampingan_lambat.mp4` (266 frame) +
+`PENILAIAN.md` (frame / detik yang berubah, lubang yang tidak diisi, template 4 pertanyaan). SEBELUM = `work/t305f/klip5_sebelum.mp4`
+(salinan `out/klip5.mp4` lama, sha256 e398271e…). Isi video tidak dibuka Claude Code (dicek `ffprobe`).
+
+**F1** (`t305f_hash.py before_t3` / `after_t3`): 10 701 → 10 701 berkas, hilang 0, tambahan 0; berubah 1 206, semuanya terkategori
+(kategori "lainnya" = 0): isi klip5 228 (`stable/` 28 + `contours/` 133 + `strokes/` 44 + `out/svg/klip5` 22 + `out/klip5.mp4`); metadata
+49 (manifest / `frames.jsonl` / `clip_stats.json` / penanda `out/svg` / `out/<klip>.export.json`); JSON frame contours klip lain 923
+(`source` + `prev_sha256`; isi strok dicek identik); `qc_report.json` 6 — HANYA `created_utc` (sha256 ternormalisasi sama).
+
+| folder | berubah |
+|---|---|
+| `work/clips/klip5/stable/` | 30 (28 `groups` + `manifest.json` + `frames.jsonl`) |
+| `work/clips/klip5/contours/` | 136 (133 frame + `manifest.json` + `clip_stats.json` + `frames.jsonl`) |
+| `work/clips/klip5/strokes/` | 46 (22 PNG + 22 SVG + `manifest.json` + `frames.jsonl`) |
+| `out/klip5.mp4`, `out/svg/klip5/` | 1, 23 (22 SVG + penanda) |
+| `work/clips/{test,test_short,Klip2,klip3,klip4}/stable/` | 2 per klip (`manifest.json` + `frames.jsonl`) |
+| `work/clips/{test,test_short,Klip2,klip3,klip4}/contours/` | 286 / 122 / 125 / 185 / 220 (semua JSON frame + 3 metadata) |
+| `work/clips/{test,test_short,Klip2,klip3,klip4}/strokes/` | 2 per klip (`manifest.json` + `frames.jsonl`) |
+| `out/<klip>.export.json` | 6 |
+| `qc_report.json` | 6 (hanya `created_utc`) |
+
+**Penyimpangan / keraguan:**
+1. `tests/test_config.py::test_groups_replaced_whole` diubah (override `stabilize.hole_fill.enabled: false`): grup kustom tanpa `face` kini
+   ditolak bila VF aktif (validasi baru). Perilaku baru untuk config dengan `groups:` kustom.
+2. Mutan 19 (bukan ±16); dua mutan setara dikeluarkan dengan alasan tertulis.
+3. **Bug test ditemukan saat mutasi dan diperbaiki sebelum angka final:** `hole_px` dipanggil dengan tumpukan (N, H, W) → irisan kosong →
+   beberapa assert lolos tanpa menguji. Ketahuan karena mutan 10 tidak tertangkap test "bintik"; didiagnosis dengan skrip sementara di
+   scratchpad sesi (di luar repo). `hole_px` kini memeriksa 2-D + ukuran 20 px; mutasi dan suite diulang sesudahnya.
+4. `out/<klip>.mp4` 5 klip di-encode ulang oleh [6] (basi lewat rantai manifest) tetapi hasilnya byte-identik.
+5. Run menulis ulang `qc_report.json` keenam klip (perilaku [2] lama, backlog yang sudah ada).
+6. Salinan pembanding: `work/t305f/klip5_sebelum.mp4` (4,4 MB) + `work/t305f_scratch/before/` (1 080 berkas, 68 MB) — dihapus / dipindah
+   saat Tahap 4.
+
+### Penilaian Rio T-305f (2026-10-19)
+
+Atas `work/t305f/nilai/klip5_penuh_berdampingan.mp4` + `_lambat.mp4` (FOTO | SEBELUM | SESUDAH, klip5 f0–f132), template `PENILAIAN.md`:
+1. Lingkaran lubang muka berkurang nyata: **ya**.
+2. Ada kerusakan visual di klip5: **ya** — menurut Rio berasal dari **proses lain, bukan VF**. **Detik: tidak dicatat — periksa saat
+   pengolahan khusus klip5.** Status: **di luar lingkup T-305f** → backlog "pengolahan khusus klip5".
+3. Klip lain tidak berubah secara visual: **ya** (sesuai data: 5 klip byte-identik termasuk MP4).
+4. Nilai klip5 sesudah VF: **3 — diterima**.
+
+### Keputusan akhir T-305f (2026-10-19) — DONE
+
+Dicatat SEBELUM scratch dihapus. Tanpa GPU; tanpa perubahan `src/` / `configs/` / `tests/` di Tahap 4.
+
+**Keputusan:**
+1. **T-305f DONE.** VF tetap **default aktif** (`stabilize.hole_fill.enabled: true`): lubang background 4-arah yang tidak menyentuh tepi
+   frame dan seluruh cincin 1 px-nya (8-arah) = grup face → diisi face, sesudah kernel + pulau + mode, hanya `stable/groups` (PB).
+   Kriteria keputusan no. 6 terpenuhi: lingkaran di muka klip5 berkurang nyata di frame yang lubangnya terisi; klip lain tidak berubah
+   (visual: Rio; data: byte-identik). Kerusakan visual klip5 yang dilaporkan Rio bukan dari VF → backlog.
+2. **Batas yang diketahui:** lubang yang cincinnya menyentuh grup lain tidak diisi (klip5: Q1 f4–5, f28–30; definisi peta juga f2, f17,
+   f32, f101 dengan cincin ±51% face); satu garis oklusi bisa bergeser di frame lain karena ambang [4] per klip ikut berubah (klip5:
+   f14, 68, 108, 124; T_high −0,08%); di frame berikutnya lubang yang sama bisa digambar dengan titik awal lain (rantai track, f4–5).
+3. **Data ter-track:** `scripts/t305f_data.json` (format `t305f-data/1`, 25 106 B): aturan + keputusan, penilaian Rio, Tahap 1 (P-post /
+   P-pre / PA per klip, garis / gambar, waktu, kesetaraan prototipe), mutasi 19 / 19, suite, Tahap 3 (`stabilize_hash` 7ac41b8db42a →
+   ef66832865e2, run 6 klip, verifikasi, frame klip5 yang berubah, F1), bahan. Disusun `scripts/t305f_data.py susun` (hanya membaca
+   `work/t305f/`), ditulis lewat Write, `t305f_data.py cek` = byte-identik.
+
+**Pelaksanaan penutupan (Tahap 4, 2026-10-19; tanpa GPU):**
+- **Dokumen:** docs/04 (penilaian + keputusan ini), docs/05 (T-305f DONE, Phase 3 5/11, total 38/49, catatan backlog klip5), CLAUDE.md
+  baris 3 (T-305f DONE).
+- **F4:**
+  - `T305f-prompt.md` (4 391 B, tidak ter-track) dihapus;
+  - `work/t305f_scratch/` dihapus: 4 032 berkas, 1 489 632 342 B terhitung (salinan varian PB / PA / PR klip3 + klip5, salinan `contours/`
+    lama 6 klip + manifest [3] lama, log render); 1 013 berkas di antaranya berbagi inode dengan berkas lain (hard link Tahap 1 ke berkas
+    `stable/` produksi LAMA — produksi sudah ditulis ulang atomik di Tahap 3, jadi produksi tidak terpengaruh; dibuktikan F1 `after_t4`);
+    disk C: bebas 22,97 → 23,41 GiB (+464 891 904 B);
+  - `work/t305f/` DIPERTAHANKAN sebagai arsip (40 berkas, 22 654 175 B): `nilai/` (`klip5_penuh_berdampingan.mp4` 4 592 193 B,
+    `_lambat.mp4` 6 062 591 B, `PENILAIAN.md`), `klip5_sebelum.mp4` (4 391 564 B), daftar hash F1, `sim_*.json`, `lines.json`,
+    `ringkas.json`, `cek_t3.json`, `mutations.json`, `bahan.json`, `render.json`, log run Tahap 3, `t305f_data.json`.
+- **F1** (`t305f_hash.py after_t4`, sesudah F4): 10 701 berkas, daftar hash byte-identik dengan `after_t3` (sha256 daftar `b56ab9cf…`) →
+  tidak ada perubahan di `work/clips/` dan `out/` sejak run Tahap 3.
+- **Test sesudah penutupan:** `tests/test_stabilize_hole_fill.py` 86 lolos (termasuk 6 test klip nyata), `tests/test_config.py` 183 lolos;
+  0 gagal.
+- **Skrip F3 yang bergantung pada scratch yang dihapus:**
+  - `t305f_tahap1.py`: `render`, `lines`, `ringkas` (bagian garis) butuh salinan varian → dibuat ulang oleh `sim`; **catatan:** `sim`
+    membandingkan [3] in-process TANPA VF dengan `stable/` produksi, dan produksi klip5 kini SUDAH ber-VF → kontrol klip5 gagal di 28
+    frame (pembanding "sebelum T-305f" tidak lagi ada di produksi);
+  - `t305f_tahap3.py cek`: butuh `before/` + salinan PB → gagal; `bahan` mandiri (`work/t305f/klip5_sebelum.mp4` + `out/klip5.mp4`);
+  - mandiri: `t305f_hash.py`, `t305f_mutations.py`, `t305f_data.py`.
+
 ## Pitfall yang sudah diketahui
 
 ### P-001 — Temporal flicker / boiling 🔴 RISIKO TERTINGGI

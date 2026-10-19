@@ -558,6 +558,17 @@ dan temporal fill tidak cukup. D-002 (pose hanya fallback, bukan primary) tetap 
   5. **Mode filter** peta grup K×K (`stabilize.mode_k`, K = 3): hitungan per grup = box filter tanpa
      normalisasi (`BORDER_REPLICATE`) + 0.5 untuk grup asli piksel; background ikut dihitung. Seri →
      grup asli; seri antara grup lain → id terkecil. K = 1 → mati.
+  5b. **Isi lubang grup face (VF, T-305f; `stabilize.hole_fill.enabled`, default `true`):** komponen background **4-arah**
+     (konektivitas lubang [4]) yang tidak menyentuh tepi frame (bbox x = 0, y = 0, x + w ≥ W, y + h ≥ H dilewati) dan yang
+     SELURUH cincin 1 px-nya (**8-arah**: dilasi 3 × 3 dikurangi komponen, dibaca dari peta sebelum diisi) = grup `face` → diisi
+     `face`. Tanpa batas ukuran. Grup pengisi = konstanta kode `HOLE_FILL_GROUP` "face" (bukan parameter); `enabled: true` tanpa
+     grup `face` di `groups:` → ConfigError. **Tempat (PB, keputusan Rio):** di `run_stabilize` sesudah langkah 6 dan sebelum
+     `write_groups` — peta akhir (sesudah kernel + pulau + mode), HANYA `stable/groups` yang berubah; normalisasi kedalaman memakai
+     peta SEBELUM VF (`depth_smooth` tidak berubah). Lubang yang cincinnya menyentuh grup lain (mis. baju) TIDAK diisi (diterima,
+     docs/04 "Keputusan T-305f setelah Tahap 1"). Urutan dengan T-606: masker (`raw(k)`, sebelum kernel) → kernel → pulau → mode
+     → VF; frame `kosong` tetap kosong. Per frame tanpa jendela → `--limit` / `--preview` prefiks = run penuh. Ditolak: sebelum
+     kernel (P-pre: klip tanpa lubang ikut berubah, menutup lebih sedikit, ±13× lebih mahal) dan VF ikut statistik kedalaman (PA).
+     Biaya ±3,4 ms / frame (720 × 1280; ±1% [3]). Aturan = prototipe `scripts/t305_1b.py::vf_fill` (oracle `tests/hole_fill_oracle.py`).
   6. **Kedalaman:** normalisasi **per frame** (disparity DA hanya benar sampai skala + offset per
      frame; kedalaman mentah tidak boleh langsung di-EMA), lalu temporal (kalau `temporal.enabled` **dan**
      `stabilize.depth.temporal`; default dan tetap MATI: flow ditolak di T-303). `stabilize.depth.normalize` (T-302, diukur pada kedua klip uji):
@@ -588,7 +599,7 @@ dan temporal fill tidak cukup. D-002 (pose hanya fallback, bukan primary) tetap 
 | `stable/groups/frame_%05d.png` | id grup: 0 = background, 1..G = urutan `groups:` di YAML | uint8 | kerja | ±2.4 MB (±6.6 KB/frame, terukur T-106) |
 | `stable/depth_smooth/frame_%05d.npy` | kedalaman ternormalisasi per frame (+ temporal) | float16 | kerja | 295 MB (820 KB/frame) |
 | `stable/manifest.json` | **`temporal`** (T-302: `{enabled: false}`, atau `enabled`, `radius`, `depth_radius`, `cut_frames`, `qc_fail_frames`), section `stabilize` + `stabilize_hash`, `groups` + `groups_hash`, referensi `seg/manifest.json` (model, model id, revision, precision, processor, `num_labels`, frame_size, classes, `created_utc`) + `depth/manifest.json` (model id, revision, lisensi, precision, processor, ukuran input, output, frame_size, `created_utc`), frame_size, `clip` (identitas klip, T-108); T-606: `isolate` (kunci + sidik label [1b], adegan, status, `target_mask`) HANYA bila masker dipakai | – | – | kecil |
-| `stable/frames.jsonl` | log per frame: waktu per langkah, piksel seri, piksel berubah di filter pulau / mode, luas foreground, `depth_finite`, statistik normalisasi (region, median + IQR log, clamp) + min / median / maks `depth_smooth`; T-606: `isolate` (status, jumlah komponen utuh / potong / buang, potongan dibuang, piksel F / dibuang) HANYA di frame yang dimasker | – | – | kecil |
+| `stable/frames.jsonl` | log per frame: waktu per langkah, piksel seri, piksel berubah di filter pulau / mode, luas foreground, `depth_finite`, statistik normalisasi (region, median + IQR log, clamp) + min / median / maks `depth_smooth`; T-606: `isolate` (status, jumlah komponen utuh / potong / buang, potongan dibuang, piksel F / dibuang) HANYA di frame yang dimasker; T-305f: `hole_fill_regions` + `hole_fill_px` (HANYA bila `hole_fill.enabled`; `fg_px` = peta yang ditulis, termasuk piksel terisi) | – | – | kecil |
 
 - **Tulis atomik + `*.tmp`:** aturan sama dengan [2] (helper `stage_common.py`).
 - **Resume:** frame dilewati kalau `groups` valid (PNG uint8, ukuran = frame, id ≤ G) **dan**
@@ -621,6 +632,10 @@ dan temporal fill tidak cukup. D-002 (pose hanya fallback, bukan primary) tetap 
   `--preview` / `--limit`: H per frame sebelum kernel → frame prefiks = frame run penuh; `--preview` menjalankan [3] apa adanya
   (masker dipakai bila berlaku; [1b] tidak dijalankan preview). `--restart-from isolate --yes` → label baru → [3] basi lewat
   `labels_sha256`; `--restart-from stabilize` → dihitung ulang dengan masker bila berlaku.
+- **Basi (T-305f):** `stabilize.hole_fill` ada di section `stabilize` → ikut `stabilize_hash`; [3] TIDAK punya `ALGO_REV` (keputusan Rio).
+  Pemasangan T-305f membuat `stable/` SEMUA klip basi sekali (peringatan `stabilize_hash: lama → baru`) → [4] basi (`stabilize_hash` +
+  `stable_created_utc`) → [5] → [6]. Isi klip tanpa lubang yang memenuhi aturan tidak berubah (byte-identik; terbukti di 5 klip, docs/04
+  "Hasil T-305f Tahap 2–3"). Mengubah `enabled` → basi lagi; `false` = peta grup sebelum T-305f.
 - **CLI** (T-104b): `python -m rotoscope stabilize <video> [--config PATH] [--restart] [--limit N]`; di dalam `run`
   dipanggil in-process `stabilize.main([--work-dir <folder klip>, …])` (`--work-dir DIR` menang atas
   `paths.work_dir`). `--restart` stage CPU tidak butuh `--yes`. Exit code sama dengan [2]: 0 sukses, 1 prasyarat

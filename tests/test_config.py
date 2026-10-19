@@ -131,7 +131,8 @@ def test_overrides_dotted_keys_applied_after_yaml(tmp_path):
 
 def test_groups_replaced_whole():
     rest = [c for c in load_class_names()[1:] if c != "Hair"]
-    p = load_pipeline(overrides={"groups": {"body": rest, "hair": ["Hair"]}})
+    p = load_pipeline(overrides={"groups": {"body": rest, "hair": ["Hair"]},
+                                 "stabilize.hole_fill.enabled": False})       # tanpa grup face: VF (T-305f) harus dimatikan
     assert [n for n, _ in p.groups] == ["body", "hair"]
 
 

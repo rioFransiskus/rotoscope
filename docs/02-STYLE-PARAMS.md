@@ -115,6 +115,8 @@ stabilize:
     log_eps: 1.0e-6          # log(max(d, eps)) — hanya menahan disparity ≤ 0 (min klip uji 0.64)
     iqr_min: 0.01            # SEMENTARA — batas bawah pembagi IQR (log) foreground, dikalibrasi di T-302
     temporal: false          # EMA kedalaman; hanya berlaku kalau temporal.enabled. Tetap MATI (tanpa flow: ghost edge, id oklusi ×3; flow ditolak di T-303)
+  hole_fill:
+    enabled: true            # T-305f (VF): lubang background yang SELURUH cincinnya grup face → diisi face (sesudah kernel + mode filter, hanya peta grup; kedalaman tidak)
 
 # ── VECTORIZE [4] ──────────────────────────────────
 vectorize:
@@ -192,6 +194,7 @@ export:
 | `stabilize.depth.normalize` | `"log_median_iqr"` (A, kompatibilitas) atau `"log_median"` (B, T-302; default diganti di Tahap 4). Affine linear dan IQR tetap per klip ditolak (D-010, T-302) |
 | `stabilize.depth.log_eps` | 1e-12 ≤ x ≤ 0.01 |
 | `stabilize.depth.iqr_min` | 1e-3 ≤ x ≤ 1 (dengan batas `log_eps`, `depth_smooth` dijamin muat float16) |
+| `stabilize.hole_fill.enabled` | bool (default `true`, T-305f). `true` butuh grup `face` di `groups:` (grup pengisi = konstanta kode, bukan parameter). Ikut `stabilize_hash`: mengubahnya membuat `stable/` basi; `false` = peta grup sebelum T-305f |
 | `vectorize.min_region_area`, `min_hole_area` | int ≥ 0 |
 | `vectorize.line_min_px`, `min_stroke_px` | int ≥ 1 |
 | `vectorize.depth_lines.blur_sigma` | ≥ 0 (0 = tanpa blur) |

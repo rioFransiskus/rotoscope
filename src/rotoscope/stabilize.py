@@ -17,6 +17,9 @@ target [1b] (D-012). CPU saja, tanpa torch. Per frame:
      1 px sekelilingnya, dibaca dari peta sebelum filter (satu lintasan). Seri → id terkecil.
   5. Mode filter K×K: grup yang paling sering muncul di jendela; background ikut; seri → grup asli
      piksel, seri antara grup lain → id terkecil.
+  5b. VF (T-305f, `stabilize.hole_fill.enabled`): komponen background 4-arah yang tidak menyentuh tepi gambar dan SELURUH
+     cincin 1 px-nya (8-arah) = grup face → diisi face. Sesudah langkah 6 (kedalaman memakai peta SEBELUM VF), hanya peta
+     grup yang ditulis.
   6. Kedalaman: `log_median_iqr` (A): (log max(d, eps) − median) / max(IQR, iqr_min); `log_median` (B):
      log max(d, eps) − median. Statistik dari foreground peta grup bersih (kosong → seluruh frame).
      Transformasi yang sama dipakai di background (nilai kontinu + finite, tanpa lompatan palsu di siluet).
@@ -56,7 +59,7 @@ from rotoscope import depth as dep
 from rotoscope import segment as seg
 from rotoscope import target_mask as tmk
 from rotoscope.config import (
-    ConfigError, PipelineConfig, ensure_dir, load_class_names, load_pipeline, section_hash, to_dict,
+    HOLE_FILL_GROUP, ConfigError, PipelineConfig, ensure_dir, load_class_names, load_pipeline, section_hash, to_dict,
 )
 from rotoscope.ingest import FRAMES_DIRNAME
 from rotoscope.stage_common import (
@@ -186,6 +189,36 @@ def mode_filter(gmap: np.ndarray, k: int) -> np.ndarray:
         out[upd] = g
         best[upd] = cnt[upd]
     return out
+
+
+# ── Langkah 5b: VF, isi lubang grup face (T-305f) ──
+def fill_group_holes(gmap: np.ndarray, group_id: int) -> tuple[np.ndarray, int, int]:
+    """Komponen background 4-arah (konektivitas lubang [4]) yang tidak menyentuh tepi gambar dan SELURUH cincin 1 px-nya
+    (8-arah: dilasi 3×3 dikurangi komponen) = `group_id` → diisi `group_id`. Tanpa batas ukuran. Cincin dibaca dari peta
+    MASUKAN (urutan komponen tidak berpengaruh); piksel background lain yang hanya bersentuhan diagonal ikut di cincin → tidak
+    diisi. Aturan = prototipe `scripts/t305_1b.py::vf_fill` (dinilai Rio). Return (peta baru, jumlah wilayah, jumlah piksel)."""
+    h, w = gmap.shape
+    n, lab, st, _ = cv2.connectedComponentsWithStats((gmap == BACKGROUND_ID).astype(np.uint8), connectivity=4)
+    out, regions, px = gmap.copy(), 0, 0
+    for i in range(1, n):
+        x, y, bw, bh, a = (int(v) for v in st[i])
+        if x == 0 or y == 0 or x + bw >= w or y + bh >= h:
+            continue
+        sl = (slice(y - 1, y + bh + 1), slice(x - 1, x + bw + 1))
+        comp = lab[sl] == i
+        ring = cv2.dilate(comp.astype(np.uint8), RING_KERNEL).astype(bool) & ~comp
+        if (gmap[sl][ring] == group_id).all():
+            out[sl][comp] = group_id
+            regions += 1
+            px += a
+    return out, regions, px
+
+
+def hole_fill_group_id(cfg: PipelineConfig) -> int | None:
+    """id grup pengisi VF (urutan `groups:` + 1), atau None bila `stabilize.hole_fill.enabled` mati. Grup ada = dijamin config."""
+    if not cfg.stabilize.hole_fill.enabled:
+        return None
+    return [name for name, _ in cfg.groups].index(HOLE_FILL_GROUP) + 1
 
 
 def clean_groups(sums: np.ndarray, tie_groups: np.ndarray, island_min_px: int, mode_k: int) -> tuple[np.ndarray, dict]:
@@ -732,7 +765,9 @@ def run_stabilize(cfg: PipelineConfig, *, restart: bool = False, limit: int | No
             todo.append((pos, index, name))
     mode = (f"temporal α={st.temporal.mask_ema_alpha} R={plan.radius} b={st.temporal.boil_preserve}"
             f"{' depth' if plan.depth_radius else ''}" if plan.radius else "spasial")
-    log(f"[3] stabilize ({mode}, N={st.island_min_px}, K={st.mode_k}, {st.depth.normalize}): "
+    hole_fill_id = hole_fill_group_id(cfg)
+    log(f"[3] stabilize ({mode}, N={st.island_min_px}, K={st.mode_k}, {st.depth.normalize}"
+        f"{f', VF {HOLE_FILL_GROUP}' if hole_fill_id is not None else ''}): "
         f"{len(selected)} frame dipilih, {n_skip} valid dilewati, {len(todo)} diproses")
     if plan.cut_frames:
         log(f"  cut terdeteksi di frame: {', '.join(Path(clip.names[k]).stem for k in plan.cut_frames)}")
@@ -764,6 +799,9 @@ def run_stabilize(cfg: PipelineConfig, *, restart: bool = False, limit: int | No
             t0 = time.perf_counter()
             gmap, gstats = cache.groups(pos)
             ds, dstats = cache.final_depth(pos)
+            if hole_fill_id is not None:          # T-305f: sesudah kedalaman (statistik fg dari peta sebelum VF); cache tidak diubah
+                gmap, n_reg, n_px = fill_group_holes(gmap, hole_fill_id)
+                gstats = {**gstats, "fg_px": gstats["fg_px"] + n_px, "hole_fill_regions": n_reg, "hole_fill_px": n_px}
             t3 = time.perf_counter()
             write_groups(clip.groups_path(name), gmap)
             write_depth_smooth(clip.depth_smooth_path(name), ds)
@@ -781,7 +819,9 @@ def run_stabilize(cfg: PipelineConfig, *, restart: bool = False, limit: int | No
             run["frames"].append(rec)
             run["processed"] += 1
             log(f"  [{k}/{len(todo)}] {name} {rec['total_s']:.3f} s, seri {gstats['tie_px']} px, pulau "
-                f"{gstats['island_changed_px']} px, mode {gstats['mode_changed_px']} px, depth_smooth "
+                f"{gstats['island_changed_px']} px, mode {gstats['mode_changed_px']} px"
+                + (f", VF {gstats['hole_fill_regions']} wil / {gstats['hole_fill_px']} px" if gstats.get("hole_fill_regions") else "")
+                + ", depth_smooth "
                 f"{dstats['min']:.3g}…{dstats['max']:.3g}" + (" (IQR di-clamp)" if dstats["iqr_clamped"] else ""))
     finally:
         append_jsonl(clip.frames_log, {"event": "run_end", "time_utc": utc_now(), "n_done": run["processed"],

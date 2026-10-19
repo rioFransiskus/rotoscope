@@ -1,0 +1,1126 @@
+{
+ "format": "t305f-data/1",
+ "task": "T-305f",
+ "aturan_vf": {
+  "sumber": "scripts/t305_1b.py::vf_fill (prototipe T-305 1b, dinilai Rio); oracle tests/hole_fill_oracle.py",
+  "kandidat": "komponen background 4-arah (konektivitas lubang [4])",
+  "tepi_frame": "bbox x = 0, y = 0, x + w >= W, y + h >= H -> dilewati",
+  "cincin": "dilasi 3x3 (8-arah) dikurangi komponen, dibaca dari peta masukan",
+  "syarat": "SELURUH piksel cincin = grup face -> komponen diisi face",
+  "batas_ukuran": null,
+  "grup": "face (konstanta config.HOLE_FILL_GROUP)",
+  "parameter": {
+   "stabilize.hole_fill.enabled": true
+  }
+ },
+ "keputusan": {
+  "tempat": "PB: run_stabilize sesudah final_depth, sebelum write_groups (peta akhir sesudah kernel + pulau + mode); hanya stable/groups, depth_smooth tidak berubah",
+  "algo_rev_3": "tidak ada; basi lewat stabilize_hash (section stabilize)",
+  "ditolak": {
+   "P-pre": "klip tanpa lubang ikut berubah (klip3), menutup lebih sedikit (23 -> 10 vs 23 -> 5), +40-47 ms/frame",
+   "PA": "lubang sama dengan PB, tambah 2 frame gambar berubah (f10, f22)"
+  },
+  "lubang_tidak_terisi_diterima": "Q1 5 (f4-5, f28-30, cincin menyentuh baju) + definisi peta 4 (f2, f17, f32, f101; cincin +-51% face)",
+  "video_penilaian": "klip5 penuh f0-f132"
+ },
+ "penilaian_rio": {
+  "sumber": "work/t305f/nilai/klip5_penuh_berdampingan.mp4 + _lambat.mp4 (2026-10-19)",
+  "lingkaran_lubang_muka_berkurang_nyata": true,
+  "kerusakan_visual_klip5": {
+   "ada": true,
+   "penyebab_menurut_rio": "proses lain, bukan VF",
+   "detik": null,
+   "catatan": "tidak dicatat — periksa saat pengolahan khusus klip5",
+   "status": "di luar lingkup T-305f -> backlog 'pengolahan khusus klip5'"
+  },
+  "klip_lain_tidak_berubah_visual": true,
+  "nilai_klip5": 3,
+  "nilai_diterima": true,
+  "keputusan": "T-305f DONE; stabilize.hole_fill.enabled tetap default true"
+ },
+ "tahap1": {
+  "sim": {
+   "test": {
+    "control_ok": {
+     "groups": 283,
+     "depth": 283
+    },
+    "PB": {
+     "frames_changed": 0,
+     "runs": "-",
+     "regions": 0,
+     "px": 0
+    },
+    "PA": {
+     "depth_frames_changed": 0,
+     "depth_px_changed": 0,
+     "med_shift_max_abs": 0.0,
+     "depth_max_abs": 0.0
+    },
+    "PR": {
+     "raw_frames_filled": 0,
+     "raw_runs": "-",
+     "raw_regions": 0,
+     "raw_px": 0,
+     "frames_changed": 0,
+     "runs": "-",
+     "px_changed": 0,
+     "frames_changed_without_own_fill": "-",
+     "px_changed_without_own_fill": 0,
+     "depth_frames_changed": 0
+    },
+    "PB_vs_PR": {
+     "frames_differ": 0,
+     "runs": "-",
+     "px_differ": 0
+    },
+    "face_holes_drawn": {
+     "base": 0,
+     "base_frames": "-",
+     "filled_by_PB": 0,
+     "left_by_PB": 0,
+     "left_by_PB_frames": "-",
+     "left_by_PR": 0,
+     "left_by_PR_frames": "-"
+    },
+    "face_holes_small": {
+     "base": 0,
+     "filled_by_PB": 0
+    },
+    "lubang_tidak_terisi_PB": [],
+    "ms_median": {
+     "base_frame": 152.86,
+     "post_vf": 1.635,
+     "pre_vf_raw": 17.339
+    }
+   },
+   "test_short": {
+    "control_ok": {
+     "groups": 119,
+     "depth": 119
+    },
+    "PB": {
+     "frames_changed": 0,
+     "runs": "-",
+     "regions": 0,
+     "px": 0
+    },
+    "PA": {
+     "depth_frames_changed": 0,
+     "depth_px_changed": 0,
+     "med_shift_max_abs": 0.0,
+     "depth_max_abs": 0.0
+    },
+    "PR": {
+     "raw_frames_filled": 0,
+     "raw_runs": "-",
+     "raw_regions": 0,
+     "raw_px": 0,
+     "frames_changed": 0,
+     "runs": "-",
+     "px_changed": 0,
+     "frames_changed_without_own_fill": "-",
+     "px_changed_without_own_fill": 0,
+     "depth_frames_changed": 0
+    },
+    "PB_vs_PR": {
+     "frames_differ": 0,
+     "runs": "-",
+     "px_differ": 0
+    },
+    "face_holes_drawn": {
+     "base": 0,
+     "base_frames": "-",
+     "filled_by_PB": 0,
+     "left_by_PB": 0,
+     "left_by_PB_frames": "-",
+     "left_by_PR": 0,
+     "left_by_PR_frames": "-"
+    },
+    "face_holes_small": {
+     "base": 0,
+     "filled_by_PB": 0
+    },
+    "lubang_tidak_terisi_PB": [],
+    "ms_median": {
+     "base_frame": 158.03,
+     "post_vf": 1.635,
+     "pre_vf_raw": 17.328
+    }
+   },
+   "Klip2": {
+    "control_ok": {
+     "groups": 122,
+     "depth": 122
+    },
+    "PB": {
+     "frames_changed": 0,
+     "runs": "-",
+     "regions": 0,
+     "px": 0
+    },
+    "PA": {
+     "depth_frames_changed": 0,
+     "depth_px_changed": 0,
+     "med_shift_max_abs": 0.0,
+     "depth_max_abs": 0.0
+    },
+    "PR": {
+     "raw_frames_filled": 0,
+     "raw_runs": "-",
+     "raw_regions": 0,
+     "raw_px": 0,
+     "frames_changed": 0,
+     "runs": "-",
+     "px_changed": 0,
+     "frames_changed_without_own_fill": "-",
+     "px_changed_without_own_fill": 0,
+     "depth_frames_changed": 0
+    },
+    "PB_vs_PR": {
+     "frames_differ": 0,
+     "runs": "-",
+     "px_differ": 0
+    },
+    "face_holes_drawn": {
+     "base": 0,
+     "base_frames": "-",
+     "filled_by_PB": 0,
+     "left_by_PB": 0,
+     "left_by_PB_frames": "-",
+     "left_by_PR": 0,
+     "left_by_PR_frames": "-"
+    },
+    "face_holes_small": {
+     "base": 0,
+     "filled_by_PB": 0
+    },
+    "lubang_tidak_terisi_PB": [],
+    "ms_median": {
+     "base_frame": 115.375,
+     "post_vf": 1.272,
+     "pre_vf_raw": 11.888
+    }
+   },
+   "klip3": {
+    "control_ok": {
+     "groups": 182,
+     "depth": 182
+    },
+    "PB": {
+     "frames_changed": 0,
+     "runs": "-",
+     "regions": 0,
+     "px": 0
+    },
+    "PA": {
+     "depth_frames_changed": 0,
+     "depth_px_changed": 0,
+     "med_shift_max_abs": 0.0,
+     "depth_max_abs": 0.0
+    },
+    "PR": {
+     "raw_frames_filled": 39,
+     "raw_runs": "0, 9, 12, 17–19, 23, 25, 28–29, 32–33, 38, 42, 44, 51, 56, 61, 63, 69–70, 72–75, 78, 81, 83–84, 93, 95, 104, 111, 128, 132, 138–140, 181",
+     "raw_regions": 60,
+     "raw_px": 141,
+     "frames_changed": 17,
+     "runs": "17–18, 28, 50, 56, 60–61, 70, 76, 81–84, 94, 96, 113, 140",
+     "px_changed": 78,
+     "frames_changed_without_own_fill": "50, 60, 76, 82, 94, 96, 113",
+     "px_changed_without_own_fill": 14,
+     "depth_frames_changed": 0
+    },
+    "PB_vs_PR": {
+     "frames_differ": 17,
+     "runs": "17–18, 28, 50, 56, 60–61, 70, 76, 81–84, 94, 96, 113, 140",
+     "px_differ": 78
+    },
+    "face_holes_drawn": {
+     "base": 0,
+     "base_frames": "-",
+     "filled_by_PB": 0,
+     "left_by_PB": 0,
+     "left_by_PB_frames": "-",
+     "left_by_PR": 0,
+     "left_by_PR_frames": "-"
+    },
+    "face_holes_small": {
+     "base": 9,
+     "filled_by_PB": 0
+    },
+    "lubang_tidak_terisi_PB": [],
+    "ms_median": {
+     "base_frame": 342.79,
+     "post_vf": 3.349,
+     "pre_vf_raw": 38.538
+    }
+   },
+   "klip4": {
+    "control_ok": {
+     "groups": 217,
+     "depth": 217
+    },
+    "PB": {
+     "frames_changed": 0,
+     "runs": "-",
+     "regions": 0,
+     "px": 0
+    },
+    "PA": {
+     "depth_frames_changed": 0,
+     "depth_px_changed": 0,
+     "med_shift_max_abs": 0.0,
+     "depth_max_abs": 0.0
+    },
+    "PR": {
+     "raw_frames_filled": 0,
+     "raw_runs": "-",
+     "raw_regions": 0,
+     "raw_px": 0,
+     "frames_changed": 0,
+     "runs": "-",
+     "px_changed": 0,
+     "frames_changed_without_own_fill": "-",
+     "px_changed_without_own_fill": 0,
+     "depth_frames_changed": 0
+    },
+    "PB_vs_PR": {
+     "frames_differ": 0,
+     "runs": "-",
+     "px_differ": 0
+    },
+    "face_holes_drawn": {
+     "base": 0,
+     "base_frames": "-",
+     "filled_by_PB": 0,
+     "left_by_PB": 0,
+     "left_by_PB_frames": "-",
+     "left_by_PR": 0,
+     "left_by_PR_frames": "-"
+    },
+    "face_holes_small": {
+     "base": 0,
+     "filled_by_PB": 0
+    },
+    "lubang_tidak_terisi_PB": [],
+    "ms_median": {
+     "base_frame": 357.36,
+     "post_vf": 3.428,
+     "pre_vf_raw": 42.839
+    }
+   },
+   "klip5": {
+    "control_ok": {
+     "groups": 133,
+     "depth": 133
+    },
+    "PB": {
+     "frames_changed": 28,
+     "runs": "0–3, 6, 10–13, 15, 18–25, 28–31, 38, 45, 48, 63–64, 101",
+     "regions": 44,
+     "px": 16427
+    },
+    "PA": {
+     "depth_frames_changed": 13,
+     "depth_px_changed": 11885830,
+     "med_shift_max_abs": 0.003819882869720459,
+     "depth_max_abs": 0.00439453125
+    },
+    "PR": {
+     "raw_frames_filled": 52,
+     "raw_runs": "0–26, 28–32, 35–38, 44–45, 47–48, 50, 54–59, 62–64, 72, 101",
+     "raw_regions": 388,
+     "raw_px": 12189,
+     "frames_changed": 52,
+     "runs": "0–5, 7–33, 35–40, 45, 48, 50, 52, 54–56, 58, 62–64, 71, 101",
+     "px_changed": 12958,
+     "frames_changed_without_own_fill": "27, 33, 39–40, 52, 71",
+     "px_changed_without_own_fill": 81,
+     "depth_frames_changed": 10
+    },
+    "PB_vs_PR": {
+     "frames_differ": 48,
+     "runs": "1, 3–28, 31–33, 35–40, 48, 50, 52, 54–56, 58, 62–64, 71, 101",
+     "px_differ": 8133
+    },
+    "face_holes_drawn": {
+     "base": 27,
+     "base_frames": "0–5, 11–13, 17–21, 25, 28–30, 32, 101",
+     "filled_by_PB": 18,
+     "left_by_PB": 9,
+     "left_by_PB_frames": "2, 4–5, 17, 28–30, 32, 101",
+     "left_by_PR": 14,
+     "left_by_PR_frames": "2, 4–5, 11, 17–21, 28–30, 32, 101"
+    },
+    "face_holes_small": {
+     "base": 64,
+     "filled_by_PB": 26
+    },
+    "lubang_tidak_terisi_PB": [
+     {
+      "frame": 2,
+      "area": 290,
+      "face_frac": 0.5118,
+      "ring": {
+       "face": 65,
+       "torso": 61,
+       "background": 1
+      }
+     },
+     {
+      "frame": 4,
+      "area": 1552,
+      "face_frac": 0.9529,
+      "ring": {
+       "face": 243,
+       "torso": 12
+      }
+     },
+     {
+      "frame": 5,
+      "area": 1781,
+      "face_frac": 0.9387,
+      "ring": {
+       "face": 245,
+       "torso": 16
+      }
+     },
+     {
+      "frame": 17,
+      "area": 239,
+      "face_frac": 0.5124,
+      "ring": {
+       "face": 62,
+       "torso": 59
+      }
+     },
+     {
+      "frame": 28,
+      "area": 459,
+      "face_frac": 0.6797,
+      "ring": {
+       "face": 87,
+       "torso": 41
+      }
+     },
+     {
+      "frame": 29,
+      "area": 591,
+      "face_frac": 0.6824,
+      "ring": {
+       "face": 101,
+       "torso": 47
+      }
+     },
+     {
+      "frame": 30,
+      "area": 494,
+      "face_frac": 0.7205,
+      "ring": {
+       "face": 116,
+       "torso": 45
+      }
+     },
+     {
+      "frame": 32,
+      "area": 1661,
+      "face_frac": 0.516,
+      "ring": {
+       "face": 145,
+       "torso": 134,
+       "right_arm": 2
+      }
+     },
+     {
+      "frame": 101,
+      "area": 204,
+      "face_frac": 0.5098,
+      "ring": {
+       "face": 52,
+       "torso": 43,
+       "hair": 7
+      }
+     }
+    ],
+    "ms_median": {
+     "base_frame": 343.12,
+     "post_vf": 3.459,
+     "pre_vf_raw": 46.527
+    }
+   }
+  },
+  "klip5_f0_f91": {
+   "control_ok": {
+    "groups": 92,
+    "depth": 92
+   },
+   "PB": {
+    "frames_changed": 27,
+    "runs": "0–3, 6, 10–13, 15, 18–25, 28–31, 38, 45, 48, 63–64",
+    "regions": 38,
+    "px": 16179
+   },
+   "PA": {
+    "depth_frames_changed": 13,
+    "depth_px_changed": 11885830,
+    "med_shift_max_abs": 0.003819882869720459,
+    "depth_max_abs": 0.00439453125
+   },
+   "PR": {
+    "raw_frames_filled": 51,
+    "raw_runs": "0–26, 28–32, 35–38, 44–45, 47–48, 50, 54–59, 62–64, 72",
+    "raw_regions": 353,
+    "raw_px": 11896,
+    "frames_changed": 51,
+    "runs": "0–5, 7–33, 35–40, 45, 48, 50, 52, 54–56, 58, 62–64, 71",
+    "px_changed": 12793,
+    "frames_changed_without_own_fill": "27, 33, 39–40, 52, 71",
+    "px_changed_without_own_fill": 81,
+    "depth_frames_changed": 10
+   },
+   "PB_vs_PR": {
+    "frames_differ": 47,
+    "runs": "1, 3–28, 31–33, 35–40, 48, 50, 52, 54–56, 58, 62–64, 71",
+    "px_differ": 8050
+   },
+   "face_holes_drawn": {
+    "base": 26,
+    "base_frames": "0–5, 11–13, 17–21, 25, 28–30, 32",
+    "filled_by_PB": 18,
+    "left_by_PB": 8,
+    "left_by_PB_frames": "2, 4–5, 17, 28–30, 32",
+    "left_by_PR": 13,
+    "left_by_PR_frames": "2, 4–5, 11, 17–21, 28–30, 32"
+   },
+   "face_holes_small": {
+    "base": 56,
+    "filled_by_PB": 20
+   },
+   "lubang_tidak_terisi_PB": [
+    {
+     "frame": 2,
+     "area": 290,
+     "face_frac": 0.5118,
+     "ring": {
+      "face": 65,
+      "torso": 61,
+      "background": 1
+     }
+    },
+    {
+     "frame": 4,
+     "area": 1552,
+     "face_frac": 0.9529,
+     "ring": {
+      "face": 243,
+      "torso": 12
+     }
+    },
+    {
+     "frame": 5,
+     "area": 1781,
+     "face_frac": 0.9387,
+     "ring": {
+      "face": 245,
+      "torso": 16
+     }
+    },
+    {
+     "frame": 17,
+     "area": 239,
+     "face_frac": 0.5124,
+     "ring": {
+      "face": 62,
+      "torso": 59
+     }
+    },
+    {
+     "frame": 28,
+     "area": 459,
+     "face_frac": 0.6797,
+     "ring": {
+      "face": 87,
+      "torso": 41
+     }
+    },
+    {
+     "frame": 29,
+     "area": 591,
+     "face_frac": 0.6824,
+     "ring": {
+      "face": 101,
+      "torso": 47
+     }
+    },
+    {
+     "frame": 30,
+     "area": 494,
+     "face_frac": 0.7205,
+     "ring": {
+      "face": 116,
+      "torso": 45
+     }
+    },
+    {
+     "frame": 32,
+     "area": 1661,
+     "face_frac": 0.516,
+     "ring": {
+      "face": 145,
+      "torso": 134,
+      "right_arm": 2
+     }
+    }
+   ],
+   "ms_median": {
+    "base_frame": 352.11,
+    "post_vf": 3.656,
+    "pre_vf_raw": 47.495
+   }
+  },
+  "PB_sama_prototipe_klip5_f0_f91": true,
+  "prototipe_vfscan_klip5": {
+   "frames": 92,
+   "frames_changed": 27,
+   "frames_changed_runs": "0–3, 6, 10–13, 15, 18–25, 28–31, 38, 45, 48, 63–64",
+   "regions_filled": 38,
+   "px_filled": 16179,
+   "q1_holes": 23,
+   "q1_holes_filled": 18
+  },
+  "garis_gambar": {
+   "PB/klip5": {
+    "png_berubah": "0–5, 11–14, 18–21, 25, 28–30, 68, 101, 108, 124",
+    "n_png_berubah": 22,
+    "geometri_berubah": "0–5, 11–14, 18–21, 25, 28–30, 68, 101, 108, 124",
+    "geometri_berubah_di_luar_stable": "4–5, 14, 68, 108, 124",
+    "q1_lubang_prod_var": [
+     23,
+     5
+    ],
+    "q1_sisa_frame": "4–5, 28–30",
+    "strok_per_tipe_prod_var": {
+     "silhouette": [
+      494,
+      494
+     ],
+     "silhouette_hole": [
+      224,
+      206
+     ],
+     "group_boundary": [
+      2184,
+      2184
+     ],
+     "occlusion": [
+      1352,
+      1352
+     ]
+    },
+    "t_high_t_low_prod_var": [
+     [
+      0.01186597589403391,
+      0.01185680059716105
+     ],
+     [
+      0.006673203315585852,
+      0.006671703886240721
+     ]
+    ]
+   },
+   "PA/klip5": {
+    "png_berubah": "0–5, 10–14, 18–22, 25, 28–30, 68, 101, 108, 124",
+    "n_png_berubah": 24,
+    "geometri_berubah": "0–5, 10–14, 18–22, 25, 28–30, 68, 101, 108, 124",
+    "geometri_berubah_di_luar_stable": "4–5, 14, 68, 108, 124",
+    "q1_lubang_prod_var": [
+     23,
+     5
+    ],
+    "q1_sisa_frame": "4–5, 28–30",
+    "strok_per_tipe_prod_var": {
+     "silhouette": [
+      494,
+      494
+     ],
+     "silhouette_hole": [
+      224,
+      206
+     ],
+     "group_boundary": [
+      2184,
+      2184
+     ],
+     "occlusion": [
+      1352,
+      1352
+     ]
+    },
+    "t_high_t_low_prod_var": [
+     [
+      0.01186597589403391,
+      0.011856662854552266
+     ],
+     [
+      0.006673203315585852,
+      0.0066716754343360656
+     ]
+    ]
+   },
+   "PR/klip3": {
+    "png_berubah": "18, 28, 56, 60–61, 76, 81–84, 94, 113, 140",
+    "n_png_berubah": 13,
+    "geometri_berubah": "18, 28, 56, 60–61, 76, 81–84, 94, 96, 113, 140",
+    "geometri_berubah_di_luar_stable": "-",
+    "q1_lubang_prod_var": [
+     0,
+     0
+    ],
+    "q1_sisa_frame": "-",
+    "strok_per_tipe_prod_var": {
+     "silhouette": [
+      495,
+      495
+     ],
+     "silhouette_hole": [
+      111,
+      111
+     ],
+     "group_boundary": [
+      5125,
+      5125
+     ],
+     "occlusion": [
+      1075,
+      1075
+     ]
+    },
+    "t_high_t_low_prod_var": [
+     [
+      0.014078208059072506,
+      0.01407813043333593
+     ],
+     [
+      0.004270758805796502,
+      0.004270773800089955
+     ]
+    ]
+   },
+   "PR/klip5": {
+    "png_berubah": "0–5, 7–33, 35–40, 50, 52, 54–56, 58, 63–64, 68, 71, 124",
+    "n_png_berubah": 50,
+    "geometri_berubah": "0–5, 7–33, 35–48, 50, 52, 54–56, 58, 62–64, 68, 71, 124",
+    "geometri_berubah_di_luar_stable": "41–44, 46–47, 68, 124",
+    "q1_lubang_prod_var": [
+     23,
+     10
+    ],
+    "q1_sisa_frame": "4–5, 11, 18–21, 28–30",
+    "strok_per_tipe_prod_var": {
+     "silhouette": [
+      494,
+      493
+     ],
+     "silhouette_hole": [
+      224,
+      211
+     ],
+     "group_boundary": [
+      2184,
+      2185
+     ],
+     "occlusion": [
+      1352,
+      1352
+     ]
+    },
+    "t_high_t_low_prod_var": [
+     [
+      0.01186597589403391,
+      0.011859567463397974
+     ],
+     [
+      0.006673203315585852,
+      0.0066726279444992535
+     ]
+    ]
+   }
+  },
+  "PB_vs_render_prototipe_f0_f91": {
+   "frames": 92,
+   "groups_png_differ": "-",
+   "contours_strokes_differ": "-",
+   "strokes_png_differ": "-"
+  },
+  "F1": {
+   "hilang": 0,
+   "berubah": 0,
+   "tambahan": 0,
+   "identik": true
+  }
+ },
+ "mutasi": {
+  "n": 19,
+  "terbunuh": 19,
+  "kontrol_lolos": true,
+  "nama": [
+   "01 komponen background 8-arah",
+   "02 cincin 4-arah (kernel silang)",
+   "03 cek tepi frame dihapus",
+   "04 tepi atas / kiri tidak dicek (== 0 jadi < 0)",
+   "05 tepi kanan: >= jadi >",
+   "06 tepi bawah: >= jadi >",
+   "07 cincin cukup sebagian face (all jadi any)",
+   "08 diisi id salah",
+   "09 batas ukuran disisipkan (> 1000 px dilewati)",
+   "10 VF sebelum filter pulau (di clean_groups)",
+   "11 VF di jumlah grup mentah raw(k) (P-pre)",
+   "12 VF ikut statistik kedalaman (PA)",
+   "13 enabled diabaikan (selalu aktif)",
+   "14 VF tidak pernah jalan (selalu mati)",
+   "15 grup pengisi salah (hair)",
+   "16 hole_fill tidak ikut stabilize_hash",
+   "17 frames.jsonl tanpa hole_fill",
+   "18 fg_px tidak ikut piksel terisi",
+   "19 validasi grup face dihapus (config)"
+  ]
+ },
+ "suite": {
+  "lolos": 1550,
+  "skip": 10,
+  "gagal": 0,
+  "kolom": [
+   "potongan",
+   "lolos",
+   "skip",
+   "gagal",
+   "detik"
+  ],
+  "potongan": [
+   [
+    "cli, clip_identity, config, cut_diff, depth",
+    349,
+    1,
+    0,
+    24.3
+   ],
+   [
+    "export, export_paper, export_strokes, ingest",
+    112,
+    0,
+    0,
+    105.5
+   ],
+   [
+    "isolate, noise, paper, pick, presets, preview",
+    229,
+    2,
+    0,
+    29.5
+   ],
+   [
+    "segment, segment_qc, stabilize, stabilize_hole_fill, stabilize_temporal, stage_common, target_mask, temporal_metrics, track",
+    423,
+    7,
+    0,
+    48.9
+   ],
+   [
+    "stylize (5 berkas)",
+    252,
+    0,
+    0,
+    170.9
+   ],
+   [
+    "vectorize (5 berkas)",
+    185,
+    0,
+    0,
+    147.2
+   ]
+  ],
+  "skip_rinci": "4 GPU / bobot SAM + 6 test klip nyata VF (sebelum run Tahap 3)",
+  "sesudah_run_tahap3": {
+   "berkas": [
+    "test_stabilize_hole_fill.py",
+    "test_preview.py",
+    "test_clip_identity.py"
+   ],
+   "lolos": 154,
+   "skip": 0,
+   "gagal": 0
+  }
+ },
+ "tahap3": {
+  "stabilize_hash": [
+   "7ac41b8db42a",
+   "ef66832865e2"
+  ],
+  "run": {
+   "test": {
+    "[1] ingest": 0.9,
+    "[1b] isolate": 0.0,
+    "[2] segment": 26.2,
+    "[2c] depth": 7.2,
+    "[3] stabilize": 47.6,
+    "[4] vectorize": 28.5,
+    "[5] stylize": 59.2,
+    "[6] export": 26.4
+   },
+   "test_short": {
+    "[1] ingest": 0.5,
+    "[1b] isolate": 0.0,
+    "[2] segment": 14.3,
+    "[2c] depth": 7.0,
+    "[3] stabilize": 20.0,
+    "[4] vectorize": 12.8,
+    "[5] stylize": 24.0,
+    "[6] export": 11.8
+   },
+   "Klip2": {
+    "[1] ingest": 0.4,
+    "[1b] isolate": 0.0,
+    "[2] segment": 12.8,
+    "[2c] depth": 7.1,
+    "[3] stabilize": 15.8,
+    "[4] vectorize": 9.4,
+    "[5] stylize": 12.2,
+    "[6] export": 3.2
+   },
+   "klip3": {
+    "[1] ingest": 1.7,
+    "[1b] isolate": 4.4,
+    "[2] segment": 30.6,
+    "[2c] depth": 7.0,
+    "[3] stabilize": 70.5,
+    "[4] vectorize": 54.2,
+    "[5] stylize": 61.1,
+    "[6] export": 23.8
+   },
+   "klip4": {
+    "[1] ingest": 1.2,
+    "[1b] isolate": 0.0,
+    "[2] segment": 36.5,
+    "[2c] depth": 8.1,
+    "[3] stabilize": 80.3,
+    "[4] vectorize": 52.1,
+    "[5] stylize": 50.1,
+    "[6] export": 24.4
+   },
+   "klip5": {
+    "[1] ingest": 0.8,
+    "[1b] isolate": 0.0,
+    "[2] segment": 25.3,
+    "[2c] depth": 9.8,
+    "[3] stabilize": 57.4,
+    "[4] vectorize": 44.3,
+    "[5] stylize": 47.7,
+    "[6] export": 17.0
+   }
+  },
+  "lima_klip_identik": {
+   "test": {
+    "groups": "-",
+    "depth_smooth": "-",
+    "png": "-",
+    "svg": "-",
+    "out_svg": "-",
+    "contours_strokes": "-",
+    "mp4_identik": true,
+    "contours_json_kunci_beda": {
+     "source": 283,
+     "prev_sha256": 282
+    },
+    "clip_stats": {
+     "t_high": [
+      0.025733634829521103,
+      0.025733634829521103
+     ],
+     "t_low": [
+      0.011202364042401314,
+      0.011202364042401314
+     ]
+    }
+   },
+   "test_short": {
+    "groups": "-",
+    "depth_smooth": "-",
+    "png": "-",
+    "svg": "-",
+    "out_svg": "-",
+    "contours_strokes": "-",
+    "mp4_identik": true,
+    "contours_json_kunci_beda": {
+     "source": 119,
+     "prev_sha256": 118
+    },
+    "clip_stats": {
+     "t_high": [
+      0.029137363284826214,
+      0.029137363284826214
+     ],
+     "t_low": [
+      0.012463434599339962,
+      0.012463434599339962
+     ]
+    }
+   },
+   "Klip2": {
+    "groups": "-",
+    "depth_smooth": "-",
+    "png": "-",
+    "svg": "-",
+    "out_svg": "-",
+    "contours_strokes": "-",
+    "mp4_identik": true,
+    "contours_json_kunci_beda": {
+     "source": 122,
+     "prev_sha256": 121
+    },
+    "clip_stats": {
+     "t_high": [
+      0.07325913980603233,
+      0.07325913980603233
+     ],
+     "t_low": [
+      0.033132921904325485,
+      0.033132921904325485
+     ]
+    }
+   },
+   "klip3": {
+    "groups": "-",
+    "depth_smooth": "-",
+    "png": "-",
+    "svg": "-",
+    "out_svg": "-",
+    "contours_strokes": "-",
+    "mp4_identik": true,
+    "contours_json_kunci_beda": {
+     "source": 182,
+     "prev_sha256": 181
+    },
+    "clip_stats": {
+     "t_high": [
+      0.014078208059072506,
+      0.014078208059072506
+     ],
+     "t_low": [
+      0.004270758805796502,
+      0.004270758805796502
+     ]
+    }
+   },
+   "klip4": {
+    "groups": "-",
+    "depth_smooth": "-",
+    "png": "-",
+    "svg": "-",
+    "out_svg": "-",
+    "contours_strokes": "-",
+    "mp4_identik": true,
+    "contours_json_kunci_beda": {
+     "source": 217,
+     "prev_sha256": 216
+    },
+    "clip_stats": {
+     "t_high": [
+      0.012623349856585274,
+      0.012623349856585274
+     ],
+     "t_low": [
+      0.004707979969680309,
+      0.004707979969680309
+     ]
+    }
+   }
+  },
+  "klip5": {
+   "groups_berubah": "0–3, 6, 10–13, 15, 18–25, 28–31, 38, 45, 48, 63–64, 101",
+   "depth_smooth_berubah": "-",
+   "png_svg_berubah": "0–5, 11–14, 18–21, 25, 28–30, 68, 101, 108, 124",
+   "geometri_berubah": "0–5, 11–14, 18–21, 25, 28–30, 68, 101, 108, 124",
+   "wilayah_px": [
+    44,
+    16427
+   ],
+   "clip_stats": {
+    "t_high": [
+     0.01186597589403391,
+     0.01185680059716105
+    ],
+    "t_low": [
+     0.006673203315585852,
+     0.006671703886240721
+    ]
+   },
+   "vs_PB_tahap1": {
+    "groups": "-",
+    "depth_smooth": "-",
+    "contours_strokes": "-",
+    "png": "-",
+    "svg": "-",
+    "clip_stats_same": true
+   }
+  },
+  "F1": {
+   "n_before": 10701,
+   "n_after": 10701,
+   "kategori": {
+    "metadata (manifest / frames.jsonl / clip_stats / penanda / export.json)": 49,
+    "isi klip5": 228,
+    "contours frame JSON klip lain (metadata; isi strok dicek terpisah)": 923,
+    "qc_report.json (cek created_utc)": 6
+   },
+   "lainnya": [],
+   "per_folder": {
+    "out/Klip2.export.json": 1,
+    "out/klip3.export.json": 1,
+    "out/klip4.export.json": 1,
+    "out/klip5.export.json": 1,
+    "out/klip5.mp4": 1,
+    "out/svg/klip5/": 23,
+    "out/test.export.json": 1,
+    "out/test_short.export.json": 1,
+    "work/clips/Klip2/contours/": 125,
+    "work/clips/Klip2/qc_report.json": 1,
+    "work/clips/Klip2/stable/": 2,
+    "work/clips/Klip2/strokes/": 2,
+    "work/clips/klip3/contours/": 185,
+    "work/clips/klip3/qc_report.json": 1,
+    "work/clips/klip3/stable/": 2,
+    "work/clips/klip3/strokes/": 2,
+    "work/clips/klip4/contours/": 220,
+    "work/clips/klip4/qc_report.json": 1,
+    "work/clips/klip4/stable/": 2,
+    "work/clips/klip4/strokes/": 2,
+    "work/clips/klip5/contours/": 136,
+    "work/clips/klip5/qc_report.json": 1,
+    "work/clips/klip5/stable/": 30,
+    "work/clips/klip5/strokes/": 46,
+    "work/clips/test/contours/": 286,
+    "work/clips/test/qc_report.json": 1,
+    "work/clips/test/stable/": 2,
+    "work/clips/test/strokes/": 2,
+    "work/clips/test_short/contours/": 122,
+    "work/clips/test_short/qc_report.json": 1,
+    "work/clips/test_short/stable/": 2,
+    "work/clips/test_short/strokes/": 2
+   },
+   "qc_hanya_created_utc": true
+  }
+ },
+ "bahan": {
+  "frames": 133,
+  "size": [
+   1644,
+   1146
+  ],
+  "lambat_frames": 266,
+  "vf_frames": "0–3, 6, 10–13, 15, 18–25, 28–31, 38, 45, 48, 63–64, 101",
+  "sebelum_sha256": "e398271ee39bb96ec6f39ab7e284061f1688f9b1fc8fb45ce30f83d730731559",
+  "sesudah_sha256": "70cf1eb6ddfab81c1f57a7e4318044faa5543b01cf717facb40d9488411302e4"
+ }
+}

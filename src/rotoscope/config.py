@@ -78,6 +78,7 @@ DILATE_MAX_PX = 32                                     # target_mask.dilate_px (
 NORMALIZE_METHODS = ("log_median_iqr", "log_median")   # T-302: B = log_median (affine / IQR tetap per klip ditolak)
 BIG_BLOBS_RULES = ("transient", "legacy", "report")     # qc.big_blobs_rule (T-305d; legacy = perilaku sebelum T-305d)
 TRANSIENT_MIN_RUN_MIN = 2                               # qc.transient_min_run: run 1 frame tidak pernah "panjang"
+HOLE_FILL_GROUP = "face"                        # T-305f (VF): grup pengisi lubang = konstanta (keputusan Rio), bukan parameter YAML
 LOG_EPS_MIN, LOG_EPS_MAX = 1e-12, 0.01          # stabilize.depth.log_eps
 IQR_MIN_MIN, IQR_MIN_MAX = 1e-3, 1.0            # stabilize.depth.iqr_min
 STROKE_TYPES = ("silhouette", "silhouette_hole", "group_boundary", "occlusion")
@@ -231,11 +232,19 @@ class StabilizeDepthConfig:
 
 
 @dataclass(frozen=True)
+class HoleFillConfig:
+    """T-305f (VF): lubang background yang seluruh cincinnya grup HOLE_FILL_GROUP → diisi grup itu, sesudah kernel + mode filter,
+    hanya peta grup yang ditulis. Di section stabilize → ikut stabilize_hash (mengubahnya membuat stable/ basi)."""
+    enabled: bool = True
+
+
+@dataclass(frozen=True)
 class StabilizeConfig:
     temporal: TemporalConfig = field(default_factory=TemporalConfig)
     island_min_px: int = 30
     mode_k: int = 3
     depth: StabilizeDepthConfig = field(default_factory=StabilizeDepthConfig)
+    hole_fill: HoleFillConfig = field(default_factory=HoleFillConfig)
 
 
 @dataclass(frozen=True)
@@ -822,6 +831,9 @@ def _validate_pipeline(c: PipelineConfig) -> None:
     # dibagi ≥ 1e-3 → ≤ 38 700 < 65504.
     _between("stabilize.depth.log_eps", c.stabilize.depth.log_eps, LOG_EPS_MIN, LOG_EPS_MAX)
     _between("stabilize.depth.iqr_min", c.stabilize.depth.iqr_min, IQR_MIN_MIN, IQR_MIN_MAX)
+    if c.stabilize.hole_fill.enabled and HOLE_FILL_GROUP not in [name for name, _ in c.groups]:
+        raise ConfigError(f"stabilize.hole_fill.enabled = true butuh grup '{HOLE_FILL_GROUP}' di groups: (grup yang ada: "
+                          f"{', '.join(name for name, _ in c.groups)}) — tambahkan grup itu atau set stabilize.hole_fill.enabled: false")
 
     v = c.vectorize
     _at_least("vectorize.min_region_area", v.min_region_area, 0)
