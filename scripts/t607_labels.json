@@ -1,0 +1,149 @@
+{
+ "format": "t607-labels/1",
+ "sumber": "work/t607/label/LABEL.md",
+ "label_md_sha256": "cc58bb2dfab1f4f230b84edff393237c6e9e23659e042f6210cac05efd8273d6",
+ "label_md_bytes": 2480,
+ "r2_fingerprint": "d40c3dfdd270a715a7bbc9bfbec96ce69ce613a1dac7480c1bcd607ec6eb1da0",
+ "disimpan_sebelum_deteksi": true,
+ "normalisasi": [
+  "escape Markdown dari editor dibuang di 35 baris (mis. 'pita\\_atas' -> 'pita_atas'); isi tidak berubah",
+  "klip6: tata_letak_berubah_detik 'tidak' dibaca sebagai kosong (template: '-')",
+  "klip7: tata_letak_berubah_detik 'tidak' dibaca sebagai kosong (template: '-')",
+  "klip8: kotak_teks_posisi 'tidak' dibaca sebagai kosong (template: '-')",
+  "klip8: tata_letak_berubah_detik 'tidak' dibaca sebagai kosong (template: '-')",
+  "klip9: kotak_teks_posisi 'tidak' dibaca sebagai kosong (template: '-')",
+  "klip9: tata_letak_berubah_detik 'tidak' dibaca sebagai kosong (template: '-')"
+ ],
+ "clips": {
+  "klip6": {
+   "mentah": {
+    "pita_atas": "tidak",
+    "pita_bawah": "tidak",
+    "pita_kiri": "tidak",
+    "pita_kanan": "tidak",
+    "kotak_teks": "ya",
+    "kotak_teks_posisi": "atas, kiri",
+    "tata_letak_berubah": "tidak",
+    "tata_letak_berubah_detik": "tidak",
+    "catatan": ""
+   },
+   "pita": {
+    "atas": false,
+    "bawah": false,
+    "kiri": false,
+    "kanan": false
+   },
+   "berpita": false,
+   "pita_berpasangan": false,
+   "kotak_teks": true,
+   "kotak_teks_posisi": [
+    "atas",
+    "kiri"
+   ],
+   "tata_letak_berubah": false,
+   "tata_letak_berubah_detik_mentah": null,
+   "catatan": ""
+  },
+  "klip7": {
+   "mentah": {
+    "pita_atas": "tidak",
+    "pita_bawah": "tidak",
+    "pita_kiri": "tidak",
+    "pita_kanan": "tidak",
+    "kotak_teks": "ya",
+    "kotak_teks_posisi": "atas, kiri",
+    "tata_letak_berubah": "tidak",
+    "tata_letak_berubah_detik": "tidak",
+    "catatan": ""
+   },
+   "pita": {
+    "atas": false,
+    "bawah": false,
+    "kiri": false,
+    "kanan": false
+   },
+   "berpita": false,
+   "pita_berpasangan": false,
+   "kotak_teks": true,
+   "kotak_teks_posisi": [
+    "atas",
+    "kiri"
+   ],
+   "tata_letak_berubah": false,
+   "tata_letak_berubah_detik_mentah": null,
+   "catatan": ""
+  },
+  "klip8": {
+   "mentah": {
+    "pita_atas": "tidak",
+    "pita_bawah": "tidak",
+    "pita_kiri": "tidak",
+    "pita_kanan": "tidak",
+    "kotak_teks": "tidak",
+    "kotak_teks_posisi": "tidak",
+    "tata_letak_berubah": "tidak",
+    "tata_letak_berubah_detik": "tidak",
+    "catatan": ""
+   },
+   "pita": {
+    "atas": false,
+    "bawah": false,
+    "kiri": false,
+    "kanan": false
+   },
+   "berpita": false,
+   "pita_berpasangan": false,
+   "kotak_teks": false,
+   "kotak_teks_posisi": [],
+   "tata_letak_berubah": false,
+   "tata_letak_berubah_detik_mentah": null,
+   "catatan": ""
+  },
+  "klip9": {
+   "mentah": {
+    "pita_atas": "tidak",
+    "pita_bawah": "tidak",
+    "pita_kiri": "tidak",
+    "pita_kanan": "tidak",
+    "kotak_teks": "tidak",
+    "kotak_teks_posisi": "tidak",
+    "tata_letak_berubah": "tidak",
+    "tata_letak_berubah_detik": "tidak",
+    "catatan": ""
+   },
+   "pita": {
+    "atas": false,
+    "bawah": false,
+    "kiri": false,
+    "kanan": false
+   },
+   "berpita": false,
+   "pita_berpasangan": false,
+   "kotak_teks": false,
+   "kotak_teks_posisi": [],
+   "tata_letak_berubah": false,
+   "tata_letak_berubah_detik_mentah": null,
+   "catatan": ""
+  }
+ },
+ "ringkasan": {
+  "berpita": [],
+  "tanpa_pita": [
+   "klip6",
+   "klip7",
+   "klip8",
+   "klip9"
+  ],
+  "kotak_teks": {
+   "klip6": [
+    "atas",
+    "kiri"
+   ],
+   "klip7": [
+    "atas",
+    "kiri"
+   ]
+  },
+  "tata_letak_berubah": []
+ }
+}

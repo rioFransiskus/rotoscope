@@ -1,0 +1,101 @@
+{
+ "format": "t607-penilaian-k2/1",
+ "sumber": "work/t607/nilai/PENILAIAN.md",
+ "penilaian_md_sha256": "238254a29f0180a99ee3642977e03fa6c95f1c53f868852c1806f825f2d606ed",
+ "penilaian_md_bytes": 4549,
+ "labels_k2_sha256": "2f0e5156817af80bc13dece13e85a81cd8569539e385830faba77eb774869ef3",
+ "r2_fingerprint": "d40c3dfdd270a715a7bbc9bfbec96ce69ce613a1dac7480c1bcd607ec6eb1da0",
+ "buta": false,
+ "catatan": "SESUDAH deteksi (tidak buta); t607_penilaian.json + berkas label tidak diubah",
+ "normalisasi": [
+  "escape Markdown dari editor dibuang di 20 baris"
+ ],
+ "penilaian": {
+  "klip10": {
+   "papan": [
+    "06_klip10_f00000.png",
+    "07_klip10_f00041.png",
+    "08_klip10_f00082.png"
+   ],
+   "clip": "klip10",
+   "kotak": [
+    90,
+    0,
+    629,
+    405
+   ],
+   "penilaian_mentah": "pas",
+   "kotak_teks_mentah": "terbuang",
+   "komentar_mentah": "",
+   "penilaian": "pas",
+   "kotak_teks": "masih ada",
+   "klarifikasi": "angka: pita kiri + kanan hitam murni di semua frame (tidak ada piksel > 16) -> kotak teks kanan atas tidak di pita; Rio: 'Masih ada di hasil' (di dalam area video; di luar lingkup K2 menurut 'Klarifikasi lingkup K2')",
+   "r2_rentang_penuh": [
+    90,
+    0,
+    629,
+    405
+   ]
+  },
+  "klip11": {
+   "papan": [
+    "09_klip11_f00000.png",
+    "10_klip11_f00039.png",
+    "11_klip11_f00077.png"
+   ],
+   "clip": "klip11",
+   "kotak": [
+    0,
+    388,
+    719,
+    1055
+   ],
+   "penilaian_mentah": "pas",
+   "kotak_teks_mentah": "terbuang",
+   "komentar_mentah": "",
+   "penilaian": "pas",
+   "kotak_teks": "sebagian",
+   "klarifikasi": "angka: hasil rentang penuh menyisakan strip diam 74 baris (388–461; 390–461 putih 243–253, sama di semua frame; adegan mulai baris 462); papan 12 membuangnya. Rio: strip = 'Bagian kotak teks' -> sisa kotak teks > 4 px",
+   "r2_rentang_penuh": [
+    0,
+    388,
+    719,
+    1055
+   ]
+  },
+  "12": {
+   "papan": [
+    "12_klip11_f00023.png"
+   ],
+   "clip": "klip11",
+   "kotak": [
+    0,
+    461,
+    719,
+    1055
+   ],
+   "penilaian_mentah": "pas",
+   "kotak_teks_mentah": null,
+   "komentar_mentah": "",
+   "penilaian": "pas",
+   "kotak_teks": null,
+   "klarifikasi": null,
+   "r2_rentang_penuh": [
+    0,
+    388,
+    719,
+    1055
+   ]
+  }
+ },
+ "kotak_teks_dalam_lingkup": {
+  "klip10": false,
+  "klip11": true
+ },
+ "k2_per_klip_lolos": {
+  "klip10": true,
+  "klip11": false
+ },
+ "k2_lolos": false,
+ "papan_12": "pas -> strip 74 baris = kotak teks; jendela benar, rentang penuh potong kurang (bukan potong berlebih nyata)"
+}

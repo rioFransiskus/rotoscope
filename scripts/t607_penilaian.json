@@ -1,0 +1,176 @@
+{
+ "format": "t607-penilaian/1",
+ "sumber": "work/t607/nilai/PENILAIAN.md",
+ "penilaian_md_sha256": "fabf4c028463b90245af166bdf8e61acacd8e6d61567bef6882a1ae40df9b4fa",
+ "penilaian_md_bytes": 2637,
+ "labels_sha256": "4c71a8132c6e4137d1f2c12031214f2a477e05580cca513072dfab1f30ca9071",
+ "r2_fingerprint": "d40c3dfdd270a715a7bbc9bfbec96ce69ce613a1dac7480c1bcd607ec6eb1da0",
+ "buta": false,
+ "catatan": "SESUDAH deteksi (tidak buta); label asli scripts/t607_labels.json tidak diubah",
+ "normalisasi": [
+  "escape Markdown dari editor dibuang di 10 baris"
+ ],
+ "papan": {
+  "01": {
+   "papan": "01_klip6_f00236.png",
+   "clip": "klip6",
+   "frame": 236,
+   "jenis": "rentang penuh (kotak produksi)",
+   "alat_memotong": false,
+   "kotak": [
+    0,
+    0,
+    719,
+    1279
+   ],
+   "penilaian_mentah": "pas",
+   "komentar_mentah": "",
+   "penilaian": "pas",
+   "komentar": "",
+   "klarifikasi": null,
+   "png_sha256_sama_papan_json": true,
+   "r2_rentang_penuh": [
+    0,
+    0,
+    719,
+    1279
+   ],
+   "cropdetect_kerja": [
+    10,
+    0,
+    709,
+    1279
+   ]
+  },
+  "02": {
+   "papan": "02_klip6_f00035.png",
+   "clip": "klip6",
+   "frame": 35,
+   "jenis": "kasus K3: jendela f24-f47",
+   "alat_memotong": true,
+   "kotak": [
+    9,
+    0,
+    709,
+    1279
+   ],
+   "penilaian_mentah": "pas",
+   "komentar_mentah": "",
+   "penilaian": "konten terpotong",
+   "komentar": "tidak mengganggu",
+   "klarifikasi": "Rio: pita_hitam_tipis_kiri_kanan = tidak ('tepi pintu berwarna hitam'); papan 02 membuang tepi itu -> definisi 'konten terpotong'; ditanyakan sekali, Rio memilih 'Konten terpotong, tidak mengganggu'",
+   "png_sha256_sama_papan_json": true,
+   "r2_rentang_penuh": [
+    0,
+    0,
+    719,
+    1279
+   ],
+   "cropdetect_kerja": [
+    10,
+    0,
+    709,
+    1279
+   ]
+  },
+  "03": {
+   "papan": "03_klip7_f00332.png",
+   "clip": "klip7",
+   "frame": 332,
+   "jenis": "rentang penuh (kotak produksi)",
+   "alat_memotong": false,
+   "kotak": [
+    0,
+    0,
+    719,
+    1279
+   ],
+   "penilaian_mentah": "pas",
+   "komentar_mentah": "",
+   "penilaian": "pas",
+   "komentar": "",
+   "klarifikasi": null,
+   "png_sha256_sama_papan_json": true,
+   "r2_rentang_penuh": [
+    0,
+    0,
+    719,
+    1279
+   ],
+   "cropdetect_kerja": [
+    0,
+    0,
+    719,
+    1279
+   ]
+  },
+  "04": {
+   "papan": "04_klip8_f00105.png",
+   "clip": "klip8",
+   "frame": 105,
+   "jenis": "rentang penuh (kotak produksi)",
+   "alat_memotong": false,
+   "kotak": [
+    0,
+    0,
+    719,
+    1279
+   ],
+   "penilaian_mentah": "pas",
+   "komentar_mentah": "",
+   "penilaian": "pas",
+   "komentar": "",
+   "klarifikasi": null,
+   "png_sha256_sama_papan_json": true,
+   "r2_rentang_penuh": [
+    0,
+    0,
+    719,
+    1279
+   ],
+   "cropdetect_kerja": [
+    0,
+    0,
+    719,
+    1279
+   ]
+  },
+  "05": {
+   "papan": "05_klip9_f00180.png",
+   "clip": "klip9",
+   "frame": 180,
+   "jenis": "rentang penuh (kotak produksi)",
+   "alat_memotong": false,
+   "kotak": [
+    0,
+    0,
+    719,
+    1279
+   ],
+   "penilaian_mentah": "pas",
+   "komentar_mentah": "",
+   "penilaian": "pas",
+   "komentar": "",
+   "klarifikasi": null,
+   "png_sha256_sama_papan_json": true,
+   "r2_rentang_penuh": [
+    0,
+    0,
+    719,
+    1279
+   ],
+   "cropdetect_kerja": [
+    0,
+    0,
+    719,
+    1279
+   ]
+  }
+ },
+ "klip6_pita_tipis": {
+  "jawaban": false,
+  "komentar": "itu adalah tepi pintu berwarna hitam yang tanpak seperti pita",
+  "label_asli_berpita": false,
+  "koreksi_label": false
+ }
+}

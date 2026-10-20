@@ -1943,6 +1943,76 @@ T-604, T-605, T-606 (dibuka dari penutupan T-602) dipindah ke Phase 7 "Cakupan l
   - [2026-10-15] Dipindah dari Phase 6 ke Phase 7 "Cakupan lanjutan" (keputusan Rio T-604 no. 8); isi tidak berubah.
   - [2026-10-15] Dibuka dari penutupan T-602 (keputusan Rio).
 
+### T-607 · Potong letterbox / pillarbox / durasi · Stage [1] ingest · `WIP` (Tahap 1b)
+- **Kerjakan (keputusan Rio 2026-10-19, docs/04 "Keputusan T-607" + D-013):** crop + trim dalam satu task (kontrak [1] diubah sekali). Crop
+  **P-src**: kotak dideteksi aturan **R2 beku** (T-602: pita berpasangan ≥ 8 px, kotak teks hanya atas / bawah) pada `frames/` ingest biasa
+  sesudah trim → dipetakan ke koordinat sumber → ingest ulang dengan ffmpeg `crop` sebelum `scale`; satu kotak per klip; output = area aktif
+  saja (O1). `ingest.crop.mode` `auto` | `off` | `manual`. Trim `ingest.trim.start_s` / `end_s` + `--start` / `--end` (detik; indeks frame sesudah fps), folder
+  kerja `<stem>@S-E`. Key `crop` / `trim` di `meta.json` hanya bila dipakai (klip tanpa potongan byte-identik). ffmpeg `cropdetect` hanya
+  pembanding.
+- **Done when (kriteria ditetapkan sebelum mengukur):** K1 klip baru tanpa pita tidak dipotong; K2 klip baru berpita: pita + kotak teks
+  terbuang, konten utuh (papan Rio, SEMUA klip berpita); K3 jendela 1 s di klip baru: potong berlebih 0; K4 `test` / `test_short` / klip3 /
+  klip4 byte-identik + kotak Klip2 / klip5 = `scripts/t602_data.json`; K5 tanpa trim byte-identik, klip5 trim 0–3,8333 s = 92 frame; K6 Klip2 +
+  klip5 terpotong dinilai Rio (tanpa kerusakan baru). Default `crop.mode` `auto` hanya bila K1–K3 lolos, selain itu `off`. K1–K3 gagal → R2
+  tidak disetel ulang; Rio memutuskan.
+- **Catatan:** dari backlog "Potong letterbox / durasi" (penutupan T-602). Data acuan `scripts/t602_data.json` (`crop`, `letterbox`). T-305e
+  hanya diamati. LUAR: algoritma [2]–[6], crop per adegan, letterbox satu sisi, studi kualitas video, pengolahan khusus klip5.
+- **Tahap:** 1a rancangan + ukur 6 klip lama (CPU) → 1b validasi buta klip baru (CPU; label Rio dulu) → 2–3 implementasi + salinan scratch
+  (GPU Klip2 / klip5 oleh Rio) → 4 default final + run klip asli + docs + F4.
+- **Update log:**
+  - [2026-10-20] **Keputusan sesudah K2 gagal + rancangan Tahap 1c (saran + konfirmasi) — menunggu persetujuan Rio** (docs/04 "Keputusan
+    T-607 sesudah K2 gagal" + "Rancangan T-607 Tahap 1c"). Mode `auto` + `--crop auto` dihapus; R3 dan manual-tanpa-saran ditolak.
+    Ingest mendeteksi R2 beku pada rentang penuh sumber → `clips/<nama>/crop/saran.json` + pratinjau + pesan, tanpa memotong; kotak
+    diterima lewat alat baru `python -m rotoscope crop <video> --accept | --box X Y W H | --clear` → `crop/kotak.json` per sumber
+    (identitas sumber sha256; `ingest.crop.box` YAML dibatalkan karena berlaku untuk semua klip). Usulan kriteria: K1 diubah bunyinya, K2
+    → K2' (pratinjau), K3 gugur, K4–K6 tetap, K7 baru. Backlog: UI tarik kotak.
+  - [2026-10-20] **K2 GAGAL (klip11) → mode `auto` tidak layak; menunggu keputusan Rio** (docs/04 "Klarifikasi lingkup K2" + "Penilaian
+    Rio K2"; `scripts/t607_penilaian_k2.json` sha256 `b746508d…`). klip10 lolos (pita 90 + 90 terbuang, konten utuh; kotak teks sudut masih
+    ada = di luar lingkup). klip11: pita + konten pas, tetapi rentang penuh menyisakan 74 baris bawah kotak teks (baris 388–389 statis
+    98,8–98,9% < 99%, noise kompresi frame awal) → kotak teks sebagian > 4 px = gagal; papan 12 (jendela) benar. Ditanyakan sekali (dua
+    jawaban tidak konsisten dengan angka). R2 + kriteria tidak diubah; default tetap `off`. Rio memutuskan: manual saja / R3 + validasi
+    baru; teks saran A+ ("pakai --crop auto") perlu ditinjau. F1 `after_1b4` identik.
+  - [2026-10-20] **K2 klip10–klip11 diukur — menunggu penilaian Rio** (docs/04 "Label Rio K2 klip10–klip11" + "Hasil K2"). Label →
+    `scripts/t607_labels_k2.json` (`2f0e5156…`) sebelum deteksi; jenis pita + letak kotak teks ditanyakan sekali. R2 beku: klip10 kiri +
+    kanan 90 px (= cropdetect; kotak teks kanan atas tidak dibuang — aturan no. 4), klip11 atas 388 (pita 219 + kotak teks 169) + bawah
+    224 px; sisi cocok label 2 / 2. K3: klip10 0 / 5, klip11 4 / 5 (jendela mengupas atas 73–74 baris lebih dalam). Papan 06–12 +
+    `PENILAIAN.md` bagian K2. F1 `after_1b3` identik.
+  - [2026-10-20] **Keputusan sesudah K3 (Rio, "setuju semua")** (docs/04 "Keputusan sesudah K3 T-607"): default `ingest.crop.mode` =
+    `off` (keputusan no. 6); R2 TIDAK disetel ulang, R3 + tafsir ulang K3 ditolak. A+: mode `off` tetap mendeteksi dan mencetak saran
+    "pita terdeteksi … — pakai --crop auto" (tanpa memotong, tanpa key `meta.json`). Flag `--crop auto|off` menimpa YAML di semua
+    subperintah yang mencari folder klip; kotak manual tetap di YAML. K2 diuji DULU dengan klip10 + klip11 sebelum Tahap 2 (label →
+    `scripts/t607_labels_k2.json`, kriteria tidak berubah).
+  - [2026-10-20] **Penilaian Rio papan 1b disimpan — K3 gagal dikonfirmasi; menunggu keputusan Rio atas K3** (docs/04 "Penilaian Rio papan
+    T-607 Tahap 1b"; `scripts/t607_penilaian.json` sha256 `ec656f90…`, label asli tidak diubah). 01 / 03 / 04 / 05 `pas` (K1 4 / 4
+    dikonfirmasi). klip6 "pita tipis" = tidak: tepi pintu hitam (adegan) → papan 02 (jendela 1 s membuang kiri 9 + kanan 10 px) = konten
+    terpotong, tidak mengganggu (jawaban mentah `pas`, ditanyakan sekali). K3 35 / 137 = potong berlebih nyata; R2 + kriteria tidak diubah.
+    klip10 / klip11 belum ada. Disk Tahap 3–4 ±2,3 GiB vs C: bebas 17 GiB (cukup). F1 `after_1b2` identik.
+  - [2026-10-20] **Tahap 1b selesai — K1 4 / 4, K3 GAGAL (klip6 35 / 38 jendela), K2 belum teruji; menunggu penilaian Rio + keputusan**
+    (docs/04 "Label Rio T-607 + harapan per klip" + "Hasil T-607 Tahap 1b"). Label disimpan sebelum deteksi (`scripts/t607_labels.json`
+    sha256 `4c71a813…`): klip6–klip9 tanpa pita, klip6 / klip7 kotak teks atas + kiri. Keputusan Rio sebelum deteksi: kotak teks tanpa pita
+    → benar = tidak dipotong; klip berpita menyusul, default `auto` diputuskan setelah K2 teruji. R2 beku: rentang penuh tidak memotong
+    keempat klip (K1 ✔); jendela 1 s klip6 memotong kiri 9 + kanan 10 px di 35 / 38 jendela (kolom hitam di 100% frame; rentang penuh
+    gagal karena kolom 4 statis 97,5% < 99%) → label vs angka tidak konsisten, ditanyakan di `work/t607/nilai/PENILAIAN.md`. klip7–klip9
+    0 / 99. R2 tidak disetel ulang. Menurut keputusan no. 6 → default `off` kecuali Rio memutuskan lain. F1 `after_1b` identik.
+  - [2026-10-20] **Rancangan Tahap 1a disetujui Rio ("setuju semua") dengan ketentuan + koreksi; langkah 8–10 selesai — menunggu label
+    Rio** (docs/04 "Persetujuan rancangan T-607 (2026-10-20)"). Trim SESUDAH fps berbasis indeks frame: a = ceil(S·24 − 1e-6),
+    b = ceil(E·24 − 1e-6), akhir eksklusif, detik dari frame pertama ingest (mengganti desain T-602 f; "detik garis waktu sumber" no. 8
+    dibetulkan). Kotak keluar + genap (sisa tepi dicek di K6). R2 di YAML + PERINGATAN + sidik di `meta.json`. Cache deteksi DITOLAK.
+    `--start` / `--end` di semua subperintah. Kotak manual px sumber. GPU sekali (salin → cek sha256 → ganti; hanya bila `meta.json` + sidik
+    setiap stage sama; `out/` lama disimpan dulu). Klip yang ingest-nya berubah ditolak [2] / [2c] sampai `run --restart-from ingest --yes`
+    (koreksi no. 9). Pesan pick / [1b] = butir 5g. Klip validasi = `samples/klip6` … `klip9` apa adanya (koreksi no. 10). ffprobe: 4 klip
+    720 × 1280 SAR 1:1 tanpa rotasi, 8,8–27,7 s. `LABEL.md` → klip6–klip9. F1 `after_1a2` identik.
+  - [2026-10-20] **Tahap 1a selesai — menunggu persetujuan rancangan + klip validasi Rio** (docs/04 "R2 DIBEKUKAN" + "Hasil + rancangan
+    T-607 Tahap 1a"). R2 direproduksi persis (kotak 5 klip, rentang, setiap jendela = `t602_data.json` + arsip; R2 0 / 72, test_short baru
+    0 / 8) lalu DIBEKUKAN (sidik `d40c3dfd…`). cropdetect: Klip2 1 px lebih sempit per sisi, klip5 tidak membuang kotak teks (pembanding
+    saja). P-src: Klip2 230 × 406 → 412 × 720 (×1,79); klip5 P-src = P-frm (piksel identik). Deteksi 1,2–5,7 s per run (usul cache). Trim
+    sebelum fps (desain T-602) dibantah data (klip5 0 / 92 frame identik) → usul trim indeks frame sesudah fps (byte-identik di semua
+    kasus; klip5 0–3,833 s = 92 frame). Rancangan a–i + estimasi (GPU Tahap 3 ≈ 73–78 mnt) + 8 keraguan di docs/04. Klip validasi: Rio
+    "belum siap"; `work/t607/label/LABEL.md` dibuat. F1 `before` = `after_1a` (10 701 berkas). Tanpa GPU; tanpa perubahan `src/` / `configs/`
+    / `tests/`. Alat: `scripts/t607_hash.py`, `scripts/t607_study.py`.
+  - [2026-10-19] **Dibuka + Tahap 1a dimulai** (keputusan Rio dicatat di docs/04 "Keputusan T-607" + D-013 sebelum skrip). `TODO` → `WIP`.
+    Papan: total 49 → 50, Phase 7 = 4/5, selesai 38/50.
+
 ---
 
 ## Backlog (belum menjadi task; tidak dihitung di papan)
@@ -1959,8 +2029,10 @@ Backlog kecil lain tetap tercatat di task asalnya.
   - **Kerusakan visual klip5 sesudah VF (penilaian Rio T-305f, 2026-10-19):** Rio melihat kerusakan visual di klip5 (video `work/t305f/nilai/klip5_penuh_berdampingan.mp4`) yang menurut Rio berasal dari proses LAIN, bukan VF. **Detik: tidak dicatat — periksa saat pengolahan khusus klip5.** VF tetap aktif; nilai klip5 sesudah VF 3. (docs/04 "Penilaian Rio T-305f")
 - **Basi hilir berbasis `created_utc` beresolusi detik** — [4] merujuk [3] lewat `stable_created_utc` (juga [4] → [5]); dua run [3] dalam detik yang sama (hanya terjadi di klip uji kecil) tidak terdeteksi [4]. Usul: rujuk sidik isi / hash manifest hulu. Ditemukan di T-606 Tahap 2 (test_34 tidak stabil; test diperbaiki, kode [4] tidak diubah). (2026-10-19)
 - **[2] `qc_report.json` ditulis ulang di setiap `run`** (`created_utc` baru walau isi sama) — F1 berbasis hash berkas berubah setiap `run` sungguhan. Usul: tulis hanya bila isi (tanpa cap waktu) berubah. Ditemukan di penutupan T-605 (2026-10-17).
-- **Potong letterbox / durasi** — aturan R2 disusun post-hoc dan WAJIB divalidasi di klip baru sebelum produksi. Data: `scripts/t602_data.json` (`crop`, `letterbox`: R2 potong berlebih 0 / 72 jendela, R1 24 / 72). Terkait T-305e (Klip2 pillarbox). (2026-10-15, penutupan T-602)
+- ~~**Potong letterbox / durasi**~~ — **menjadi T-607 (2026-10-19, Phase 7).** Aturan R2 disusun post-hoc dan WAJIB divalidasi di klip baru sebelum produksi. Data: `scripts/t602_data.json` (`crop`, `letterbox`: R2 potong berlebih 0 / 72 jendela, R1 24 / 72). Terkait T-305e (Klip2 pillarbox). (2026-10-15, penutupan T-602)
 - **Studi peningkatan kualitas video** (studi terpisah; lisensi + VRAM dicek dulu). (2026-10-15, penutupan T-602)
+- **UI tarik kotak crop** (jendela seperti `pick`: tarik kotak di frame kerja → kotak crop per klip). TIDAK dikerjakan di T-607; di T-607
+  kotak diterima dari saran R2 atau diketik manual (docs/04 "Keputusan T-607 sesudah K2 gagal" no. 5). (2026-10-20, T-607)
 
 ---
 
@@ -1975,9 +2047,10 @@ Backlog kecil lain tetap tercatat di task asalnya.
 | 4 Style | T-401 … T-406 (T-404 → a/b) — T-401 ✅ DONE (tebal variabel + taper + resample, contract "T-401"), T-402 ✅ DONE (jitter koheren, contract "T-402", default MATI), T-403 ✅ DONE (multipass 2 pass offset 5,5 falloff 0,35 opacity 0,92, contract "T-403"), T-404a ✅ DONE (kertas bertekstur disusun di export, Opsi B; [5] tidak berubah); T-404b SKIP (tekstur garis ditolak Rio berdasarkan data / penilaian visual, docs/04 "Hasil T-404b"; alat ukur dipertahankan); T-404 tuntas; T-405 ✅ DONE (SVG diverifikasi di Krita, 2026-10-08, tanpa perubahan kode); T-406 ✅ DONE (4 preset + `--style` nama / path + `{style}`, 2026-10-08) — 🎯 **Milestone Phase 4 tercapai** | 6/7 |
 | 5 Fallback | T-501 … T-502 (BLOCKED) | 0/2 |
 | 6 Opsional | T-601 … T-603 (T-601 SKIP; T-602 ✅ DONE — studi pra-proses SAM 2.1 tiny dihentikan Rio sebelum 1b-2, hasil = lanjut ke produksi (docs/04 "Keputusan akhir T-602"); T-603 TODO; T-604 / T-605 / T-606 dipindah ke Phase 7, 2026-10-15) | 1/3 |
-| 7 Cakupan lanjutan | T-701, T-604 … T-606 — T-701 ✅ DONE (hasil I0: tanpa integrasi; lengan baju menempel badan = batas yang diketahui; I2 diparkir; T-702–T-706 tidak dibuat); T-604 ✅ DONE (CLI `pick`; uji Rio lolos 2026-10-17; zoom tidak diperlukan; titik klip5 f0 + f64, klip3 f85 tersimpan); T-605 ✅ DONE ([1b] isolasi SAM 2.1 tiny, 2026-10-17; lolos berdasarkan klip3 41 / 41 frame; klip5 dikecualikan → backlog); T-606 ✅ DONE (masker target di [3], M2-H d 4, D-012, 2026-10-19; produksi klip3 dinilai Rio 4) — 🎯 **rangkaian fitur pick (T-604 → T-605 → T-606) selesai**; task berikutnya: ditentukan di chat | 4/4 |
+| 7 Cakupan lanjutan | T-701, T-604 … T-606 — T-701 ✅ DONE (hasil I0: tanpa integrasi; lengan baju menempel badan = batas yang diketahui; I2 diparkir; T-702–T-706 tidak dibuat); T-604 ✅ DONE (CLI `pick`; uji Rio lolos 2026-10-17; zoom tidak diperlukan; titik klip5 f0 + f64, klip3 f85 tersimpan); T-605 ✅ DONE ([1b] isolasi SAM 2.1 tiny, 2026-10-17; lolos berdasarkan klip3 41 / 41 frame; klip5 dikecualikan → backlog); T-606 ✅ DONE (masker target di [3], M2-H d 4, D-012, 2026-10-19; produksi klip3 dinilai Rio 4) — 🎯 **rangkaian fitur pick (T-604 → T-605 → T-606) selesai**; T-607 WIP (potong letterbox / pillarbox / durasi di [1], D-013; Tahap 1a, 2026-10-19) | 4/5 |
 
-**Total: 49 task** (5 + 11 + 6 + 11 + 7 + 2 + 3 + 4) · Selesai: 38/49 (5 + 11 + 6 + 5 + 6 + 0 + 1 + 4; SKIP — T-301, T-303, T-305a, T-404b, T-601 — tidak dihitung selesai).
+**Total: 50 task** (5 + 11 + 6 + 11 + 7 + 2 + 3 + 5) · Selesai: 38/50 (5 + 11 + 6 + 5 + 6 + 0 + 1 + 4; SKIP — T-301, T-303, T-305a, T-404b, T-601 — tidak dihitung selesai).
+Rekonsiliasi 2026-10-19 (T-607 dibuka di Phase 7, `WIP` Tahap 1a; dari backlog "Potong letterbox / durasi"): Phase 7 = 4/5 (T-701, T-604, T-605, T-606 selesai; T-607 WIP), total 38/50 (5 + 11 + 6 + 5 + 6 + 0 + 1 + 4 = 38; 5 + 11 + 6 + 11 + 7 + 2 + 3 + 5 = 50; jumlah per Phase = total). Dihitung ulang dari papan (judul `### T-` per Phase = 51 judul, T-404 induk tidak dihitung karena dipecah a / b; status dibaca dari penanda `DONE` / `SKIP` / … di judul): Phase 0 5/5, 1 11/11, 2 6/6, 3 5/11, 4 6/7, 5 0/2, 6 1/3, 7 4/5 — sama dengan instruksi (38/50).
 Rekonsiliasi 2026-10-19 (T-305f DONE; task berikutnya ditentukan di chat): Phase 3 = 5/11 (T-302, T-305b, T-305c, T-305d, T-305f selesai; T-301, T-303, T-305a SKIP tidak dihitung; T-304, T-305, T-305e belum), total 38/49 (5 + 11 + 6 + 5 + 6 + 0 + 1 + 4 = 38; 5 + 11 + 6 + 11 + 7 + 2 + 3 + 4 = 49; jumlah per Phase = total). Dihitung ulang dari papan (judul `### T-` per Phase = 50 judul, T-404 induk tidak dihitung karena dipecah a / b; status dibaca dari penanda `DONE` / `SKIP` di judul): Phase 0 5/5, 1 11/11, 2 6/6, 3 5/11, 4 6/7, 5 0/2, 6 1/3, 7 4/4 — sama dengan instruksi (38/49).
 Rekonsiliasi 2026-10-19 (T-305f `TODO` → `WIP`, Tahap 1): hitungan TIDAK berubah — Phase 3 = 4/11, total 37/49.
 Rekonsiliasi 2026-10-19 (T-606 DONE; task berikutnya ditentukan di chat): Phase 7 = 4/4 (T-701, T-604, T-605, T-606 selesai), total 37/49 (5 + 11 + 6 + 4 + 6 + 0 + 1 + 4 = 37; 5 + 11 + 6 + 11 + 7 + 2 + 3 + 4 = 49; jumlah per Phase = total). Dihitung ulang dari papan (judul `### T-` per Phase = 50 judul, T-404 induk tidak dihitung karena dipecah a / b; status dibaca dari penanda `DONE` / `SKIP` / … di judul): Phase 0 5/5, 1 11/11, 2 6/6, 3 4/11, 4 6/7, 5 0/2, 6 1/3, 7 4/4 — sama dengan perkiraan instruksi (37/49).

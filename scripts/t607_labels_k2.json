@@ -1,0 +1,127 @@
+{
+ "format": "t607-labels-k2/1",
+ "sumber": "work/t607/label/LABEL.md",
+ "label_md_sha256": "0f809157572fcd59ec0c4241c3b20fdd491efe4ee8f0aad01faa88402f20f321",
+ "label_md_bytes": 3928,
+ "labels_klip6_9_sha256": "4c71a8132c6e4137d1f2c12031214f2a477e05580cca513072dfab1f30ca9071",
+ "r2_fingerprint": "d40c3dfdd270a715a7bbc9bfbec96ce69ce613a1dac7480c1bcd607ec6eb1da0",
+ "disimpan_sebelum_deteksi": true,
+ "klarifikasi_sebelum_deteksi": {
+  "klip10": {
+   "jenis_pita": "hitam polos",
+   "kotak_teks_letak": "di sebelah pita bagian kanan",
+   "harapan_k2": "pita kiri + kanan terbuang; kotak teks (kanan atas, di sebelah pita kanan) ikut terbuang (K2); konten utuh",
+   "catatan": "jawaban letak tidak memilih opsi; tafsir Claude Code: menempel pada pita kanan (bukan caption di atas adegan) -> K2 'kotak teks terbuang'; tidak ditanyakan ulang (sudah sekali); dinilai Rio di papan"
+  },
+  "klip11": {
+   "jenis_pita": "hitam polos",
+   "kotak_teks_letak": "di pita atas / antara pita dan adegan",
+   "harapan_k2": "pita atas + bawah + kotak teks atas terbuang (K2); konten utuh",
+   "catatan": ""
+  }
+ },
+ "normalisasi": [
+  "escape Markdown dari editor dibuang di 55 baris",
+  "klip10: jenis_pita 'pita hitam' -> 'hitam polos' (klarifikasi Rio)",
+  "klip10: kotak_teks_posisi 'kanan atas' dipisah spasi -> ['kanan', 'atas']",
+  "klip10: tata_letak_berubah_detik 'tidak' dibaca sebagai kosong (template: '-')",
+  "klip11: jenis_pita 'pita hitam' -> 'hitam polos' (klarifikasi Rio)",
+  "klip11: tata_letak_berubah_detik 'tidak' dibaca sebagai kosong (template: '-')"
+ ],
+ "clips": {
+  "klip10": {
+   "mentah": {
+    "pita_atas": "tidak",
+    "pita_bawah": "tidak",
+    "pita_kiri": "ya",
+    "pita_kanan": "ya",
+    "kotak_teks": "ya",
+    "kotak_teks_posisi": "kanan atas",
+    "tata_letak_berubah": "tidak",
+    "tata_letak_berubah_detik": "tidak",
+    "catatan": "",
+    "jenis_pita": "pita hitam"
+   },
+   "pita": {
+    "atas": false,
+    "bawah": false,
+    "kiri": true,
+    "kanan": true
+   },
+   "berpita": true,
+   "pita_berpasangan": true,
+   "kotak_teks": true,
+   "kotak_teks_posisi": [
+    "kanan",
+    "atas"
+   ],
+   "tata_letak_berubah": false,
+   "tata_letak_berubah_detik_mentah": null,
+   "catatan": "",
+   "jenis_pita_mentah": "pita hitam",
+   "jenis_pita": "hitam polos",
+   "kotak_teks_letak": "di sebelah pita bagian kanan",
+   "harapan_k2": "pita kiri + kanan terbuang; kotak teks (kanan atas, di sebelah pita kanan) ikut terbuang (K2); konten utuh",
+   "klarifikasi_catatan": "jawaban letak tidak memilih opsi; tafsir Claude Code: menempel pada pita kanan (bukan caption di atas adegan) -> K2 'kotak teks terbuang'; tidak ditanyakan ulang (sudah sekali); dinilai Rio di papan"
+  },
+  "klip11": {
+   "mentah": {
+    "pita_atas": "ya",
+    "pita_bawah": "ya",
+    "pita_kiri": "tidak",
+    "pita_kanan": "tidak",
+    "kotak_teks": "ya",
+    "kotak_teks_posisi": "atas",
+    "tata_letak_berubah": "tidak",
+    "tata_letak_berubah_detik": "tidak",
+    "catatan": "",
+    "jenis_pita": "pita hitam"
+   },
+   "pita": {
+    "atas": true,
+    "bawah": true,
+    "kiri": false,
+    "kanan": false
+   },
+   "berpita": true,
+   "pita_berpasangan": true,
+   "kotak_teks": true,
+   "kotak_teks_posisi": [
+    "atas"
+   ],
+   "tata_letak_berubah": false,
+   "tata_letak_berubah_detik_mentah": null,
+   "catatan": "",
+   "jenis_pita_mentah": "pita hitam",
+   "jenis_pita": "hitam polos",
+   "kotak_teks_letak": "di pita atas / antara pita dan adegan",
+   "harapan_k2": "pita atas + bawah + kotak teks atas terbuang (K2); konten utuh",
+   "klarifikasi_catatan": ""
+  }
+ },
+ "ringkasan": {
+  "berpita_berpasangan": [
+   "klip10",
+   "klip11"
+  ],
+  "sisi_pita": {
+   "klip10": [
+    "kiri",
+    "kanan"
+   ],
+   "klip11": [
+    "atas",
+    "bawah"
+   ]
+  },
+  "kotak_teks": {
+   "klip10": [
+    "kanan",
+    "atas"
+   ],
+   "klip11": [
+    "atas"
+   ]
+  }
+ }
+}
