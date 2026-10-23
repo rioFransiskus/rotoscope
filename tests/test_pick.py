@@ -502,7 +502,27 @@ def test_other_clip_or_other_frame_size_is_refused(tmp_path, capsys):
     p.write_text(json.dumps({**doc, "clip": {**doc["clip"], "source_path": str(tmp_path / "lain.mp4")}}), encoding="utf-8")
     assert run_gui(work, 0, [])[0] == 1 and "milik klip lain" in capsys.readouterr().err
     p.write_text(json.dumps({**doc, "frame_size": {"width": W * 2, "height": H * 2}}), encoding="utf-8")
-    assert run_gui(work, 0, [])[0] == 1 and "dibuat untuk frame 128 x 96" in capsys.readouterr().err
+    assert run_gui(work, 0, [])[0] == 1
+    err = capsys.readouterr().err
+    assert "dibuat untuk frame 128 x 96" in err and "crop / trim" in err and "points.old.json" in err   # T-607 butir 5g
+    assert "python -m rotoscope pick v.mp4 --frame 0" in err                   # frame pertama berkas titik
+
+
+def test_pick_cmd_carries_trim_flags(tmp_path):
+    """T-607: perintah pick ulang menuju folder <nama>@S-E yang sama."""
+    work, _ = make_clip(tmp_path)
+    meta = json.loads((work / "meta.json").read_text(encoding="utf-8"))
+    meta["trim"] = {"start_s": 0.5, "end_s": 1.0, "start_frame": 12, "end_frame": 24}
+    (work / "meta.json").write_text(json.dumps(meta), encoding="utf-8")
+    s = pick.open_session(work, 0, "v.mp4")
+    assert s.pick_cmd(3) == "python -m rotoscope pick v.mp4 --start 0.5 --end 1 --frame 3"
+    from rotoscope import stage_common
+    conf = tmp_path / "c.yaml"
+    stage_common.set_message_config(conf)
+    assert s.pick_cmd(3) == f"python -m rotoscope pick v.mp4 --start 0.5 --end 1 --config {conf.resolve()} --frame 3"
+    (work / "frames" / "frame_00002.png").unlink()                       # perintah ingest ulang juga siap tempel
+    with pytest.raises(pick.PickError, match=r"jalankan python -m rotoscope ingest v\.mp4 --start 0\.5 --end 1 --config "):
+        pick.open_session(work, 2, "v.mp4")
 
 
 # ── (16) status ok / basi / hilang ─────────────────
@@ -636,7 +656,8 @@ def test_cli_ingests_only_when_meta_missing(tmp_path, monkeypatch, capsys):
     video.write_bytes(b"x")
     work = tmp_path / "work" / "clips" / "klip"
     assert cli.main(["pick", str(video), "--dry-run"]) == 0
-    assert calls == [[str(video), "--work-dir", str(cli.clip_work_dir(cli.load_cfg(None), video))]]
+    cfg = cli.load_cfg(None)
+    assert calls == [[str(video), "--work-dir", str(cli.clip_work_dir(cfg, video)), "--crop-dir", str(cli.crop_dir_of(cfg, video))]]
     assert "ingest dijalankan dulu" in capsys.readouterr().out
     assert (work / "target" / "pick_dryrun" / "frame_00000.png").is_file()
     frames_before = {p.name: p.read_bytes() for p in (work / "frames").iterdir()}

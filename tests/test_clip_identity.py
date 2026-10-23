@@ -26,6 +26,52 @@ from rotoscope.stage_common import StageError
 _env_seg, _env_dep = ts._env, td._env
 
 
+def test_cli_cmd_adds_trim_flags_from_meta(tmp_path):
+    """T-607: perintah yang disarankan menuju folder <nama>@S-E yang sama (detik kanonik dari key trim)."""
+    w = tmp_path / "w"
+    w.mkdir()
+    meta = {"source_path": "C:/v/a b.mp4"}
+    (w / "meta.json").write_text(json.dumps(meta), encoding="utf-8")
+    assert sc.cli_cmd("segment", w) == 'python -m rotoscope segment "C:/v/a b.mp4"'
+    trim = {"start_s": 2.0, "end_s": 3.833, "start_frame": 48, "end_frame": 92}
+    (w / "meta.json").write_text(json.dumps({**meta, "trim": trim}), encoding="utf-8")
+    assert sc.cli_cmd("segment", w) == 'python -m rotoscope segment "C:/v/a b.mp4" --start 2 --end 3.833'
+    (w / "meta.json").write_text(json.dumps({**meta, "trim": {**trim, "end_s": None, "end_frame": None}}), encoding="utf-8")
+    assert sc.cli_cmd("pick", w) == 'python -m rotoscope pick "C:/v/a b.mp4" --start 2'
+    assert sc.trim_label(trim) == "2-3.833" and sc.trim_label({**trim, "end_s": None}) == "2-end" and sc.trim_label(None) is None
+    assert sc.cli_cmd("depth", tmp_path / "tidak_ada") == "python -m rotoscope depth <video>"
+
+
+def test_cli_cmd_carries_non_default_config_only(tmp_path):
+    """T-607: perintah siap tempel membawa --config non-default yang dipakai proses ini (path absolut)."""
+    w = tmp_path / "w"
+    w.mkdir()
+    (w / "meta.json").write_text(json.dumps({"source_path": "C:/v/a.mp4"}), encoding="utf-8")
+    conf = tmp_path / "lain.yaml"
+    sc.set_message_config(conf)
+    assert sc.cli_cmd("segment", w) == f"python -m rotoscope segment C:/v/a.mp4 --config {conf.resolve()}"
+    assert sc.config_flag() == f" --config {conf.resolve()}"
+    sc.set_message_config(sc.MESSAGE_DEFAULT_CONFIG)                    # config default = tidak dicetak
+    assert sc.cli_cmd("segment", w) == "python -m rotoscope segment C:/v/a.mp4"
+    sc.set_message_config(sc.MESSAGE_DEFAULT_CONFIG.resolve())
+    assert sc.config_flag() == ""
+    sc.set_message_config(None)
+    assert sc.config_flag() == ""
+
+
+def test_segment_main_rejection_names_config(tmp_path, capsys):
+    """main() stage (subprocess di run) menyetel --config → pesan penolakan identitas siap tempel."""
+    work = ts.make_work(tmp_path)
+    seg.run_segment(ts.make_cfg(work), backend_factory=ts.factory(), log=ts.quiet)
+    other_clip(work)
+    conf = tmp_path / "c.yaml"
+    conf.write_text("qc:\n  area_min: 0.03\n", encoding="utf-8")
+    assert seg.main(["--work-dir", str(work), "--config", str(conf)]) == 1
+    err = capsys.readouterr().err
+    assert f"segment C:/clips/klip_lain.mp4 --config {conf.resolve()} --restart --yes" in err
+    assert f"run C:/clips/klip_lain.mp4 --config {conf.resolve()} --restart-from ingest --yes" in err
+
+
 def other_clip(work: Path) -> dict:
     """Simulasi ingest klip lain ke work_dir yang sama: meta.json berubah (frame, ukuran, hitungan sama)."""
     p = work / "meta.json"
@@ -104,6 +150,7 @@ def test_segment_other_clip_rejected_before_backend(tmp_path, limit):
     msg = str(e.value)
     assert "LAIN" in msg and "C:/clips/a.mp4" in msg and "klip_lain.mp4" in msg and "--restart" in msg
     assert new["meta_sha256"][:12] in msg
+    assert "python -m rotoscope run C:/clips/klip_lain.mp4 --restart-from ingest --yes" in msg     # T-607 persetujuan no. 8
     assert f.made == [] and seg_bytes(work) == before             # backend tidak dibuat, output utuh
 
 
@@ -235,7 +282,7 @@ def test_depth_other_clip_rejected_before_backend(tmp_path, limit):
     before = [p.read_bytes() for p in sorted((work / "depth").glob("frame_*.npy"))]
     other_clip(work)
     f = td.factory()
-    with pytest.raises(StageError, match=r"LAIN[\s\S]*klip_lain[\s\S]*--restart"):
+    with pytest.raises(StageError, match=r"LAIN[\s\S]*klip_lain[\s\S]*--restart[\s\S]*run C:/clips/klip_lain\.mp4 --restart-from ingest --yes"):
         dep.run_depth(td.make_cfg(work), limit=limit, backend_factory=f, log=td.quiet)
     assert f.made == []
     assert [p.read_bytes() for p in sorted((work / "depth").glob("frame_*.npy"))] == before

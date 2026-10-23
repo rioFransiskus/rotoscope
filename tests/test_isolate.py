@@ -512,7 +512,7 @@ def test_23_stale_or_missing_click_frame_is_rejected(tmp_path):
     img = frame_rgb(2, 0)
     img[3, 3] = 0
     write_png(work / "frames" / (FRAME_PATTERN % 2), img)                   # isi frame berubah sejak diklik
-    with pytest.raises(StageError, match=r"f2: basi.*pick .* --frame 2"):
+    with pytest.raises(StageError, match=r"f2: basi.*crop / trim / video lain.*pick .* --frame 2"):
         run(work)
     assert not (work / "isolate").exists()
     work2, _ = make_clip(tmp_path / "b", n=4)
@@ -521,6 +521,16 @@ def test_23_stale_or_missing_click_frame_is_rejected(tmp_path):
     stage_common.write_json_atomic(iso.points_path(work2), doc)
     with pytest.raises(StageError, match=r"f9: hilang"):
         run(work2)
+
+
+def test_23b_points_for_other_frame_size_name_pick_with_frame(tmp_path):
+    """T-607 (persetujuan rancangan no. 9): frame berubah ukuran (crop / trim) → semua titik basi + perintah pick ulang."""
+    work, _ = make_clip(tmp_path, n=4)
+    doc = write_points(work, {2: [(1, P, None)]})
+    doc["frame_size"] = {"width": doc["frame_size"]["width"] + 2, "height": doc["frame_size"]["height"]}
+    stage_common.write_json_atomic(iso.points_path(work), doc)
+    with pytest.raises(StageError, match=r"titik dibuat untuk frame.*crop / trim.*points\.old\.json.*rotoscope pick .* --frame 2"):
+        run(work)
 
 
 def test_24_points_of_other_clip_or_corrupt(tmp_path):
@@ -604,8 +614,9 @@ def test_28_run_without_points_no_subprocess_same_argv_no_files(rec, tmp_path):
     before = tree(tmp_path)
     assert cli.main(["run", str(video)]) == 0
     wd = str(work)
+    cd = str(cli.crop_dir_of(cli.load_cfg(None), video))                   # T-607: folder crop per sumber (ingest palsu tidak menulis)
     assert [(c[0], c[1], c[2]) for c in rec.calls] == [
-        ("cpu", "ingest", [str(video), "--work-dir", wd]), ("gpu", "segment", ["--work-dir", wd]),
+        ("cpu", "ingest", [str(video), "--work-dir", wd, "--crop-dir", cd]), ("gpu", "segment", ["--work-dir", wd]),
         ("gpu", "depth", ["--work-dir", wd]), ("cpu", "stabilize", ["--work-dir", wd]),
         ("cpu", "vectorize", ["--work-dir", wd]), ("cpu", "stylize", ["--work-dir", wd]), ("cpu", "export", ["--work-dir", wd])]
     assert tree(tmp_path) == before                                         # tidak ada berkas baru / berubah

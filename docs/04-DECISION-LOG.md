@@ -4613,6 +4613,15 @@ ingest dua pass di setiap `run` (biaya diukur di Tahap 1a).
 **Koreksi 2026-10-20 (persetujuan rancangan Tahap 1a):** trim SESUDAH `fps` berbasis indeks frame (detik dihitung dari frame pertama hasil
 ingest); klip yang ingest-nya berubah tidak dihitung ulang otomatis — [2] / [2c] menolak sampai `run --restart-from ingest --yes`. Rincian:
 "Persetujuan rancangan T-607 (2026-10-20)".
+**Final 2026-10-23 (penutupan T-607; menggantikan butir "Kontrak", "Crop P-src" (bagian deteksi), "Trim" (YAML), dan "Default
+`crop.mode`" di atas):** **saran + konfirmasi** (K2 gagal, "Keputusan T-607 sesudah K2 gagal"). Mode `auto` / `off` / `manual`, `crop.box`
+di YAML, flag `--crop`, dan `ingest.trim.*` di YAML DIHAPUS. Deteksi R2 beku pada RENTANG PENUH SUMBER (bukan sesudah trim) → `saran.json`
++ pratinjau di `<paths.work_dir>/crop/<nama>/` (per SUMBER, di luar folder klip; D1 = `deteksi.json`); kotak dipakai ingest HANYA bila
+diputuskan lewat alat `python -m rotoscope crop <video> --accept | --box X Y W H | --none` (`kotak.json`, identitas sumber sha256 +
+ukuran + dimensi). `run` penuh berhenti sesudah [1] dengan exit 4 selama saran belum diputuskan. Section `ingest` di YAML = `crop.suggest`
++ `crop.detect.*` (R2 beku) + `crop.preview.hint_static_frac`. Trim hanya `--start` / `--end`. P-src, O1, key `meta.json` hanya bila
+dipakai, dan pengecualian [2]–[6] tetap. Klip2 + klip5 asli dipotong dengan kotak saran (K6 lolos). Kontrak lengkap: docs/01 "[1]
+`ingest.py`" + "`crop.py`".
 
 ### R2 DIBEKUKAN (T-607 Tahap 1a, 2026-10-20) — dicatat SEBELUM klip baru diukur
 
@@ -5188,6 +5197,247 @@ petunjuk di YAML (aturan no. 3).
 - **Pratinjau:** 3 PNG per sumber, 0,55–2,2 MB per papan (terukur, papan K2) → ±2–7 MB per sumber; frame tengah perlu satu decode
   tambahan (≈ waktu ingest 0,35–4,3 s), hanya saat saran baru. `saran.json` / `kotak.json` < 4 KB.
 - Ingest final tidak berubah (0,35–4,3 s; ber-crop 0,4–0,6 s terukur Klip2 / klip5).
+
+### Persetujuan rancangan T-607 Tahap 1c (2026-10-20) — dicatat SEBELUM kode; mengikat Tahap 2–4
+
+**Disetujui seperti usulan:** no. 2 (berkas), 9 (key `meta.json` `crop`), 10 (YAML), 11 (test / mutasi), 13 (docs / CLAUDE.md); **no. 6 =
+D1**. **Perubahan Rio:**
+- **a. No. 1:** lokasi **`<paths.work_dir>/crop/<nama>/`** (per sumber, DI LUAR folder klip; tidak tersentuh `--restart-from ingest`
+  maupun penghapusan folder klip).
+- **b. No. 3:** identitas = **sha256 byte + ukuran + dimensi**; path hanya dicatat sebagai info, TIDAK ikut dicek.
+- **c. No. 4:** tambah **`crop <video> --none`** = saran ditolak, tanpa potong (`kotak.json` `mode: none`; `meta.json` tanpa key `crop` →
+  byte-identik dengan klip tanpa kotak).
+- **d. No. 7 + 8:** baris / kolom petunjuk DITANDAI di gambar pratinjau (arsir / warna + label); petunjuk juga mencetak perintah siap tempel
+  `python -m rotoscope crop <video> --box X Y W H` untuk kotak yang ikut membuang baris petunjuk. Tetap informasi; tidak ada pemotongan
+  otomatis.
+- **e. No. 5:** teks saran memuat path pratinjau, petunjuk + perintah alternatifnya (bila ada), dan pilihan `--none`.
+- **f. Baru no. 14:** bila saran ada dan belum diputuskan (tidak ada `kotak.json`), `run` BERHENTI sesudah [1], sebelum stage GPU, dengan
+  exit code khusus (bukan 0 / 1; dicatat di docs/01) + pesan pilihan `--accept` / `--box` / `--none`. `crop.suggest` false = tanpa deteksi,
+  tanpa berhenti. Klip tanpa saran tidak terdampak.
+- **g. Baru no. 15:** `ingest.trim.*` DIHAPUS dari YAML; trim hanya lewat `--start` / `--end` (meninjau ulang desain trim T-602 (f) +
+  persetujuan rancangan no. 1 bagian YAML; alasan: nilai YAML berlaku untuk semua klip, batch T-603). Logika trim lain tidak berubah.
+- **h. No. 12 disetujui** (K1', K2', K3 gugur, K4–K6 tetap, K7 baru). **K2' klip11 dicek dengan angka:** petunjuk menandai tepat baris
+  388–461 dan perintah alternatif membuang sampai baris 461 (konten mulai 462); penilaian Rio hanya konfirmasi "petunjuk terlihat jelas".
+  Dicatat: klip11 tidak lagi buta bagi Rio; validasi buta K2' = batas yang diketahui.
+
+**Pertentangan dilaporkan sebelum kode → keputusan Rio (2026-10-20):**
+1. D1 vs rancangan a.1 ("tanpa pita: tidak ada berkas" → deteksi di setiap run untuk klip tanpa pita): **hasil "tanpa pita" dicatat** di
+   `<work_dir>/crop/<nama>/deteksi.json` (kunci D1 + hasil); `saran.json` / pratinjau TIDAK ditulis, tanpa pesan, `run` tidak berhenti; run
+   berikutnya melewati deteksi. K1' tetap ("tidak ada saran").
+2. Yang berhenti dengan exit code khusus = **hanya `run` penuh**. `run --preview` (tanpa GPU), `ingest`, `pick` tetap jalan dan hanya
+   mencetak pesan saran (ingest exit 0).
+
+**Ditetapkan Claude Code (detail, bukan keputusan baru):** exit code khusus = **4** (`EXIT_CROP_DECISION`; 0 / 1 / 2 / 3 / 130 sudah
+dipakai). Pengecekan sebelum kode: petunjuk klip11 = baris di DALAM kotak dari garis potong ke dalam yang ≥ 0,95 diam → **388–461 (74
+baris), baris 462 diam 0,7%; garis potong bawah: tidak ada** (cocok dengan h). Petunjuk hanya dihitung di sisi yang DIPOTONG saran (sisi
+tanpa potongan = letterbox satu sisi, di luar lingkup); petunjuk tidak dipakai bila kotak alternatif < `MIN_ACTIVE_FRAC` frame.
+
+### Hasil T-607 Tahap 2–3a (2026-10-20) — implementasi + [1] di scratch; menunggu run GPU Rio (Klip2 + klip5)
+
+**Tahap 2 (kode + test + mutasi):**
+- **Baru `src/rotoscope/crop.py`:** R2 beku (salinan persis `t607_study`), statistik lewat pipa rawvideo (tanpa PNG), identitas sumber
+  (sha256 + ukuran + dimensi; path info), D1 (`deteksi.json` juga untuk "tanpa pita"), `saran.json`, petunjuk (hanya sisi yang dipotong,
+  dari garis potong ke dalam, ≥ `hint_static_frac`; kotak alternatif + perintah `--box` siap tempel; tidak dipakai bila < `MIN_ACTIVE_FRAC`),
+  pratinjau 3 PNG (tata letak papan K2, zoom berpusat di garis potong, petunjuk diarsir oranye), `kotak.json` / `kotak.prev.json`, alat CLI
+  `crop` (status / `--accept` / `--box X Y W H` / `--none` / `--clear`).
+- **`ingest.py`:** membaca config (`--config`, section `ingest`), `--crop-dir`, `--start` / `--end` (`make_trim`: a = ceil(S·fps − 1e-6),
+  b = ceil(E·fps − 1e-6), akhir eksklusif, detik kanonik), vf `fps,[trim],[crop … exact=1],scale` (tanpa trim / kotak = perintah lama
+  persis), key `trim` / `crop` hanya bila dipakai, trim melewati akhir klip → exit 1 dengan panjang klip; pesan saran dicetak SESUDAH
+  meta. Tanpa `--crop-dir` (entry point modul) = tanpa saran / kotak.
+- **`cli.py`:** `--start` / `--end` di `run`, semua subperintah stage, `pick` → folder `<nama>@S-E` (satu fungsi `clip_name` + `trim_label`
+  dengan export / folder SVG); folder crop per sumber `<work_dir>/crop/<nama>/`; pre-flight (b) source_path + trim, (c) / (e) nama
+  ber-trim; **`run` penuh berhenti sesudah [1] dengan exit 4** (`EXIT_CROP_DECISION`) bila saran ada dan belum diputuskan (`run --preview`,
+  `ingest`, `pick` tidak berhenti); subperintah `crop` (menolak `--start` / `--end`, exit 2) mencetak `run … --restart-from ingest --yes`
+  per folder klip sumber itu (dengan flag trim-nya).
+- **Pesan:** `stage_common.cli_cmd` + `pick.pick_cmd` membawa flag trim dari `meta.json`; [2] / [2c] "milik klip LAIN" menyebut
+  `run … --restart-from ingest --yes` (persetujuan no. 8); `pick` / [1b] ukuran beda + isi beda = butir 5g (gaya ASCII `pick.py`: "x",
+  " - ").
+- **Config:** section `ingest.crop` (`suggest`, `detect.*` 5 parameter R2, `preview.hint_static_frac`) = `configs/default.yaml` = docs/02
+  (+ tabel validasi); `ingest.trim` tidak ada (key tidak dikenal → error).
+- **Test:** baru `tests/test_crop.py` (44); tambahan di `test_ingest` (+19), `test_cli` (+14), `test_config` (+10), `test_export` (+2),
+  `test_pick` (+1), `test_isolate` (+1), `test_clip_identity` (+1); 3 assertion lama diubah mengikuti kontrak baru (ingest menerima
+  `--config` / `--crop-dir`). **Suite penuh 35 berkas, berurutan per berkas: 1 648 lolos, 4 skip** (skip lama). **Mutasi
+  (`scripts/t607_mutations.py`, di memori, proses anak per mutasi): 61 / 61 membuat test gagal; kontrol (semua modul di-exec) 569 lolos.**
+  Dua celah ditemukan lalu ditutup dengan test baru: toleransi 1e-6 (0,28 · 25 = 7,000000000000001) dan clamp tepi sumber berdimensi ganjil.
+
+**Tahap 3a (scratch `work/t607_scratch/t3/`, CLI produksi, CPU; `scripts/t607_tahap3.py` → `work/t607/tahap3.json`, `tahap3_cek.json`):**
+
+| klip | frame | [1] + deteksi (s) | saran (kotak kerja → sumber) | petunjuk |
+|---|---|---|---|---|
+| test / test_short / klip3 / klip4 | 283 / 119 / 182 / 217 | 4,6 / 2,6 / 6,8 / 7,0 | tidak ada | — |
+| Klip2 | 122 | 2,4 | 245, 0, 474, 405 → 434, 0, 412 × 720 | kanan 1 kolom (474) |
+| klip5 | 133 | 5,7 | 0, 344, 719, 1011 → 0, 344, 720 × 668 | — |
+| klip6 / klip7 / klip8 / klip9 | 472 / 664 / 210 / 361 | 14,8 / 21,0 / 8,0 / 13,0 | tidak ada | — |
+| klip10 | 83 | 2,2 | 90, 0, 629, 405 → 160, 0, 960 × 720 | — |
+| klip11 | 78 | 3,9 | 0, 388, 719, 1055 → 0, 388, 720 × 668 | **atas 388–461 (74 baris) → `--box 0 462 720 594`** |
+
+Waktu = proses CLI penuh (startup Python + ingest + deteksi pertama); run berikutnya D1 (klip11 ingest 0,5 s).
+- **K1':** klip6–klip9 tanpa saran (`deteksi.json` "tanpa pita") — **4 / 4 ✔**.
+- **K2' (angka, persetujuan h):** petunjuk klip11 tepat baris 388–461, perintah alternatif `--box 0 462 720 594` (membuang sampai baris
+  461, konten mulai 462) tercetak — **✔**; konfirmasi Rio "petunjuk terlihat jelas" menunggu (pratinjau
+  `work/t607_scratch/t3/work/crop/klip11/pratinjau/`). klip10: saran = pita 90 + 90 (kotak teks sudut tetap ada, di luar lingkup).
+- **K3:** gugur (persetujuan h).
+- **K4:** `frames/` + `meta.json` 6 klip lama byte-identik dengan klip asli (1 056 / 1 056 frame; Klip2 / klip5 juga, karena saran tidak
+  memotong); saran Klip2 / klip5 = kotak `scripts/t602_data.json`; 4 klip lain tanpa saran — **✔** (hilir + `out/` dibuktikan saat
+  run klip asli di Tahap 4).
+- **K5:** `ingest klip5 --start 0 --end 3.8333` → folder `klip5@0-3.833`, 92 frame byte-identik dengan `frames/` f0–f91 klip asli, key
+  `trim` {0.0, 3.833, 0, 92}, tanpa key `crop` — **✔**.
+- **K7:** `deteksi.json` / `saran.json` / pratinjau byte-identik di root kedua (Klip2, klip5, klip11, klip8) — **✔**; tanpa `kotak.json`
+  meta + frame byte-identik (K4).
+- **Uji di tempat:** `run samples/klip11.mp4` (scratch, GPU disembunyikan sebagai pengaman) → **exit 4** sesudah [1], pesan pilihan
+  `--accept` / `--box` / `--none`. **Cek sebelum GPU (`t3cek`):** `crop --accept` + ingest → Klip2 412 × 720 (122 / 122 frame) dan klip5
+  720 × 668 (133 / 133) **byte-identik dengan frame P-src studi Tahap 1a**; key `crop` lengkap.
+- **K6:** menunggu run GPU Rio (Klip2 + klip5 di scratch `t3`, ±73–78 mnt) → video berdampingan + 0,5× + panduan.
+- F1 `after_3a`: 10 701 berkas, identik dengan `before`. Scratch t3 1,39 GiB, t3b 0,27, t3cek 0,08; C: bebas 19 GiB.
+
+### T-607 Tahap 3b (2026-10-22) — sesudah run GPU Rio: perintah siap tempel, laporan, bahan K6; menunggu penilaian Rio
+
+**Run GPU Rio (scratch `t3`):** Klip2 412 × 720 → MP4 1080 × 1888, 122 frame; klip5 720 × 668 → MP4 1080 × 1002, 133 frame; seg 0.8B;
+`meta.json` key `crop` = kotak saran (t602).
+
+**Keputusan Rio + kerjaan (2026-10-22):**
+1. **Disetujui: semua perintah yang dicetak untuk ditempel harus bisa langsung ditempel; `--config` non-default ikut dicetak.** Penerapan:
+   `stage_common.set_message_config` (dipanggil `cli.main`, subperintah stage, dan `main()` setiap stage termasuk subprocess GPU) +
+   `config_flag()`; `cli_cmd` = video + flag trim + `--config <path absolut>` (config default `configs/default.yaml` tidak dicetak). Pesan
+   yang sebelumnya memakai `<video>` / path mentah kini siap tempel: pesan exit 4 (satu perintah per baris), `crop` (`--accept` / `--none`
+   / `--box` / `--clear`, "kotak rusak", `ingest … dulu`), preview `check_gpu_inputs` (run / segment / depth + trim + config; `--limit N`
+   tanpa "(K+N)" menempel), `run --adopt / --qc-only`, `pick` ("jalankan … ingest", `pick_cmd`), [1b] (`pick` / `run … --yes`),
+   target_mask (`isolate … --yes --restart`), stylize (`run …` penuh berikutnya). Test: +6 baru, 3 diperluas (pick, crop, preview),
+   `tests/conftest.py` mereset status per test; suite penuh 1 654 lolos / 4 skip; **mutasi 74 / 74** (13 baru), kontrol 602 lolos.
+2. **Laporan — petunjuk Klip2 kolom 474:** kotak alternatif kerja 245, 0, 473, 405 → sumber **434, 0, 410 × 720**; saran **434, 0,
+   412 × 720** → BERBEDA (alternatif membuang 2 kolom sumber lagi di kanan, 844–845), jadi perintah itu tidak sia-sia. Usul umum (belum
+   dikode): bila sesudah pembulatan keluar + genap kotak alternatif = kotak saran, perintah alternatif tidak dicetak (petunjuk tetap
+   ditandai).
+3. **Laporan — `--end 3.8333` vs `--end 3.8334`:** TIDAK bernama sama. 3.8333 → b = 92 → frame 0–91 → `klip5@0-3.833`; 3.8334 → b = 93 →
+   frame 0–92 → **`klip5@0-3.875`** (nama dari indeks frame kanonik b / 24 dibulatkan ke bawah ke milidetik, bukan dari detik yang
+   diketik). Dua indeks berbeda tidak pernah bernama sama (dicek b = 1…99 999 pada 24 fps: 0 ganda; 1 frame = 41,7 ms > 1 ms). Dijalankan
+   berurutan → dua folder + dua MP4 terpisah; pre-flight (b) membandingkan key `trim` juga. Usul (belum dikode): cetak pemetaan di awal
+   ingest ber-trim, mis. "--end 3.8334 → frame 0–92 (93 frame) → klip5@0-3.875", supaya ceil tidak mengejutkan.
+4. **Batas yang diketahui (petunjuk):** petunjuk hanya dihitung di sisi yang DIPOTONG saran (sisi tanpa potongan = letterbox satu sisi,
+   di luar lingkup) → strip kanan SATU sisi klip11 (kolom 716–719 hitam statis, 4 px + kolom 715 hampir hitam) TIDAK ditandai di
+   pratinjau; bisa dibuang lewat kotak manual (`crop --box`).
+5. **Wajib Tahap 4:** kode export ikut berubah (nama `{source}` / folder SVG ber-trim) → Tahap 4 WAJIB membuktikan `out/` test,
+   test_short, klip3, klip4 **byte-identik** (run export klip asli + F1), bukan hanya `frames/` + `meta.json`.
+
+**Bahan K6 + K2' (`scripts/t607_k6.py` → `work/t607/k6_angka.json`, `k6_video.json`; `work/t607/nilai/`):**
+`K6_Klip2_berdampingan.mp4` (2546 × 1080; kiri sebelum, kanan sesudah, tinggi sama) + `_0.5x`; `K6_klip5_berdampingan.mp4`
+(2176 × 1920; lebar sama, panel sesudah sejajar baris konten) + `_0.5x`; panel dicek PSNR 40–47 dB terhadap video sumbernya (12–17 dB
+silang); salinan pratinjau klip11 (`13_klip11_pratinjau_*.png`, sha256 sama); panduan `PENILAIAN_K6.md`.
+
+| | Klip2 | klip5 |
+|---|---|---|
+| strok seluruhnya di area pita (sebelum → sesudah) | 119 (119 frame) → 0 | 358 (55 frame) → 0 |
+| strok / frame | 18,2 → 19,6 (oklusi 0,09 → 1,07) | 31,9 → 29,6 |
+| frame gagal QC | 0 → 0 | **6 → 18** |
+
+**klip5 QC 6 → 18:** subjek mengisi frame lebih besar (`area_ratio` rata-rata 0,27 → 0,49, maks 0,99) → ambang area absolut QC lebih sering
+terpicu (`area_ratio` 0 → 5, `big_blobs` 4 → 8, `iou_prev` 2 → 5, `area_vs_median` 0 → 3) = gejala T-305e (ambang absolut; hanya diamati
+di T-607, algoritma [2]–[6] tidak diubah). Frame gagal QC diberi bobot temporal kecil di [3]; dampak visual dinilai Rio (K6).
+
+### Penilaian Rio K6 + konfirmasi K2' T-607 (2026-10-23) — **K6 LOLOS (Klip2, klip5)**, **K2' klip11 LOLOS**
+
+Sumber: `work/t607/nilai/PENILAIAN_K6.md` (sha256 `fe686fa6…d9d1dab8`; editor Rio menulis `kerusakan\_baru` dsb. → dibaca sebagai
+`kerusakan_baru`). Bahan dan angka = "T-607 Tahap 3b". Jawaban (apa adanya):
+
+| klip | penilaian | kerusakan_baru | kerusakan_detik | komentar |
+|---|---|---|---|---|
+| Klip2 | lebih baik | tidak | tidak | — |
+| klip5 | lebih baik | tidak ada | tidak ada | "Masih kurang bagus, namun akan diperbaiki di proses yang lain" |
+
+| klip | petunjuk_terlihat_jelas | komentar |
+|---|---|---|
+| klip11 | ya | — |
+
+- `kerusakan_detik` diisi "tidak" / "tidak ada", bukan `-` sesuai panduan → dibaca "tidak ada kerusakan" (sama dengan
+  `kerusakan_baru`; tidak bertentangan, tidak ditanyakan).
+- **K6** ("tidak ada kerusakan baru, tidak lebih buruk dari sebelumnya") → **lolos** untuk Klip2 dan klip5. Komentar klip5 menyangkut
+  mutu mutlak, bukan perbandingan sebelum / sesudah. Tidak dikaitkan ke task tertentu karena Rio tidak menyebut prosesnya. QC klip5 6 → 18
+  (T-305e) tidak dinilai sebagai kerusakan baru.
+- **K2'** klip11 → **lolos**: angka sudah ✔ di Tahap 3a, konfirmasi Rio "petunjuk terlihat jelas" = ya.
+- Status kriteria: K1' ✔, K2' ✔, K3 gugur, K4 ✔ (`frames/` + `meta.json`; hilir + `out/` dibuktikan di Tahap 4, butir 5 Tahap 3b),
+  K5 ✔, K6 ✔, K7 ✔.
+
+### Keputusan Rio sebelum Tahap 4 T-607 (2026-10-23) — dicatat SEBELUM kode Tahap 4
+
+1. **Klip2 + klip5 ASLI dipotong** dengan kotak saran (= kotak K6 = `scripts/t602_data.json`): `crop <video> --accept` di `work/crop/`
+   produksi. Menjawab "Keputusan sesudah K3" akibat (c). Cara = persetujuan rancangan no. 7 + rancangan 1a (h): `out/` lama Klip2 +
+   klip5 disimpan ke `work/t607/` dulu → ingest produksi → `meta.json` dicek terhadap manifest [2] / [2c] scratch → salin hasil scratch
+   → cek sha256 → ganti. Tidak cocok → tidak dipindah; GPU dijalankan Rio (`run … --restart-from ingest --yes`).
+2. **Usulan A dikerjakan:** bila sesudah pembulatan keluar + genap kotak alternatif petunjuk = kotak saran, perintah `--box` alternatif
+   TIDAK dicetak; petunjuk tetap ditandai di pratinjau (laporan Tahap 3b butir 2). Kode + test + mutasi.
+3. **Usulan B dikerjakan:** ingest ber-trim mencetak pemetaan detik → frame → folder di awal, mis. "`--end 3.8334` → frame 0–92 (93
+   frame) → `klip5@0-3.875`" (laporan Tahap 3b butir 3). Pesan saja: `frames/` + `meta.json` tidak berubah. Kode + test + mutasi.
+
+**Default final (keputusan no. 6 → sesudah K2 gagal):** saran + konfirmasi, `ingest.crop.suggest: true` (sudah default sejak Tahap 2);
+tidak ada mode `auto`.
+
+### Hasil T-607 Tahap 4 + penutupan (2026-10-23) — **T-607 DONE**
+
+Tanpa GPU (setiap CLI dijalankan dengan `CUDA_VISIBLE_DEVICES=""` sebagai pengaman). Alat: `scripts/t607_tahap4.py` (subperintah
+`config`, `simpan`, `jalankan`, `cek`, `ganti`, `banding`, `ekspor4`, `data`) → `work/t607/tahap4.json` + log per perintah
+`work/t607/tahap4/*.log`.
+
+**1. Kode (keputusan no. 2 + 3 di atas):**
+- **Usulan A** (`crop.saran_lines` + `_preview_info`): kotak alternatif petunjuk = kotak saran sesudah pembulatan → perintah `--box` tidak
+  dicetak, diganti "(kotak tanpa baris / kolom petunjuk = kotak saran sesudah pembulatan ke luar + genap — tidak ada perintah lain)";
+  header pratinjau "tanpa itu = kotak saran (pembulatan genap)". `saran.json` tidak berubah (`alt_box_source` tetap dicatat). Tidak ada
+  klip yang terdampak saat ini (Klip2 410 ≠ 412, klip11 594 ≠ 668).
+- **Usulan B** (`cli.print_trim_mapping`): sebelum [1] ingest ber-trim di `run`, `run --preview`, `ingest`, dan `pick` (bila ingest
+  dijalankan) → `[1] trim: --end 3.8334 → frame 0–92 (93 frame) pada 24 fps → folder klip5@0-3.875` (detik yang DIKETIK, `.15g`;
+  tanpa akhir `frame a–akhir klip`). Dicetak di cli karena ingest hanya menerima detik kanonik.
+- Test: +2 (`test_crop::test_alt_command_not_printed_when_equal_to_saran_after_rounding` — kasus sama dibuat dengan
+  `map_box_to_source` asli: 1 baris petunjuk di y 20 pada skala 1 → genap ke bawah = saran; `test_cli::test_trim_mapping_printed_before_ingest`
+  — run / ingest / pick / preview + urutan sebelum `===` + tidak ada tanpa trim / di stage lain). **Mutasi 82 / 82** (8 baru: 75–82),
+  kontrol 604 lolos / 2 skip. **Suite penuh 1 656 lolos / 4 skip / 0 gagal**, dijalankan dua kali (sebelum dan sesudah penggantian Klip2
+  / klip5; per berkas, berurutan, < 2 mnt per berkas).
+
+**2. Bukti K4 hilir + `out/` (Tahap 3b no. 5):**
+- **Export kode baru ke folder scratch** (config t4: `work_dir` = klip asli, hanya dibaca; `out_dir` scratch): test / test_short / klip3 /
+  klip4 → MP4 identik byte dengan `out/` (5 872 117 / 2 278 043 / 6 042 035 / 5 569 817 B), SVG 283 / 119 / 182 / 217 identik,
+  `.rotoscope-clip.json` hanya beda `created_utc`, `export.json` tanpa beda selain waktu. Encode penuh 24,0 / 10,8 / 21,6 / 24,4 s.
+- **`run` produksi 4 klip:** rc 0 (46 / 26 / 64 / 56 s), semua stage "valid dilewati" ([1b] klip3 up-to-date tanpa GPU), export "sudah
+  up-to-date". `work/crop/<nama>/deteksi.json` "tanpa pita" ditulis (di luar F1). **F1 `after_4b`:** 10 701 berkas identik dengan
+  `before` kecuali 4 `qc_report.json` yang hanya beda `created_utc` (perilaku [2] yang diketahui).
+
+**3. Klip2 + klip5 asli (keputusan no. 1; persetujuan rancangan no. 7):**
+- Prasyarat: config t3 = `configs/default.yaml` kecuali `paths` (`config`); manifest [2]–[5], `meta.json`, `qc_report.json`, dan
+  `export.json` scratch tidak memuat path scratch (0 kemunculan). `out/` lama disimpan ke `work/t607/out_lama/` (MP4 + `export.json` +
+  folder SVG 123 / 134 berkas; sha256 sama).
+- Per klip: `ingest` produksi (saran tercetak; Klip2 juga petunjuk kolom 474 + `--box 434 0 410 720`) → `crop --accept` → `ingest`
+  ber-kotak (0,6 / 0,9 s) → **`cek`**: `meta.json` = scratch (Klip2 `9d195789…`, klip5 `314535d2…`), `meta_sha256` = manifest scratch
+  seg / depth / stable / contours / strokes + `export.json`, frame 122 / 133 identik, `work/crop/<nama>/` (deteksi, saran, kotak,
+  pratinjau 3 PNG + json) identik → lolos.
+- **`ganti`** (salin ke `<item>.t607baru` → cek sha256 → hapus lama → ganti nama): seg / depth / stable / contours / strokes +
+  `qc_report.json` — Klip2 246 / 124 / 246 / 125 / 246 + 1 berkas, klip5 268 / 135 / 268 / 136 / 268 + 1; semua = t3.
+- **`run` produksi:** [2] / [2c] "0 diproses", [3]–[5] dilewati, export di-encode ulang (basi: klip berubah) → **MP4 identik byte dengan
+  yang dinilai Rio di K6** (Klip2 1080 × 1888, 2 256 101 B; klip5 1080 × 1002, 3 668 085 B), SVG 122 / 133 identik, `export.json` tanpa
+  beda selain waktu. klip5: PERINGATAN 18 / 133 frame gagal QC (= K6).
+- **F1 `after_4`:** 2 586 berkas berubah = semua di `work/clips/{Klip2,klip5}/` + `out/{Klip2,klip5}.*` + `out/svg/{Klip2,klip5}/`, ditambah
+  4 `qc_report.json` (hanya `created_utc`); tidak ada berkas hilang / tambahan. `after_4f` (sesudah F4) = `after_4`.
+
+**4. Docs:** docs/01 ([1] `ingest.py` ditulis ulang, bagian baru "`crop.py`", diagram, identitas klip + batas (c), tabel CLI, trim, exit
+4, perintah siap tempel, [6] nama ber-trim, [1b], `pick`, struktur repo); docs/04 D-013 "Final 2026-10-23"; docs/05 (T-607 DONE, T-305e
+catatan QC klip5, papan 39/50); CLAUDE.md (baris [1], "Cara pakai" + `--start` / `--end`, paragraf `crop`, `pick` + trim). docs/02 tidak
+berubah (section `ingest` sudah sejak Tahap 2).
+
+**5. F4:** `scripts/t607_data.json` (57 502 B, sha256 `01d3b295…`; ringkasan angka Tahap 1a–4 + jawaban PENILAIAN_K6 dibaca dari berkas)
+ditulis lebih dulu; lalu `T607-prompt.md` + `work/t607_scratch/` (10 folder, ±4,7 GB) dihapus; C: bebas 22,3 → 26,9 GiB. Dipertahankan:
+`work/t607/` (bahan penilaian K2 / K6, `out_lama/`, F1, log Tahap 4) dan klip validasi `samples/klip6` … `klip11`.
+
+**Penyimpangan / catatan:**
+1. **Bug alat `ganti` (Klip2):** berkas tunggal dibandingkan dengan kunci nama (`qc_report.json` vs `qc_report.json.t607baru`) → dianggap
+   beda padahal sha256 sama → alat BERHENTI sebelum mengganti `qc_report.json` (5 folder sudah diganti dan cocok: 246 / 124 / 246 / 125 /
+   246 berkas). Diperbaiki (bandingkan isi; item yang sudah = t3 dilewati) lalu dijalankan ulang → `qc_report.json` diganti. Karena itu
+   `tahap4.json` mencatat folder Klip2 sebagai "sudah_sama" (dari run kedua). klip5 berjalan sekali dengan alat yang sudah diperbaiki.
+2. `ekspor4` dijalankan tiga kali: run 1 encode penuh; run 2 (pembanding SVG diperhalus) hanya melewati karena `t4/out` sudah valid, log
+   run 1 tertimpa → `t4/out` dihapus lalu run 3 encode penuh lagi (angka di atas = run 3; hasil run 1 dan run 3 sama).
+3. Hasil GPU lama Klip2 / klip5 TANPA crop (seg / depth / stable / contours / strokes) dihapus sesuai rancangan ("ganti"); kembali ke
+   tanpa crop (`crop --none`) = GPU ±73–78 mnt lagi. `out/` lama tersimpan di `work/t607/out_lama/`.
+4. `scripts/t607_tahap3.py`, `t607_k6.py`, dan sebagian `t607_tahap4.py` (`cek`, `ganti`, `banding`, `ekspor4`) menunjuk scratch yang sudah
+   dihapus → tidak bisa dijalankan ulang; disimpan sebagai catatan alat (F3). `t607_hash.py`, `t607_mutations.py` tetap bisa dipakai.
+5. `python -c` hanya dipakai untuk MEMBACA (statistik, perbandingan); semua berkas repo ditulis lewat Edit / Write; berkas data
+   (`tahap4.json`, log, `t607_data.json`, F1) ditulis skrip yang dijalankan. Tanpa commit.
+6. Komentar Rio klip5 ("akan diperbaiki di proses yang lain") tidak dikaitkan ke task tertentu (Rio tidak menyebut prosesnya).
 
 ## Pitfall yang sudah diketahui
 

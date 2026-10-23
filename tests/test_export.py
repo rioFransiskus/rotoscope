@@ -93,6 +93,27 @@ def test_resolve_filename():
     assert ex.manifest_path_for(Path("out/b.mp4")) == Path("out/b.export.json")
 
 
+def test_clip_name_resolve_filename_and_svg_dir_with_trim():
+    """T-607: `{source}` + folder SVG klip ber-trim = <nama>@S-E (satu fungsi dengan folder kerja); tanpa trim tidak berubah."""
+    assert ex.clip_name("/a/klip5.mp4", "0-3.833") == "klip5@0-3.833" and ex.clip_name("/a/klip5.mp4") == "klip5"
+    assert ex.resolve_filename("{source}.mp4", "/a/klip5.mp4", trim="0-3.833") == "klip5@0-3.833.mp4"
+    assert ex.resolve_filename("{source}_{style}.mp4", "/a/klip5.mp4", 5, 2, "clean-line", "2-end") == \
+           "klip5@2-end_clean-line.preview_2-6.mp4"
+    assert ex.svg_dir_for(Path("out"), "/a/klip5.mp4", trim="2-end") == Path("out/svg/klip5@2-end")
+    assert ex.resolve_filename("{source}.mp4", "/a/klip5.mp4") == "klip5.mp4"
+
+
+def test_export_trimmed_clip_named_with_trim(tmp_path):
+    cfg, work, out = make_clip(tmp_path)
+    meta = json.loads((work / "meta.json").read_text(encoding="utf-8"))
+    meta["trim"] = {"start_s": 1.0, "end_s": 2.0, "start_frame": 24, "end_frame": 48}
+    (work / "meta.json").write_text(json.dumps(meta), encoding="utf-8")
+    resync_stable_clip(work)
+    run = ex.run_export(cfg, log=lambda m: None)
+    assert run["output"] == out / "meme_clip@1-2.mp4" and (out / "meme_clip@1-2.export.json").is_file()
+    assert not (out / "meme_clip.mp4").exists()
+
+
 def test_silhouette_maps_groups_to_colors(tmp_path):
     cfg, work, _ = make_clip(tmp_path, **{"export.foreground_color": "#102030", "export.background_color": "#a0b0c0"})
     src = ex.SilhouetteSource(cfg, stab.load_clip(work))

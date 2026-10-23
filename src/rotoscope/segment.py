@@ -60,8 +60,8 @@ from rotoscope.stage_common import (  # noqa: F401 — sebagian di-export ulang 
     COMMIT_HASH_RE, DOWNLOAD_REVISION_FALLBACK, EXIT_OK, EXIT_OOM, EXIT_PRECONDITION, HF_OFFLINE_ENV, MIB,
     REPLACE_DELAY_S, REPLACE_RETRIES, TMP_SUFFIX, BackendOOM, StageError, StageOOMError, add_work_dir_arg,
     adopt_identity, append_jsonl, clean_tmp, cli_cmd, clip_identity, hf_offline_active, last_frame_records,
-    load_frame_list, read_jsonl, read_rgb, reconfigure_stdio, require_frames, require_same_clip, set_offline,
-    vram_state, work_dir_overrides, write_bytes_atomic, write_json_atomic,
+    load_frame_list, read_jsonl, read_rgb, reconfigure_stdio, require_frames, require_same_clip, set_message_config,
+    set_offline, vram_state, work_dir_overrides, write_bytes_atomic, write_json_atomic,
 )
 from rotoscope.stage_common import ensure_cached as _ensure_cached
 from rotoscope.stage_common import is_oom as _is_oom
@@ -402,7 +402,7 @@ def _require_same_clip(clip: Clip, manifest: dict | None = None) -> None:
             return
         manifest = json.loads(clip.manifest_path.read_text(encoding="utf-8"))
     require_same_clip(manifest, clip_identity(clip.work_dir), stage="[2]", out_dir=clip.seg_dir,
-                      cmd=stage_cmd(clip.work_dir))
+                      cmd=stage_cmd(clip.work_dir), run_cmd=f"{cli_cmd('run', clip.work_dir)} --restart-from ingest --yes")
 
 
 def adopt_segment(cfg: PipelineConfig, *, log: Callable[[str], None] = print) -> dict:
@@ -777,6 +777,7 @@ def main(argv: list[str] | None = None, backend_factory: BackendFactory | None =
                    help="catat identitas klip saat ini ke manifest [2] yang ada (tanpa inferensi) lalu keluar; "
                         "pernyataan Anda bahwa output itu milik klip ini")
     args = p.parse_args(argv)
+    set_message_config(args.config)          # T-607: --config non-default ikut di perintah siap tempel
     reconfigure_stdio()  # stdout cp1252 (diarahkan ke file di Windows) tidak boleh membuat print crash
 
     def log(msg: str) -> None:

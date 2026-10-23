@@ -72,7 +72,8 @@ def test_stylize_stale_window_warns_once_and_leaves_half_folder(tmp_path):
                           log=logs.append)
     assert run["processed"] == 2
     warns = [m for m in logs if "PERINGATAN" in m]
-    assert len(warns) == 1 and f"DIHAPUS seluruhnya ({N_FRAMES} frame)" in warns[0] and "run <video>" in warns[0]
+    assert len(warns) == 1 and f"DIHAPUS seluruhnya ({N_FRAMES} frame)" in warns[0]
+    assert "`python -m rotoscope run C:/clips/a.mp4` penuh berikutnya" in warns[0]      # T-607: siap tempel, bukan <video>
     clip = sty.load_clip(work)
     size = (sty.make_geometry(style_for(**{"stroke.color": "#112233"}), clip.width, clip.height).out_w,) * 2
     assert [sty.frame_valid(clip, n, size) for n in clip.names] == [False, True, True] + [False] * (N_FRAMES - 3)

@@ -29,6 +29,21 @@ paths:
 # Nama dicari relatif ke root project (folder pyproject.toml), peka huruf besar-kecil. Flag --style mengalahkan kunci ini (T-406).
 style: "rough-sketch"
 
+# ── INGEST [1] — saran crop (T-607, D-013) ─────────
+# Ingest TIDAK pernah memotong sendiri: deteksi R2 (rentang penuh sumber) → saran + pratinjau di <work_dir>/crop/<nama>/;
+# kotak dipakai hanya bila diterima: python -m rotoscope crop <video> --accept | --box X Y W H | --none. Trim: --start / --end.
+ingest:
+  crop:
+    suggest: true              # false = tanpa deteksi / saran; run tidak berhenti
+    detect:                    # aturan R2 BEKU (docs/04 "R2 DIBEKUKAN"); nilai lain = PERINGATAN "aturan belum divalidasi"
+      static_std_max: 3.0      # piksel statis: simpangan baku temporal (0–255) ≤ ini
+      static_line_frac: 0.99   # baris / kolom statis: ≥ fraksi ini pikselnya statis
+      uniform_std_max: 6.0     # pita seragam: simpangan baku spasial warna ≤ ini
+      band_min_px: 8           # pita minimum per sisi + syarat pasangan (atas + bawah / kiri + kanan)
+      min_active_frac: 0.10    # area aktif < fraksi frame ini → tidak ada saran
+    preview:
+      hint_static_frac: 0.95   # petunjuk pratinjau: baris / kolom di dalam kotak (dari garis potong) yang ≥ fraksi ini diam
+
 # ── ISOLATE [1b] — SAM 2.1 hiera tiny (T-605, D-011) ─
 # HANYA berjalan bila work/clips/<klip>/target/points.json ada (python -m rotoscope pick); tanpa itu dilewati.
 # Memakai GPU → wajib --yes. Ambang cut (adegan) = stabilize.temporal.cut_diff di bawah.
@@ -156,6 +171,9 @@ export:
 |---|---|
 | `paths.work_dir`, `paths.out_dir` | string tidak kosong, tanpa karakter kontrol; relatif → di-resolve terhadap direktori kerja (cwd) saat load; absolut (mis. `D:/…`) boleh. Loader **tidak** membuat folder (tanpa side effect) — stage memanggil `ensure_dir()` |
 | `style` | string tidak kosong, tanpa karakter kontrol. Nama preset (tanpa pemisah path, tanpa `.yaml`) → `<root project>/configs/styles/<nama>.yaml`, peka huruf besar-kecil; selain itu path YAML (relatif → cwd). Ada tidaknya preset / berkas dicek saat DIPAKAI (`resolve_style`, pre-flight `run`), bukan oleh loader; flag `--style` mengalahkan kunci ini (T-406) |
+| `ingest.crop.suggest` | bool. `false` = ingest tanpa deteksi / saran, `run` tidak berhenti (T-607) |
+| `ingest.crop.detect.static_std_max`, `.uniform_std_max` | float 0–255. `static_line_frac`, `min_active_frac`: float (0, 1]. `band_min_px`: int ≥ 1. Default = R2 BEKU (docs/04 "R2 DIBEKUKAN"); nilai lain diterima loader, tetapi ingest mencetak PERINGATAN "aturan belum divalidasi" dan sidik aturan lain dicatat di saran / `meta.json`; `crop --accept` menolak saran dari aturan selain R2 beku |
+| `ingest.crop.preview.hint_static_frac` | float (0, 1]. Petunjuk pratinjau = informasi (tidak memotong) |
 | `isolate.model_id` | wajib diawali `facebook/sam2.1-hiera-` (SAM 2.1 hiera, kode + bobot Apache-2.0; D-011). Saat load [1b] juga mengecek `license` model card (`README.md` di cache) = `apache-2.0` |
 | `isolate.revision` | `null` atau string tidak kosong. Stage [1b] saat runtime menolak `null` dan nilai selain commit hash 40-hex (T-605) |
 | `isolate.precision` | `"fp32"` (default) atau `"fp16"` (`bf16` ditolak, P-005); satu precision untuk seluruh klip |

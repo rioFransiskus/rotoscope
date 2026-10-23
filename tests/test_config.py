@@ -146,6 +146,16 @@ def test_revision_string_or_null_allowed(tmp_path):
 PIPELINE_INVALID = [
     ({"paths.work_dir": ""}, r"paths\.work_dir"),
     ({"paths.out_dir": 5}, r"paths\.out_dir"),
+    ({"ingest.crop.suggest": "ya"}, r"ingest\.crop\.suggest"),
+    ({"ingest.crop.detect.static_std_max": -1}, r"ingest\.crop\.detect\.static_std_max"),
+    ({"ingest.crop.detect.static_line_frac": 0}, r"ingest\.crop\.detect\.static_line_frac"),
+    ({"ingest.crop.detect.static_line_frac": 1.5}, r"ingest\.crop\.detect\.static_line_frac"),
+    ({"ingest.crop.detect.uniform_std_max": 300}, r"ingest\.crop\.detect\.uniform_std_max"),
+    ({"ingest.crop.detect.band_min_px": 0}, r"ingest\.crop\.detect\.band_min_px"),
+    ({"ingest.crop.detect.band_min_px": 8.5}, r"ingest\.crop\.detect\.band_min_px.*int"),
+    ({"ingest.crop.detect.min_active_frac": 0}, r"ingest\.crop\.detect\.min_active_frac"),
+    ({"ingest.crop.preview.hint_static_frac": 1.2}, r"ingest\.crop\.preview\.hint_static_frac"),
+    ({"ingest.trim": {"start_s": 1}}, r"ingest\.trim.*tidak dikenal"),        # T-607 no. 15: trim hanya lewat --start / --end
     ({"segment.model": "1b"}, r"segment\.model \('1b'\)"),
     ({"segment.model_ids": {"0.8b": "facebook/sapiens-seg-0.8b"}}, r"segment\.model_ids\.0\.8b.*sapiens2-seg-"),
     ({"segment.model_ids": {"0.4b": "facebook/sapiens-seg-0.4b-torchscript"}}, r"CC-BY-NC"),

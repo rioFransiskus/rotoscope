@@ -35,8 +35,8 @@ import numpy as np
 
 from rotoscope.ingest import FRAME_PATTERN, FRAMES_DIRNAME
 from rotoscope.stage_common import (
-    EXIT_OK, EXIT_PRECONDITION, StageError, clip_identity, load_frame_list, read_rgb, utc_now, write_bytes_atomic,
-    write_json_atomic,
+    EXIT_OK, EXIT_PRECONDITION, StageError, clip_identity, config_flag, load_frame_list, read_rgb, trim_flags, utc_now,
+    write_bytes_atomic, write_json_atomic,
 )
 
 EXIT_INTERRUPTED = 130
@@ -529,17 +529,21 @@ def _same_source(a: str, b: str) -> bool:
     return os.path.normcase(os.path.normpath(a)) == os.path.normcase(os.path.normpath(b))
 
 
-def check_doc_matches_clip(doc: dict, identity: dict, width: int, height: int, path: Path) -> None:
-    """Berkas milik klip lain / ukuran frame lain → PickError (pick tidak membukanya dan tidak menimpanya)."""
+def check_doc_matches_clip(doc: dict, identity: dict, width: int, height: int, path: Path, pick_cmd: str | None = None) -> None:
+    """Berkas milik klip lain / ukuran frame lain → PickError (pick tidak membukanya dan tidak menimpanya). `pick_cmd` = perintah
+    `pick <video> [--start S --end E]` (tanpa --frame) untuk pesan ukuran beda (T-607, docs/04 persetujuan rancangan no. 9)."""
     old = doc["clip"]["source_path"]
     if not _same_source(old, identity["source_path"]):
         raise PickError(f"{path} milik klip lain ({old}; klip ini: {identity['source_path']}) - pindahkan berkas itu; "
                         f"pick tidak menimpanya")
     fs = doc["frame_size"]
     if (fs["width"], fs["height"]) != (width, height):
-        raise PickError(f"{path} dibuat untuk frame {fs['width']} x {fs['height']}, frames/ sekarang {width} x {height} "
-                        f"(ingest dengan ukuran lain?) - semua titik di berkas itu basi. Pindahkan / hapus berkas itu lalu "
-                        f"jalankan pick lagi; pick tidak menimpanya")
+        first = min((e["frame_index"] for e in doc.get("frames", [])), default=0)
+        cmd = pick_cmd or f"{PROG} pick <video>"
+        raise PickError(f"{path}: titik dibuat untuk frame {fs['width']} x {fs['height']}, frames/ sekarang {width} x {height} - "
+                        f"frame berubah sejak diklik (ingest memakai crop / trim / ukuran kerja lain). Semua titik di berkas itu "
+                        f"basi dan tidak dipakai. Pindahkan berkas itu (mis. ganti nama menjadi points.old.json), lalu klik ulang "
+                        f"target: {cmd} --frame {first}; pick tidak menimpanya")
 
 
 def frame_status(entry: dict, work_dir: Path, indices: set[int], cache: dict[int, str | None]) -> str:
@@ -652,19 +656,20 @@ class Session:
         return dict(sorted(out.items()))
 
     def pick_cmd(self, frame: int) -> str:
-        return f"{PROG} pick {_quote(self.video)} --frame {frame}"
+        return f"{PROG} pick {_quote(self.video)}{trim_flags(self.work_dir)}{config_flag()} --frame {frame}"
 
 
 def open_session(work_dir: Path, frame: int, video: str) -> Session:
     """Baca meta.json + frame + points.json (divalidasi) + status tiap frame berkas. PickError = exit 1."""
     clip = work_dir.name
+    ingest_cmd = f"{PROG} ingest {_quote(video)}{trim_flags(work_dir)}{config_flag()}"   # T-607: siap tempel (trim + --config)
     try:
         _names, indices, width, height = load_frame_list(work_dir)
         identity = clip_identity(work_dir)
     except (StageError, OSError, ValueError, KeyError, TypeError) as e:
-        raise PickError(f"meta.json di {work_dir} tidak terbaca ({e}) - jalankan {PROG} ingest {_quote(video)}") from None
+        raise PickError(f"meta.json di {work_dir} tidak terbaca ({e}) - jalankan {ingest_cmd}") from None
     if not indices:
-        raise PickError(f"klip {clip} tanpa frame (meta.json frame_count 0) - jalankan {PROG} ingest {_quote(video)}")
+        raise PickError(f"klip {clip} tanpa frame (meta.json frame_count 0) - jalankan {ingest_cmd}")
     if not indices[0] <= frame <= indices[-1]:
         raise PickError(f"frame {frame} di luar klip {clip} ({len(indices)} frame: {indices[0]}-{indices[-1]})")
     frames_dir = work_dir / FRAMES_DIRNAME
@@ -672,11 +677,11 @@ def open_session(work_dir: Path, frame: int, video: str) -> Session:
     try:
         rgb = read_rgb(frame_path)
     except StageError:
-        raise PickError(f"{frame_path.name} hilang / tidak terbaca di {frames_dir} - jalankan {PROG} ingest {_quote(video)} "
+        raise PickError(f"{frame_path.name} hilang / tidak terbaca di {frames_dir} - jalankan {ingest_cmd} "
                         f"(menulis ulang frames/; titik pada frame yang isinya berubah menjadi basi)") from None
     if rgb.shape[:2] != (height, width):
         raise PickError(f"{frame_path.name} berukuran {rgb.shape[1]} x {rgb.shape[0]}, meta.json {width} x {height} - "
-                        f"jalankan {PROG} ingest {_quote(video)}")
+                        f"jalankan {ingest_cmd}")
     pixel_sha = pixel_sha256(rgb)
     points_path = work_dir / TARGET_DIRNAME / POINTS_FILENAME
     try:
@@ -687,7 +692,8 @@ def open_session(work_dir: Path, frame: int, video: str) -> Session:
                 doc, {})
     if doc is None:
         return s
-    check_doc_matches_clip(doc, identity, width, height, points_path)
+    check_doc_matches_clip(doc, identity, width, height, points_path,
+                           f"{PROG} pick {_quote(video)}{trim_flags(work_dir)}{config_flag()}")
     if doc["clip"]["meta_sha256"] != identity["meta_sha256"]:
         s.notes.append("meta.json berubah sejak titik disimpan - frame dicek satu per satu lewat sidik piksel.")
     s.status = frame_statuses(doc, work_dir, set(indices), {frame: pixel_sha})
@@ -725,7 +731,8 @@ def commit(session: Session, state: PickState, action: str, display: DisplayInfo
     if not _same_source(identity["source_path"], session.identity["source_path"]):
         raise PickError(f"meta.json berganti klip selama pick ({identity['source_path']}) - tidak disimpan")
     if disk is not None:
-        check_doc_matches_clip(disk, identity, session.width, session.height, path)
+        check_doc_matches_clip(disk, identity, session.width, session.height, path,
+                               f"{PROG} pick {_quote(session.video)}{trim_flags(session.work_dir)}{config_flag()}")
     try:
         now = frame_pixel_sha256(session.frame_path)
     except StageError:

@@ -64,9 +64,9 @@ from rotoscope.config import (
 )
 from rotoscope.ingest import META_FILENAME
 from rotoscope.stage_common import (
-    CLIP_KEY, EXIT_OK, EXIT_PRECONDITION, StageError, _replace_with_retry, add_work_dir_arg, cli_cmd,
-    clip_identity_from_bytes, describe_identity, read_rgb, reconfigure_stdio, utc_now, window_bounds,
-    work_dir_overrides, write_bytes_atomic, write_json_atomic,
+    CLIP_KEY, EXIT_OK, EXIT_PRECONDITION, TRIM_SEP, StageError, _replace_with_retry, add_work_dir_arg, cli_cmd,
+    clip_identity_from_bytes, describe_identity, read_rgb, reconfigure_stdio, set_message_config, trim_label, utc_now,
+    window_bounds, work_dir_overrides, write_bytes_atomic, write_json_atomic,
 )
 
 # ── Layout output (docs/01 [6]) ────────────────────
@@ -130,11 +130,16 @@ def sanitize_style_name(name: str) -> str:
     return SOURCE_UNSAFE_RE.sub("_", name).strip(SOURCE_STRIP_CHARS) or STYLE_FALLBACK_NAME
 
 
+def clip_name(source_path: str, trim: str | None = None) -> str:
+    """Nama klip = nama sumber disanitasi (+ `@S-E` bila ber-trim, T-607): folder kerja, `{source}` export, dan folder SVG."""
+    return sanitize_source_name(source_path) + (f"{TRIM_SEP}{trim}" if trim else "")
+
+
 def resolve_filename(template: str, source_path: str, limit: int | None = None, start: int | None = None,
-                     style: str = DEFAULT_STYLE_NAME) -> str:
+                     style: str = DEFAULT_STYLE_NAME, trim: str | None = None) -> str:
     """`limit` → <nama>.limitN.mp4; `start` + `limit` (jendela, T-204) → <nama>.preview_<K>-<K+N-1>.mp4.
-    `{style}` (T-406) = `style` (nama preset / stem berkas), disanitasi."""
-    name = template.replace(SOURCE_PLACEHOLDER, sanitize_source_name(source_path))
+    `{style}` (T-406) = `style` (nama preset / stem berkas), disanitasi. `trim` (T-607) = label 'S-E' → `{source}` = <nama>@S-E."""
+    name = template.replace(SOURCE_PLACEHOLDER, clip_name(source_path, trim))
     name = name.replace(STYLE_PLACEHOLDER, sanitize_style_name(style))
     if limit is not None and start is not None:
         name = name[: -len(MP4_SUFFIX)] + f".preview_{start}-{start + limit - 1}" + MP4_SUFFIX
@@ -508,10 +513,10 @@ def _audio_ref(cfg: PipelineConfig, source_path: Path) -> dict:
 
 # ── Salinan SVG: strokes/*.svg → out/svg/<nama>/ ──
 def svg_dir_for(out_dir: Path, source_path: str, template: str = DEFAULT_FILENAME_TEMPLATE,
-                style: str = DEFAULT_STYLE_NAME) -> Path:
+                style: str = DEFAULT_STYLE_NAME, trim: str | None = None) -> Path:
     """T-406: folder SVG = stem nama MP4 hasil (tanpa .limitN / .preview_*). Default `{source}.mp4` → nama sumber (tidak berubah);
-    `{source}_{style}.mp4` → folder per preset, jadi merender preset lain tidak menimpa SVG preset lain."""
-    return out_dir / SVG_DIRNAME / Path(resolve_filename(template, source_path, style=style)).stem
+    `{source}_{style}.mp4` → folder per preset, jadi merender preset lain tidak menimpa SVG preset lain. Ber-trim → <nama>@S-E."""
+    return out_dir / SVG_DIRNAME / Path(resolve_filename(template, source_path, style=style, trim=trim)).stem
 
 
 def _sha256(path: Path) -> str:
@@ -669,6 +674,7 @@ def run_export(cfg: PipelineConfig, *, restart: bool = False, limit: int | None 
     fps = float(meta["target_fps"])
     identity = clip_identity_from_bytes(meta_bytes)
     source_path = identity["source_path"]
+    trim = trim_label(meta.get("trim"))                   # T-607: klip ber-trim → <nama>@S-E
     lo, hi = window_bounds(len(clip.names), start, limit)
     names = list(clip.names[lo:hi])
 
@@ -706,7 +712,7 @@ def run_export(cfg: PipelineConfig, *, restart: bool = False, limit: int | None 
                              f"(dibutuhkan untuk mengambil audio)")
 
     out_dir = cfg.paths.out_dir
-    target = out_dir / resolve_filename(ex.filename, source_path, limit, start, style_label)
+    target = out_dir / resolve_filename(ex.filename, source_path, limit, start, style_label, trim)
     manifest_path = manifest_path_for(target)
     tmp = target.with_name(target.name + TMP_SUFFIX)
 
@@ -732,7 +738,7 @@ def run_export(cfg: PipelineConfig, *, restart: bool = False, limit: int | None 
         manifest["stable"] = {k: stable_m.get(k) for k in ("stabilize_hash", "groups_hash", "created_utc")}
 
     svg_plan = None
-    svg_dir = svg_dir_for(out_dir, source_path, ex.filename, style_label)
+    svg_dir = svg_dir_for(out_dir, source_path, ex.filename, style_label, trim)
     if strokes_ref is not None and limit is None:     # pengaman SVG dievaluasi SEBELUM encode (gagal cepat)
         svg_plan = plan_svg_sync(work_dir / sty.STROKES_DIRNAME, names, svg_dir, source_path, restart)
 
@@ -825,6 +831,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--from", dest="start", type=int, default=None,
                    help="jendela K..K+N-1 → <nama>.preview_K-<K+N-1>.mp4; WAJIB bersama --limit N")
     args = p.parse_args(argv)
+    set_message_config(args.config)          # T-607: --config non-default ikut di perintah siap tempel
     reconfigure_stdio()
 
     def log(msg: str) -> None:

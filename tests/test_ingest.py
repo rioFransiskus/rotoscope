@@ -180,6 +180,75 @@ def test_wrong_rotation_detection_raises(rotated_video, tmp_path, monkeypatch):
     assert not (tmp_path / "work" / "meta.json").exists()
 
 
+# --- trim (T-607: indeks frame sesudah fps) ---------------------------------
+
+@pytest.mark.parametrize(("start", "end", "expected"), [
+    (0, 3.8333, (0, 92, 0.0, 3.833)),           # K5: klip5 f0–f91
+    (0, 92 / 24, (0, 92, 0.0, 3.833)),          # E tepat di batas frame (galat float) → tetap 92
+    (1 / 24, 92 / 24, (1, 92, 0.041, 3.833)),
+    (0.5, 1.5, (12, 36, 0.5, 1.5)),
+    (0.51, 1.0, (13, 24, 0.541, 1.0)),          # ceil, bukan round (0.51 · 24 = 12.24 → frame 13)
+    (2, None, (48, None, 2.0, None)),
+    (None, 1.0, (0, 24, 0.0, 1.0)),
+])
+def test_make_trim_ceil_end_exclusive_canonical(start, end, expected):
+    t = ingest_mod.make_trim(start, end, 24)
+    assert (t["start_frame"], t["end_frame"], t["start_s"], t["end_s"]) == expected
+    again = ingest_mod.make_trim(t["start_s"], t["end_s"], 24)      # detik kanonik dibaca ulang → indeks sama (nama folder)
+    assert (again["start_frame"], again["end_frame"]) == (t["start_frame"], t["end_frame"])
+
+
+def test_make_trim_float_tolerance():
+    """0.28 · 25 = 7.000000000000001 dan 0.56 · 25 = 14.000000000000002 di float: tanpa toleransi 1e-6 frame awal / akhir
+    bergeser satu (ceil)."""
+    assert 0.28 * 25 > 7 and 0.56 * 25 > 14
+    t = ingest_mod.make_trim(0.28, 0.56, 25)
+    assert (t["start_frame"], t["end_frame"]) == (7, 14)
+
+
+@pytest.mark.parametrize(("start", "end"), [(None, None), (0, None), (0.0, None)])
+def test_make_trim_untrimmed_is_none(start, end):
+    assert ingest_mod.make_trim(start, end, 24) is None
+
+
+@pytest.mark.parametrize(("start", "end", "match"), [
+    (-1, None, "≥ 0"), (2, 2, "harus >"), (2, 1, "harus >"), (0.01, 0.02, "tidak memuat satu frame"),
+])
+def test_make_trim_rejects_bad_ranges(start, end, match):
+    with pytest.raises(ValueError, match=match):
+        ingest_mod.make_trim(start, end, 24)
+
+
+def test_trim_frames_are_byte_identical_subset_renumbered(tmp_path):
+    video = make_video(tmp_path / "in.mp4", 320, 240, fps=30, duration=2)
+    full = ingest(video, tmp_path / "full")
+    meta = ingest(video, tmp_path / "trim", start_s=0.5, end_s=1.5)
+    assert meta["frame_count"] == 24 and meta["trim"] == {"start_s": 0.5, "end_s": 1.5, "start_frame": 12, "end_frame": 36}
+    assert list(meta)[-1] == "trim" and meta["source_frame_count"] == full["source_frame_count"]
+    a, b = frame_files(tmp_path / "full"), frame_files(tmp_path / "trim")
+    assert b[0].name == "frame_00000.png" and len(b) == 24
+    assert all(x.read_bytes() == y.read_bytes() for x, y in zip(a[12:36], b))
+    tail = ingest(video, tmp_path / "tail", start_s=1.0)
+    assert tail["frame_count"] == full["frame_count"] - 24 and tail["trim"]["end_frame"] is None
+    assert all(x.read_bytes() == y.read_bytes() for x, y in zip(a[24:], frame_files(tmp_path / "tail")))
+
+
+def test_trim_zero_start_without_end_is_byte_identical(tmp_path):
+    video = make_video(tmp_path / "in.mp4", 320, 240, duration=1)
+    ingest(video, tmp_path / "a")
+    ingest(video, tmp_path / "b", start_s=0)
+    assert (tmp_path / "a" / "meta.json").read_bytes() == (tmp_path / "b" / "meta.json").read_bytes()
+
+
+@pytest.mark.parametrize(("start", "end", "match"), [(0.5, 9.0, r"--end 9 \(frame 216\).*klip punya 24 frame"),
+                                                      (5.0, None, r"--start 5 \(frame 120\)")])
+def test_trim_beyond_clip_end_fails_without_output(tmp_path, start, end, match):
+    video = make_video(tmp_path / "in.mp4", 320, 240, duration=1)
+    with pytest.raises(IngestError, match=match):
+        ingest(video, tmp_path / "w", start_s=start, end_s=end)
+    assert not (tmp_path / "w" / "meta.json").exists() and frame_files(tmp_path / "w") == []
+
+
 # --- error handling ---------------------------------------------------------
 
 def test_missing_file(tmp_path):

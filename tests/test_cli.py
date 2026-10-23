@@ -16,6 +16,7 @@ import test_export as te
 import test_segment as ts
 import test_stabilize as tst
 from rotoscope import cli
+from rotoscope import crop as crop_mod
 from rotoscope import depth as dep
 from rotoscope import export as ex
 from rotoscope import segment as seg
@@ -142,7 +143,9 @@ def test_config_workdir_and_unsafe_stem(rec, tmp_path):
     a = rec.args("segment")
     assert Path(a[a.index("--work-dir") + 1]) == other / "clips" / ex.sanitize_source_name(str(video))
     assert "--config" in a and a[a.index("--config") + 1] == str(conf)
-    assert "--config" not in rec.args("ingest")             # ingest tidak membaca config
+    ia = rec.args("ingest")                                 # T-607: ingest membaca config (section ingest) + folder crop per sumber
+    assert ia[ia.index("--config") + 1] == str(conf)
+    assert Path(ia[ia.index("--crop-dir") + 1]) == other / "crop" / ex.sanitize_source_name(str(video))
     assert all("--out-dir" not in c[2] for c in rec.calls)  # paths.out_dir tidak berubah
 
 
@@ -708,3 +711,213 @@ def test_reingest_same_clip_passes_changed_video_is_rejected(tmp_path):
                              (dep.run_depth, dep_cfg, td.factory, td.quiet)):
         with pytest.raises(StageError, match="LAIN"):
             run(cfg, backend_factory=fac(), log=q)
+
+
+# ── T-607: trim (--start / --end) + saran crop (berhenti sesudah [1]) + alat crop ──
+def workdir_of(args: list[str]) -> Path:
+    return Path(args[args.index("--work-dir") + 1])
+
+
+def write_saran(tmp_path: Path, stem: str = "clip") -> Path:
+    d = tmp_path / "work" / "crop" / stem
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "saran.json").write_text(json.dumps({"format": crop_mod.FORMAT_SARAN}), encoding="utf-8")
+    return d
+
+
+def test_trim_folder_and_canonical_ingest_args(rec, tmp_path):
+    video = make_video(tmp_path)
+    assert run_cli("run", str(video), "--start", "1", "--end", "3.8333") == 0
+    assert {workdir_of(rec.args(s)).resolve() for s in rec.stages} == {clip_dir(tmp_path, "clip@1-3.833").resolve()}
+    ia = rec.args("ingest")
+    assert ia[ia.index("--start") + 1] == "1" and ia[ia.index("--end") + 1] == "3.833"
+    assert Path(ia[ia.index("--crop-dir") + 1]).resolve() == (tmp_path / "work" / "crop" / "clip").resolve()   # per SUMBER
+    assert all("--start" not in rec.args(s) and "--end" not in rec.args(s) for s in rec.stages if s != "ingest")
+
+
+def test_trim_equivalent_inputs_share_folder_and_zero_start_is_plain(rec, tmp_path):
+    video = make_video(tmp_path)
+    run_cli("run", str(video), "--end", "3.8333")
+    run_cli("run", str(video), "--start", "0", "--end", str(92 / 24))
+    assert {workdir_of(c[2]).name for c in rec.calls} == {"clip@0-3.833"}
+    rec.calls.clear()
+    run_cli("run", str(video), "--start", "0")
+    assert workdir_of(rec.args("ingest")).name == "clip" and "--start" not in rec.args("ingest")
+
+
+def test_stage_subcommands_use_trim_folder(rec, tmp_path):
+    video = make_video(tmp_path)
+    for stage in ("ingest", "segment", "depth", "stabilize", "vectorize", "stylize", "export"):
+        rec.calls.clear()
+        assert run_cli(stage, str(video), "--start", "2") == 0
+        a = rec.args(stage)
+        assert workdir_of(a).name == "clip@2-end" and ("--start" in a) == (stage == "ingest")
+    assert run_cli("ingest", str(video), "--crop-dir", "x") == 2
+
+
+def test_trim_mapping_printed_before_ingest(rec, tmp_path, capsys, monkeypatch):
+    """Usulan B (Tahap 4): detik yang DIKETIK → indeks frame → folder, dicetak sebelum [1] ingest ber-trim (run / ingest / pick /
+    preview); tanpa trim dan di stage lain tidak ada."""
+    video = make_video(tmp_path)
+    assert run_cli("run", str(video), "--end", "3.8334") == 0
+    out = capsys.readouterr().out
+    line = "[1] trim: --end 3.8334 → frame 0–92 (93 frame) pada 24 fps → folder clip@0-3.875"
+    assert line in out and out.index(line) < out.index("\n=== ")
+    assert run_cli("ingest", str(video), "--start", "2") == 0
+    assert "[1] trim: --start 2 → frame 48–akhir klip pada 24 fps → folder clip@2-end" in capsys.readouterr().out
+    monkeypatch.setattr(cli.pick_mod, "run_pick", lambda *a, **k: 0)
+    assert run_cli("pick", str(video), "--start", "0.5", "--end", "1", "--dry-run") == 0
+    assert "[1] trim: --start 0.5 --end 1 → frame 12–23 (12 frame) pada 24 fps → folder clip@0.5-1" in capsys.readouterr().out
+    monkeypatch.setattr(cli, "check_gpu_inputs", lambda *a, **k: None)
+    assert run_cli("run", str(video), "--preview", "2", "--start", "1") == 0
+    assert "[1] trim: --start 1 → frame 24–akhir klip" in capsys.readouterr().out
+    for argv in (("run", str(video)), ("segment", str(video), "--start", "2"), ("run", str(video), "--start", "0")):
+        assert run_cli(*argv) == 0 and "[1] trim:" not in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("args", [("--start", "2", "--end", "1"), ("--start", "-1"), ("--start", "0.01", "--end", "0.02")])
+def test_invalid_trim_is_usage_error(rec, tmp_path, args):
+    assert run_cli("run", str(make_video(tmp_path)), *args) == 2 and rec.calls == []
+
+
+def test_preflight_rejects_folder_with_other_trim(rec, tmp_path, capsys):
+    video = make_video(tmp_path)
+    work = clip_dir(tmp_path, "clip@1-2")
+    work.mkdir(parents=True)
+    (work / "meta.json").write_text(json.dumps({"source_path": str(video.resolve()), "frame_count": 24, "trim": {
+        "start_s": 1.0, "end_s": None, "start_frame": 24, "end_frame": None}}), encoding="utf-8")
+    assert run_cli("run", str(video), "--start", "1", "--end", "2") == 1
+    assert "trim LAIN" in capsys.readouterr().err and rec.calls == []
+
+
+def test_export_preflight_uses_trim_name(rec, tmp_path):
+    video = make_video(tmp_path)
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "clip@1-2.mp4").write_bytes(b"x")
+    (out / "clip@1-2.export.json").write_text(json.dumps({"clip": {"source_path": str(tmp_path / "lain.mp4")}}), encoding="utf-8")
+    assert run_cli("run", str(video), "--start", "1", "--end", "2") == 1 and rec.calls == []
+    assert run_cli("run", str(video)) == 0                  # tanpa trim: nama lain, tidak bentrok
+
+
+def test_run_stops_after_ingest_when_saran_undecided(rec, tmp_path, capsys):
+    video = make_video(tmp_path)
+    write_saran(tmp_path)
+    assert run_cli("run", str(video)) == cli.EXIT_CROP_DECISION == 4
+    assert rec.stages == ["ingest"]
+    err = capsys.readouterr().err
+    assert "belum diputuskan" in err and "Stage GPU TIDAK dijalankan" in err
+    assert "crop" in err and "--accept" in err and "--box X Y W H" in err and "--none" in err
+    assert cli.EXIT_CROP_DECISION not in (0, 1, 2, 3, 130)
+
+
+def test_exit4_commands_are_paste_ready_with_config_and_trim(rec, tmp_path, capsys):
+    """Persetujuan Rio (2026-10-22): perintah yang dicetak siap tempel; --config non-default ikut."""
+    video = make_video(tmp_path)
+    write_saran(tmp_path)
+    work = clip_dir(tmp_path, "clip@1-2")
+    work.mkdir(parents=True)
+    (work / "meta.json").write_text(json.dumps({"source_path": str(video.resolve()), "frame_count": 24, "trim": {
+        "start_s": 1.0, "end_s": 2.0, "start_frame": 24, "end_frame": 48}}), encoding="utf-8")
+    conf = tmp_path / "c.yaml"
+    conf.write_text(f'paths:\n  work_dir: "{(tmp_path / "work").as_posix()}"\n', encoding="utf-8")
+    assert run_cli("run", str(video), "--start", "1", "--end", "2", "--config", str(conf)) == 4
+    err = capsys.readouterr().err
+    v, c = video.resolve(), conf.resolve()
+    for flag in ("--accept", "--none", "--box X Y W H"):
+        assert f"python -m rotoscope crop {v} {flag} --config {c}" in err
+    assert f"lalu jalankan ulang: python -m rotoscope run {v} --start 1 --end 2 --config {c}" in err
+
+
+def test_stage_subcommand_and_run_set_message_config(rec, tmp_path):
+    video, conf = make_video(tmp_path), tmp_path / "c.yaml"
+    conf.write_text("qc:\n  area_min: 0.03\n", encoding="utf-8")
+    from rotoscope import stage_common as sc
+    for argv in (("segment", str(video), "--config", str(conf)), ("run", str(video), "--config", str(conf))):
+        sc.set_message_config(None)
+        assert run_cli(*argv) == 0 and sc.config_flag() == f" --config {conf.resolve()}"
+    assert run_cli("run", str(video)) == 0 and sc.config_flag() == ""
+
+
+def test_preview_gpu_input_message_is_paste_ready(rec, tmp_path, capsys):
+    video, conf = make_video(tmp_path), tmp_path / "c.yaml"
+    conf.write_text(f'paths:\n  work_dir: "{(tmp_path / "work").as_posix()}"\n', encoding="utf-8")
+    work = clip_dir(tmp_path, "clip@1-2")
+    work.mkdir(parents=True)
+    (work / "meta.json").write_text(json.dumps({"source_path": str(video.resolve()), "frame_count": 24, "working_width": 64,
+                                                "working_height": 48, "frame_index_start": 0, "trim": {
+                                                    "start_s": 1.0, "end_s": 2.0, "start_frame": 24, "end_frame": 48}}),
+                                    encoding="utf-8")
+    assert run_cli("run", str(video), "--preview", "4", "--start", "1", "--end", "2", "--config", str(conf)) == 1
+    err = capsys.readouterr().err
+    v, c = video.resolve(), conf.resolve()
+    assert f"jalankan python -m rotoscope run {v} --start 1 --end 2 --config {c} (penuh)" in err
+    assert f"python -m rotoscope segment {v} --start 1 --end 2 --config {c} --limit 4" in err and rec.calls == []
+
+
+def test_adopt_hint_in_run_is_paste_ready(rec, tmp_path, capsys):
+    video = make_video(tmp_path)
+    assert run_cli("run", str(video), "--adopt") == 1
+    err = capsys.readouterr().err
+    assert f"python -m rotoscope segment {video} --adopt (depth: python -m rotoscope depth {video} --adopt)" in err
+    assert "<video>" not in err
+
+
+def test_run_continues_when_decided_or_suggest_off(rec, tmp_path):
+    video = make_video(tmp_path)
+    d = write_saran(tmp_path)
+    (d / "kotak.json").write_text("{}", encoding="utf-8")
+    assert run_cli("run", str(video)) == 0 and rec.stages[-1] == "export"
+    (d / "kotak.json").unlink()
+    rec.calls.clear()
+    conf = tmp_path / "c.yaml"
+    conf.write_text("ingest:\n  crop:\n    suggest: false\n", encoding="utf-8")
+    assert run_cli("run", str(video), "--config", str(conf)) == 0 and rec.stages[-1] == "export"
+
+
+def test_preview_does_not_stop_on_undecided_saran(rec, tmp_path, monkeypatch):
+    video = make_video(tmp_path)
+    write_saran(tmp_path)
+    monkeypatch.setattr(cli, "check_gpu_inputs", lambda *a, **k: None)
+    assert run_cli("run", str(video), "--preview", "2") == 0
+    assert rec.stages == list(cli.PREVIEW_STAGES)
+
+
+def test_pick_uses_trim_folder(rec, tmp_path, monkeypatch):
+    video = make_video(tmp_path)
+    seen = {}
+    monkeypatch.setattr(cli.pick_mod, "run_pick", lambda work_dir, frame, video, dry_run_only: seen.setdefault("wd", work_dir) and 0)
+    assert run_cli("pick", str(video), "--start", "0.5", "--end", "1", "--dry-run") == 0
+    assert seen["wd"].name == "clip@0.5-1" and workdir_of(rec.args("ingest")).name == "clip@0.5-1"
+
+
+def test_crop_subcommand_rejects_trim_and_mixed_actions(rec, tmp_path):
+    video = make_video(tmp_path)
+    assert run_cli("crop", str(video), "--start", "1") == 2
+    with pytest.raises(SystemExit) as e:
+        run_cli("crop", str(video), "--accept", "--none")
+    assert e.value.code == 2
+
+
+@pytest.mark.skipif(te.pytestmark.args[0], reason="ffmpeg/ffprobe tidak ada di PATH")
+def test_crop_subcommand_status_decision_and_restart_commands(tmp_path, monkeypatch, capsys):
+    import test_ingest as ti
+    monkeypatch.chdir(tmp_path)
+    video = ti.make_video(tmp_path / "klip.mp4", 64, 48, fps=24, duration=0.5)
+    write_meta(clip_dir(tmp_path, "klip"), video.resolve())
+    w2 = clip_dir(tmp_path, "klip@1-2")
+    w2.mkdir(parents=True)
+    (w2 / "meta.json").write_text(json.dumps({"source_path": str(video.resolve()), "frame_count": 24, "trim": {
+        "start_s": 1.0, "end_s": 2.0, "start_frame": 24, "end_frame": 48}}), encoding="utf-8")
+    write_meta(clip_dir(tmp_path, "klip@3-end"), tmp_path / "lain" / "klip.mp4")        # sumber lain → tidak ikut
+    assert cli.main(["crop", str(video)]) == 0
+    out = capsys.readouterr().out
+    assert "saran: tidak ada" in out and "belum ada" in out and "folder klip@1-2" in out and "klip@3-end" not in out
+    assert cli.main(["crop", str(video), "--none"]) == 0
+    out = capsys.readouterr().out
+    assert f"run {video.resolve()} --restart-from ingest --yes" in out
+    assert f"run {video.resolve()} --start 1 --end 2 --restart-from ingest --yes" in out and "klip@3-end" not in out
+    kotak = json.loads((tmp_path / "work" / "crop" / "klip" / "kotak.json").read_text(encoding="utf-8"))
+    assert kotak["mode"] == "none" and kotak["source"]["path"] == str(video.resolve())
+    assert cli.main(["crop", str(video), "--box", "0", "0", "100", "10"]) == 1          # di luar frame 64 × 48
+    assert "di luar frame" in capsys.readouterr().err

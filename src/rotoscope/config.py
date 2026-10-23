@@ -112,7 +112,8 @@ _SUGGEST_CUTOFF = 0.6
 
 # Key yang pindah file / section (D-010) → pesan khusus, bukan sekadar "tidak dikenal".
 _STYLE_SECTIONS = ("shape", "stroke", "jitter", "multipass", "paper", "render")
-_PIPELINE_SECTIONS = ("paths", "isolate", "segment", "depth", "qc", "groups", "target_mask", "stabilize", "vectorize", "export")
+_PIPELINE_SECTIONS = ("paths", "ingest", "isolate", "segment", "depth", "qc", "groups", "target_mask", "stabilize", "vectorize",
+                      "export")
 _MOVED_IN_PIPELINE = {
     s: "ini parameter style — taruh di configs/styles/*.yaml" for s in _STYLE_SECTIONS
 }
@@ -133,6 +134,37 @@ def _frozen(d: dict) -> Callable[[], Mapping]:
 class PathsConfig:
     work_dir: Path = Path("work")
     out_dir: Path = Path("out")
+
+
+@dataclass(frozen=True)
+class CropDetectConfig:
+    """Aturan R2 BEKU (T-607, docs/04 "R2 DIBEKUKAN"; sidik `crop.FROZEN_FINGERPRINT`). Nilai lain = PERINGATAN "aturan belum
+    divalidasi" saat ingest + sidik lain di saran / `meta.json`."""
+    static_std_max: float = 3.0        # piksel statis: simpangan baku temporal (maks antar kanal, 0–255) ≤ ini
+    static_line_frac: float = 0.99     # baris / kolom statis: ≥ fraksi ini pikselnya statis (di dalam persegi aktif saat itu)
+    uniform_std_max: float = 6.0       # pita seragam: simpangan baku spasial warna rata-rata temporal (maks antar kanal) ≤ ini
+    band_min_px: int = 8               # pita minimum per sisi; syarat pasangan (atas + bawah / kiri + kanan)
+    min_active_frac: float = 0.10      # area aktif < fraksi frame ini → tidak ada saran (pengaman)
+
+
+@dataclass(frozen=True)
+class CropPreviewConfig:
+    hint_static_frac: float = 0.95     # petunjuk: baris / kolom di DALAM kotak, dari garis potong ke dalam, yang ≥ fraksi ini diam
+
+
+@dataclass(frozen=True)
+class CropConfig:
+    """Saran crop [1] (T-607, D-013): deteksi R2 pada rentang penuh sumber → saran + pratinjau di <work_dir>/crop/<nama>/; TIDAK
+    memotong tanpa kotak.json (alat `python -m rotoscope crop`)."""
+    suggest: bool = True               # false = tanpa deteksi, tanpa saran, run tidak berhenti
+    detect: CropDetectConfig = field(default_factory=CropDetectConfig)
+    preview: CropPreviewConfig = field(default_factory=CropPreviewConfig)
+
+
+@dataclass(frozen=True)
+class IngestConfig:
+    """[1] ingest (T-607). Trim hanya lewat --start / --end (bukan YAML: nilai YAML berlaku untuk semua klip)."""
+    crop: CropConfig = field(default_factory=CropConfig)
 
 
 @dataclass(frozen=True)
@@ -290,6 +322,7 @@ class ExportConfig:
 class PipelineConfig:
     paths: PathsConfig = field(default_factory=PathsConfig)
     style: str = DEFAULT_STYLE_NAME      # T-406: nama preset atau path YAML style (kalah dari flag --style); dicari lewat resolve_style
+    ingest: IngestConfig = field(default_factory=IngestConfig)
     isolate: IsolateConfig = field(default_factory=IsolateConfig)
     segment: SegmentConfig = field(default_factory=SegmentConfig)
     depth: DepthConfig = field(default_factory=DepthConfig)
@@ -789,6 +822,14 @@ def _validate_pipeline(c: PipelineConfig) -> None:
               f"wajib varian {DEPTH_MODEL_ID_REQUIRED} (Apache-2.0) — Base/Large berlisensi CC-BY-NC, dilarang")
     _precision("depth.precision", d.precision)
     _between("depth.vram_min_free_mib", d.vram_min_free_mib, 0, VRAM_MAX_MIB)
+
+    cd = c.ingest.crop.detect
+    _between("ingest.crop.detect.static_std_max", cd.static_std_max, 0, 255)
+    _between("ingest.crop.detect.static_line_frac", cd.static_line_frac, 0, 1, lo_open=True)
+    _between("ingest.crop.detect.uniform_std_max", cd.uniform_std_max, 0, 255)
+    _at_least("ingest.crop.detect.band_min_px", cd.band_min_px, 1)
+    _between("ingest.crop.detect.min_active_frac", cd.min_active_frac, 0, 1, lo_open=True)
+    _between("ingest.crop.preview.hint_static_frac", c.ingest.crop.preview.hint_static_frac, 0, 1, lo_open=True)
 
     i = c.isolate
     if not i.model_id.startswith(ISOLATE_MODEL_ID_PREFIX):

@@ -1,0 +1,2928 @@
+{
+ "format": "t607-data/1",
+ "task": "T-607 potong letterbox / pillarbox / durasi, stage [1] ingest (D-013)",
+ "catatan": "Ringkasan angka work/t607/*.json (F4, 2026-10-23) sebelum work/t607_scratch/ dihapus; rincian per jendela / berkas tetap di work/t607/ (tidak di-commit). Keputusan + tafsir: docs/04 entri T-607.",
+ "r2": {
+  "rule": "R2",
+  "version": 1,
+  "params": {
+   "STATIC_STD_MAX": 3.0,
+   "STATIC_LINE_FRAC": 0.99,
+   "UNIFORM_STD_MAX": 6.0,
+   "BAND_MIN_PX": 8,
+   "MIN_ACTIVE_FRAC": 0.1
+  },
+  "fingerprint": "d40c3dfdd270a715a7bbc9bfbec96ce69ce613a1dac7480c1bcd607ec6eb1da0"
+ },
+ "window_k3": {
+  "len": 24,
+  "step": 12,
+  "tol_px": 4
+ },
+ "cropdetect_params": {
+  "limit": 24,
+  "round": 2,
+  "reset": 0
+ },
+ "ffmpeg": "ffmpeg version 9.0.1-essentials_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers",
+ "lama_tahap1a": {
+  "test": {
+   "n_clip": 283,
+   "ingest_s": 0.86,
+   "detect_png_s": 3.65,
+   "detect_pipe_s": 3.38,
+   "pipe_frames": 283,
+   "pipe_stats_equal_png": true,
+   "box_pipe": [
+    0,
+    0,
+    479,
+    853
+   ],
+   "box_equals_r2_lama": true,
+   "meta_bytes_equal": true,
+   "first_pts_after_fps": [
+    "n0 pts 1 t 0.0416667",
+    "n1 pts 2 t 0.0833333",
+    "n2 pts 3 t 0.125"
+   ]
+  },
+  "test_short": {
+   "n_clip": 119,
+   "ingest_s": 0.44,
+   "detect_png_s": 1.69,
+   "detect_pipe_s": 1.52,
+   "pipe_frames": 119,
+   "pipe_stats_equal_png": true,
+   "box_pipe": [
+    0,
+    0,
+    479,
+    853
+   ],
+   "box_equals_r2_lama": true,
+   "meta_bytes_equal": true,
+   "first_pts_after_fps": [
+    "n0 pts 1 t 0.0416667",
+    "n1 pts 2 t 0.0833333",
+    "n2 pts 3 t 0.125"
+   ]
+  },
+  "Klip2": {
+   "n_clip": 122,
+   "ingest_s": 0.35,
+   "detect_png_s": 1.34,
+   "detect_pipe_s": 1.16,
+   "pipe_frames": 122,
+   "pipe_stats_equal_png": true,
+   "box_pipe": [
+    245,
+    0,
+    474,
+    405
+   ],
+   "box_equals_r2_lama": true,
+   "meta_bytes_equal": true,
+   "first_pts_after_fps": [
+    "n0 pts 0 t 0",
+    "n1 pts 1 t 0.0416667",
+    "n2 pts 2 t 0.0833333"
+   ]
+  },
+  "klip3": {
+   "n_clip": 182,
+   "ingest_s": 1.75,
+   "detect_png_s": 6.94,
+   "detect_pipe_s": 5.68,
+   "pipe_frames": 182,
+   "pipe_stats_equal_png": true,
+   "box_pipe": [
+    0,
+    0,
+    719,
+    1279
+   ],
+   "box_equals_r2_lama": true,
+   "meta_bytes_equal": true,
+   "first_pts_after_fps": [
+    "n0 pts 1 t 0.0416667",
+    "n1 pts 2 t 0.0833333",
+    "n2 pts 3 t 0.125"
+   ]
+  },
+  "klip4": {
+   "n_clip": 217,
+   "ingest_s": 1.14,
+   "detect_png_s": 6.84,
+   "detect_pipe_s": 5.66,
+   "pipe_frames": 217,
+   "pipe_stats_equal_png": true,
+   "box_pipe": [
+    0,
+    0,
+    719,
+    1279
+   ],
+   "box_equals_r2_lama": true,
+   "meta_bytes_equal": true,
+   "first_pts_after_fps": [
+    "n0 pts 1 t 0.0416667",
+    "n1 pts 2 t 0.0833333",
+    "n2 pts 3 t 0.125"
+   ]
+  },
+  "klip5": {
+   "n_clip": 133,
+   "ingest_s": 0.73,
+   "detect_png_s": 4.3,
+   "detect_pipe_s": 3.7,
+   "pipe_frames": 133,
+   "pipe_stats_equal_png": true,
+   "box_pipe": [
+    0,
+    344,
+    719,
+    1011
+   ],
+   "box_equals_r2_lama": true,
+   "meta_bytes_equal": true,
+   "first_pts_after_fps": [
+    "n0 pts 0 t 0",
+    "n1 pts 1 t 0.0416667",
+    "n2 pts 2 t 0.0833333"
+   ]
+  }
+ },
+ "cropdetect_lama": {
+  "test": {
+   "r2_xyxy_incl_work": [
+    0,
+    0,
+    479,
+    853
+   ],
+   "diff_cd_minus_r2_work_px": {
+    "left": 0,
+    "top": 0,
+    "right": 0,
+    "bottom": 0
+   },
+   "same_as_r2": true
+  },
+  "test_short": {
+   "r2_xyxy_incl_work": [
+    0,
+    0,
+    479,
+    853
+   ],
+   "diff_cd_minus_r2_work_px": {
+    "left": 0,
+    "top": 0,
+    "right": 0,
+    "bottom": 0
+   },
+   "same_as_r2": true
+  },
+  "Klip2": {
+   "r2_xyxy_incl_work": [
+    245,
+    0,
+    474,
+    405
+   ],
+   "diff_cd_minus_r2_work_px": {
+    "left": 1,
+    "top": 0,
+    "right": 1,
+    "bottom": 0
+   },
+   "same_as_r2": false
+  },
+  "klip3": {
+   "r2_xyxy_incl_work": [
+    0,
+    0,
+    719,
+    1279
+   ],
+   "diff_cd_minus_r2_work_px": {
+    "left": 0,
+    "top": 0,
+    "right": 0,
+    "bottom": 0
+   },
+   "same_as_r2": true
+  },
+  "klip4": {
+   "r2_xyxy_incl_work": [
+    0,
+    0,
+    719,
+    1279
+   ],
+   "diff_cd_minus_r2_work_px": {
+    "left": 0,
+    "top": 0,
+    "right": 0,
+    "bottom": 0
+   },
+   "same_as_r2": true
+  },
+  "klip5": {
+   "r2_xyxy_incl_work": [
+    0,
+    344,
+    719,
+    1011
+   ],
+   "diff_cd_minus_r2_work_px": {
+    "left": 0,
+    "top": -126,
+    "right": 0,
+    "bottom": 2
+   },
+   "same_as_r2": false
+  }
+ },
+ "probe": {
+  "lama": {
+   "clips": {
+    "test": {
+     "probe": {
+      "file": "test.mp4",
+      "bytes": 930976,
+      "codec": "h264",
+      "pix_fmt": "yuv420p",
+      "coded_wh": [
+       480,
+       854
+      ],
+      "sample_aspect_ratio": "1:1",
+      "display_aspect_ratio": "240:427",
+      "rotation_side_data": null,
+      "rotate_tag": null,
+      "r_frame_rate": "30/1",
+      "avg_frame_rate": "30/1",
+      "nb_frames": null,
+      "stream_start_time": "0.033333",
+      "stream_duration": "11.800000",
+      "format_start_time": "0.000000",
+      "format_duration": "11.921950",
+      "field_order": "progressive",
+      "color_range": "tv",
+      "color_space": "bt709",
+      "has_audio": true,
+      "ingest_probe": {
+       "fps": 30.0,
+       "duration_s": 11.8,
+       "frame_count": null,
+       "width": 480,
+       "height": 854,
+       "rotation": 0,
+       "has_audio": true
+      }
+     },
+     "meta": {
+      "source_width": 480,
+      "source_height": 854,
+      "source_rotation": 0,
+      "source_fps": 30.0,
+      "working_width": 480,
+      "working_height": 854,
+      "frame_count": 283
+     },
+     "r2_box_work": [
+      0,
+      0,
+      479,
+      853
+     ],
+     "r2_wh_work": [
+      480,
+      854
+     ],
+     "cropped": false
+    },
+    "test_short": {
+     "probe": {
+      "file": "test_short.mp4",
+      "bytes": 493068,
+      "codec": "h264",
+      "pix_fmt": "yuv420p",
+      "coded_wh": [
+       480,
+       854
+      ],
+      "sample_aspect_ratio": "1:1",
+      "display_aspect_ratio": "240:427",
+      "rotation_side_data": null,
+      "rotate_tag": null,
+      "r_frame_rate": "30/1",
+      "avg_frame_rate": "30/1",
+      "nb_frames": "149",
+      "stream_start_time": "0.033333",
+      "stream_duration": "4.966667",
+      "format_start_time": "0.000000",
+      "format_duration": "5.000000",
+      "field_order": "progressive",
+      "color_range": "tv",
+      "color_space": "bt709",
+      "has_audio": true,
+      "ingest_probe": {
+       "fps": 30.0,
+       "duration_s": 4.966667,
+       "frame_count": 149,
+       "width": 480,
+       "height": 854,
+       "rotation": 0,
+       "has_audio": true
+      }
+     },
+     "meta": {
+      "source_width": 480,
+      "source_height": 854,
+      "source_rotation": 0,
+      "source_fps": 30.0,
+      "working_width": 480,
+      "working_height": 854,
+      "frame_count": 119
+     },
+     "r2_box_work": [
+      0,
+      0,
+      479,
+      853
+     ],
+     "r2_wh_work": [
+      480,
+      854
+     ],
+     "cropped": false
+    },
+    "Klip2": {
+     "probe": {
+      "file": "Klip2.mp4",
+      "bytes": 3207213,
+      "codec": "h264",
+      "pix_fmt": "yuv420p",
+      "coded_wh": [
+       1280,
+       720
+      ],
+      "sample_aspect_ratio": null,
+      "display_aspect_ratio": null,
+      "rotation_side_data": null,
+      "rotate_tag": null,
+      "r_frame_rate": "30/1",
+      "avg_frame_rate": "30/1",
+      "nb_frames": "153",
+      "stream_start_time": "0.000000",
+      "stream_duration": "5.100000",
+      "format_start_time": "0.000000",
+      "format_duration": "5.100000",
+      "field_order": "progressive",
+      "color_range": null,
+      "color_space": null,
+      "has_audio": true,
+      "ingest_probe": {
+       "fps": 30.0,
+       "duration_s": 5.1,
+       "frame_count": 153,
+       "width": 1280,
+       "height": 720,
+       "rotation": 0,
+       "has_audio": true
+      }
+     },
+     "meta": {
+      "source_width": 1280,
+      "source_height": 720,
+      "source_rotation": 0,
+      "source_fps": 30.0,
+      "working_width": 720,
+      "working_height": 406,
+      "frame_count": 122
+     },
+     "r2_box_work": [
+      245,
+      0,
+      474,
+      405
+     ],
+     "r2_wh_work": [
+      230,
+      406
+     ],
+     "cropped": true,
+     "source_box_outward": {
+      "x": 434,
+      "y": 0,
+      "w": 412,
+      "h": 720,
+      "xyxy_incl": [
+       434,
+       0,
+       845,
+       719
+      ],
+      "scale_src_per_work": [
+       1.7777777777777777,
+       1.7733990147783252
+      ]
+     },
+     "source_box_inward": {
+      "x": 436,
+      "y": 0,
+      "w": 408,
+      "h": 720,
+      "xyxy_incl": [
+       436,
+       0,
+       843,
+       719
+      ],
+      "scale_src_per_work": [
+       1.7777777777777777,
+       1.7733990147783252
+      ]
+     },
+     "outward_minus_inward_px": {
+      "left": 2,
+      "top": 0,
+      "right": 2,
+      "bottom": 0
+     },
+     "active_width_source": 412,
+     "working_width_cfg": 720,
+     "p_src_working_wh": [
+      412,
+      720
+     ],
+     "p_frm_working_wh": [
+      230,
+      406
+     ],
+     "p_src_gain_linear": 1.791,
+     "p_src_equals_p_frm_geometry": false
+    },
+    "klip3": {
+     "probe": {
+      "file": "klip3.mp4",
+      "bytes": 1054321,
+      "codec": "h264",
+      "pix_fmt": "yuv420p",
+      "coded_wh": [
+       720,
+       1280
+      ],
+      "sample_aspect_ratio": "1:1",
+      "display_aspect_ratio": "9:16",
+      "rotation_side_data": null,
+      "rotate_tag": null,
+      "r_frame_rate": "30000/1001",
+      "avg_frame_rate": "30000/1001",
+      "nb_frames": null,
+      "stream_start_time": "0.033367",
+      "stream_duration": "7.607600",
+      "format_start_time": "0.000000",
+      "format_duration": "7.695964",
+      "field_order": "progressive",
+      "color_range": "tv",
+      "color_space": "bt709",
+      "has_audio": true,
+      "ingest_probe": {
+       "fps": 29.97002997002997,
+       "duration_s": 7.6076,
+       "frame_count": null,
+       "width": 720,
+       "height": 1280,
+       "rotation": 0,
+       "has_audio": true
+      }
+     },
+     "meta": {
+      "source_width": 720,
+      "source_height": 1280,
+      "source_rotation": 0,
+      "source_fps": 29.97002997002997,
+      "working_width": 720,
+      "working_height": 1280,
+      "frame_count": 182
+     },
+     "r2_box_work": [
+      0,
+      0,
+      719,
+      1279
+     ],
+     "r2_wh_work": [
+      720,
+      1280
+     ],
+     "cropped": false
+    },
+    "klip4": {
+     "probe": {
+      "file": "klip4.mp4",
+      "bytes": 1906677,
+      "codec": "h264",
+      "pix_fmt": "yuv420p",
+      "coded_wh": [
+       720,
+       1280
+      ],
+      "sample_aspect_ratio": "1:1",
+      "display_aspect_ratio": "9:16",
+      "rotation_side_data": null,
+      "rotate_tag": null,
+      "r_frame_rate": "30/1",
+      "avg_frame_rate": "30/1",
+      "nb_frames": null,
+      "stream_start_time": "0.033333",
+      "stream_duration": "9.066667",
+      "format_start_time": "0.000000",
+      "format_duration": "9.158776",
+      "field_order": "progressive",
+      "color_range": "tv",
+      "color_space": "bt709",
+      "has_audio": true,
+      "ingest_probe": {
+       "fps": 30.0,
+       "duration_s": 9.066667,
+       "frame_count": null,
+       "width": 720,
+       "height": 1280,
+       "rotation": 0,
+       "has_audio": true
+      }
+     },
+     "meta": {
+      "source_width": 720,
+      "source_height": 1280,
+      "source_rotation": 0,
+      "source_fps": 30.0,
+      "working_width": 720,
+      "working_height": 1280,
+      "frame_count": 217
+     },
+     "r2_box_work": [
+      0,
+      0,
+      719,
+      1279
+     ],
+     "r2_wh_work": [
+      720,
+      1280
+     ],
+     "cropped": false
+    },
+    "klip5": {
+     "probe": {
+      "file": "klip5.mp4",
+      "bytes": 2052398,
+      "codec": "h264",
+      "pix_fmt": "yuv420p",
+      "coded_wh": [
+       720,
+       1280
+      ],
+      "sample_aspect_ratio": "1:1",
+      "display_aspect_ratio": "9:16",
+      "rotation_side_data": null,
+      "rotate_tag": null,
+      "r_frame_rate": "60/1",
+      "avg_frame_rate": "60/1",
+      "nb_frames": null,
+      "stream_start_time": "0.016667",
+      "stream_duration": "5.533333",
+      "format_start_time": "0.000000",
+      "format_duration": "5.612676",
+      "field_order": "progressive",
+      "color_range": "tv",
+      "color_space": "smpte170m",
+      "has_audio": true,
+      "ingest_probe": {
+       "fps": 60.0,
+       "duration_s": 5.533333,
+       "frame_count": null,
+       "width": 720,
+       "height": 1280,
+       "rotation": 0,
+       "has_audio": true
+      }
+     },
+     "meta": {
+      "source_width": 720,
+      "source_height": 1280,
+      "source_rotation": 0,
+      "source_fps": 60.0,
+      "working_width": 720,
+      "working_height": 1280,
+      "frame_count": 133
+     },
+     "r2_box_work": [
+      0,
+      344,
+      719,
+      1011
+     ],
+     "r2_wh_work": [
+      720,
+      668
+     ],
+     "cropped": true,
+     "source_box_outward": {
+      "x": 0,
+      "y": 344,
+      "w": 720,
+      "h": 668,
+      "xyxy_incl": [
+       0,
+       344,
+       719,
+       1011
+      ],
+      "scale_src_per_work": [
+       1.0,
+       1.0
+      ]
+     },
+     "source_box_inward": {
+      "x": 0,
+      "y": 344,
+      "w": 720,
+      "h": 668,
+      "xyxy_incl": [
+       0,
+       344,
+       719,
+       1011
+      ],
+      "scale_src_per_work": [
+       1.0,
+       1.0
+      ]
+     },
+     "outward_minus_inward_px": {
+      "left": 0,
+      "top": 0,
+      "right": 0,
+      "bottom": 0
+     },
+     "active_width_source": 720,
+     "working_width_cfg": 720,
+     "p_src_working_wh": [
+      720,
+      668
+     ],
+     "p_frm_working_wh": [
+      720,
+      668
+     ],
+     "p_src_gain_linear": 1.0,
+     "p_src_equals_p_frm_geometry": true
+    }
+   }
+  },
+  "baru": {
+   "klip6": {
+    "file": "klip6.mp4",
+    "bytes": 3376916,
+    "codec": "h264",
+    "pix_fmt": "yuv420p",
+    "coded_wh": [
+     720,
+     1280
+    ],
+    "sample_aspect_ratio": "1:1",
+    "display_aspect_ratio": "9:16",
+    "rotation_side_data": null,
+    "rotate_tag": null,
+    "r_frame_rate": "30/1",
+    "avg_frame_rate": "30/1",
+    "nb_frames": null,
+    "stream_start_time": "0.033333",
+    "stream_duration": "19.666667",
+    "format_duration": "19.747075",
+    "has_audio": true,
+    "ingest_probe": {
+     "fps": 30.0,
+     "duration_s": 19.666667,
+     "frame_count": null,
+     "width": 720,
+     "height": 1280,
+     "rotation": 0,
+     "has_audio": true
+    }
+   },
+   "klip7": {
+    "file": "klip7.mp4",
+    "bytes": 3050428,
+    "codec": "h264",
+    "pix_fmt": "yuv420p",
+    "coded_wh": [
+     720,
+     1280
+    ],
+    "sample_aspect_ratio": "1:1",
+    "display_aspect_ratio": "9:16",
+    "rotation_side_data": null,
+    "rotate_tag": null,
+    "r_frame_rate": "30/1",
+    "avg_frame_rate": "30/1",
+    "nb_frames": null,
+    "stream_start_time": "0.033333",
+    "stream_duration": "27.666667",
+    "format_duration": "27.757959",
+    "has_audio": true,
+    "ingest_probe": {
+     "fps": 30.0,
+     "duration_s": 27.666667,
+     "frame_count": null,
+     "width": 720,
+     "height": 1280,
+     "rotation": 0,
+     "has_audio": true
+    }
+   },
+   "klip8": {
+    "file": "klip8.mp4",
+    "bytes": 1373316,
+    "codec": "h264",
+    "pix_fmt": "yuv420p",
+    "coded_wh": [
+     720,
+     1280
+    ],
+    "sample_aspect_ratio": "1:1",
+    "display_aspect_ratio": "9:16",
+    "rotation_side_data": null,
+    "rotate_tag": null,
+    "r_frame_rate": "30000/1001",
+    "avg_frame_rate": "30000/1001",
+    "nb_frames": null,
+    "stream_start_time": "0.033367",
+    "stream_duration": "8.775433",
+    "format_duration": "8.880181",
+    "has_audio": true,
+    "ingest_probe": {
+     "fps": 29.97002997002997,
+     "duration_s": 8.775433,
+     "frame_count": null,
+     "width": 720,
+     "height": 1280,
+     "rotation": 0,
+     "has_audio": true
+    }
+   },
+   "klip9": {
+    "file": "klip9.mp4",
+    "bytes": 3557982,
+    "codec": "h264",
+    "pix_fmt": "yuv420p",
+    "coded_wh": [
+     720,
+     1280
+    ],
+    "sample_aspect_ratio": "1:1",
+    "display_aspect_ratio": "9:16",
+    "rotation_side_data": null,
+    "rotate_tag": null,
+    "r_frame_rate": "30/1",
+    "avg_frame_rate": "30/1",
+    "nb_frames": null,
+    "stream_start_time": "0.033333",
+    "stream_duration": "15.033333",
+    "format_duration": "15.103084",
+    "has_audio": true,
+    "ingest_probe": {
+     "fps": 30.0,
+     "duration_s": 15.033333,
+     "frame_count": null,
+     "width": 720,
+     "height": 1280,
+     "rotation": 0,
+     "has_audio": true
+    }
+   }
+  },
+  "k2": {
+   "klip10": {
+    "file": "klip10.mp4",
+    "bytes": 3979395,
+    "codec": "h264",
+    "pix_fmt": "yuv420p",
+    "coded_wh": [
+     1280,
+     720
+    ],
+    "sample_aspect_ratio": null,
+    "display_aspect_ratio": null,
+    "rotation_side_data": null,
+    "rotate_tag": null,
+    "r_frame_rate": "30/1",
+    "avg_frame_rate": "30/1",
+    "nb_frames": "104",
+    "stream_start_time": "0.000000",
+    "stream_duration": "3.466667",
+    "format_duration": "3.466667",
+    "has_audio": true,
+    "ingest_probe": {
+     "fps": 30.0,
+     "duration_s": 3.466667,
+     "frame_count": 104,
+     "width": 1280,
+     "height": 720,
+     "rotation": 0,
+     "has_audio": true
+    }
+   },
+   "klip11": {
+    "file": "klip11.mp4",
+    "bytes": 3208620,
+    "codec": "h264",
+    "pix_fmt": "yuv420p",
+    "coded_wh": [
+     720,
+     1280
+    ],
+    "sample_aspect_ratio": null,
+    "display_aspect_ratio": null,
+    "rotation_side_data": null,
+    "rotate_tag": null,
+    "r_frame_rate": "30/1",
+    "avg_frame_rate": "30/1",
+    "nb_frames": "98",
+    "stream_start_time": "0.000000",
+    "stream_duration": "3.266667",
+    "format_duration": "3.266667",
+    "has_audio": true,
+    "ingest_probe": {
+     "fps": 30.0,
+     "duration_s": 3.266667,
+     "frame_count": 98,
+     "width": 720,
+     "height": 1280,
+     "rotation": 0,
+     "has_audio": true
+    }
+   }
+  }
+ },
+ "baru_tahap1b": {
+  "labels_sha256": "4c71a8132c6e4137d1f2c12031214f2a477e05580cca513072dfab1f30ca9071",
+  "clips": {
+   "klip6": {
+    "source_sha256": "69ffbfa74d68e78c9dc7f74a7474d9f7526064641ee8c8aa95895219c65675ec",
+    "n_frames": 472,
+    "frame_wh": [
+     720,
+     1280
+    ],
+    "label": {
+     "pita": {
+      "atas": false,
+      "bawah": false,
+      "kiri": false,
+      "kanan": false
+     },
+     "berpita": false,
+     "kotak_teks": true,
+     "kotak_teks_posisi": [
+      "atas",
+      "kiri"
+     ],
+     "tata_letak_berubah": false
+    },
+    "full": {
+     "R1": {
+      "band_px": {
+       "top": 0,
+       "bottom": 0,
+       "left": 4,
+       "right": 8
+      },
+      "overlay_px": {
+       "top": 0,
+       "bottom": 0,
+       "left": 0,
+       "right": 0
+      },
+      "active_xyxy_incl": [
+       4,
+       0,
+       711,
+       1279
+      ],
+      "active_wh": [
+       708,
+       1280
+      ],
+      "active_frac": 0.9833,
+      "applied": true
+     },
+     "R2": {
+      "band_px": {
+       "top": 0,
+       "bottom": 0,
+       "left": 0,
+       "right": 0
+      },
+      "overlay_px": {
+       "top": 0,
+       "bottom": 0,
+       "left": 0,
+       "right": 0
+      },
+      "active_xyxy_incl": [
+       0,
+       0,
+       719,
+       1279
+      ],
+      "active_wh": [
+       720,
+       1280
+      ],
+      "active_frac": 1.0,
+      "applied": true
+     }
+    },
+    "r2_cropped": false,
+    "r1_equals_r2_full": false,
+    "K1": true,
+    "K3_fp_vs_r2_full": 35,
+    "K3_fp_vs_frame": 35
+   },
+   "klip7": {
+    "source_sha256": "4aa30e2a605e938ab1d1d475e99e74773b74fa3a55c15e68ca387473c8f283f1",
+    "n_frames": 664,
+    "frame_wh": [
+     720,
+     1280
+    ],
+    "label": {
+     "pita": {
+      "atas": false,
+      "bawah": false,
+      "kiri": false,
+      "kanan": false
+     },
+     "berpita": false,
+     "kotak_teks": true,
+     "kotak_teks_posisi": [
+      "atas",
+      "kiri"
+     ],
+     "tata_letak_berubah": false
+    },
+    "full": {
+     "R1": {
+      "band_px": {
+       "top": 0,
+       "bottom": 0,
+       "left": 0,
+       "right": 0
+      },
+      "overlay_px": {
+       "top": 0,
+       "bottom": 0,
+       "left": 0,
+       "right": 0
+      },
+      "active_xyxy_incl": [
+       0,
+       0,
+       719,
+       1279
+      ],
+      "active_wh": [
+       720,
+       1280
+      ],
+      "active_frac": 1.0,
+      "applied": true
+     },
+     "R2": {
+      "band_px": {
+       "top": 0,
+       "bottom": 0,
+       "left": 0,
+       "right": 0
+      },
+      "overlay_px": {
+       "top": 0,
+       "bottom": 0,
+       "left": 0,
+       "right": 0
+      },
+      "active_xyxy_incl": [
+       0,
+       0,
+       719,
+       1279
+      ],
+      "active_wh": [
+       720,
+       1280
+      ],
+      "active_frac": 1.0,
+      "applied": true
+     }
+    },
+    "r2_cropped": false,
+    "r1_equals_r2_full": true,
+    "K1": true,
+    "K3_fp_vs_r2_full": 0,
+    "K3_fp_vs_frame": 0
+   },
+   "klip8": {
+    "source_sha256": "a6401c8019df7e8448c2d58dbc940d00c7d4f733a461d5dc48eeaa1e8e631724",
+    "n_frames": 210,
+    "frame_wh": [
+     720,
+     1280
+    ],
+    "label": {
+     "pita": {
+      "atas": false,
+      "bawah": false,
+      "kiri": false,
+      "kanan": false
+     },
+     "berpita": false,
+     "kotak_teks": false,
+     "kotak_teks_posisi": [],
+     "tata_letak_berubah": false
+    },
+    "full": {
+     "R1": {
+      "band_px": {
+       "top": 12,
+       "bottom": 0,
+       "left": 0,
+       "right": 0
+      },
+      "overlay_px": {
+       "top": 0,
+       "bottom": 0,
+       "left": 0,
+       "right": 0
+      },
+      "active_xyxy_incl": [
+       0,
+       12,
+       719,
+       1279
+      ],
+      "active_wh": [
+       720,
+       1268
+      ],
+      "active_frac": 0.9906,
+      "applied": true
+     },
+     "R2": {
+      "band_px": {
+       "top": 0,
+       "bottom": 0,
+       "left": 0,
+       "right": 0
+      },
+      "overlay_px": {
+       "top": 0,
+       "bottom": 0,
+       "left": 0,
+       "right": 0
+      },
+      "active_xyxy_incl": [
+       0,
+       0,
+       719,
+       1279
+      ],
+      "active_wh": [
+       720,
+       1280
+      ],
+      "active_frac": 1.0,
+      "applied": true
+     }
+    },
+    "r2_cropped": false,
+    "r1_equals_r2_full": false,
+    "K1": true,
+    "K3_fp_vs_r2_full": 0,
+    "K3_fp_vs_frame": 0
+   },
+   "klip9": {
+    "source_sha256": "28a5109be58aa223d861541545ef3292f35833734ede05eba1021d3cc48bdd69",
+    "n_frames": 361,
+    "frame_wh": [
+     720,
+     1280
+    ],
+    "label": {
+     "pita": {
+      "atas": false,
+      "bawah": false,
+      "kiri": false,
+      "kanan": false
+     },
+     "berpita": false,
+     "kotak_teks": false,
+     "kotak_teks_posisi": [],
+     "tata_letak_berubah": false
+    },
+    "full": {
+     "R1": {
+      "band_px": {
+       "top": 0,
+       "bottom": 0,
+       "left": 0,
+       "right": 0
+      },
+      "overlay_px": {
+       "top": 0,
+       "bottom": 0,
+       "left": 0,
+       "right": 0
+      },
+      "active_xyxy_incl": [
+       0,
+       0,
+       719,
+       1279
+      ],
+      "active_wh": [
+       720,
+       1280
+      ],
+      "active_frac": 1.0,
+      "applied": true
+     },
+     "R2": {
+      "band_px": {
+       "top": 0,
+       "bottom": 0,
+       "left": 0,
+       "right": 0
+      },
+      "overlay_px": {
+       "top": 0,
+       "bottom": 0,
+       "left": 0,
+       "right": 0
+      },
+      "active_xyxy_incl": [
+       0,
+       0,
+       719,
+       1279
+      ],
+      "active_wh": [
+       720,
+       1280
+      ],
+      "active_frac": 1.0,
+      "applied": true
+     }
+    },
+    "r2_cropped": false,
+    "r1_equals_r2_full": true,
+    "K1": true,
+    "K3_fp_vs_r2_full": 0,
+    "K3_fp_vs_frame": 0
+   }
+  }
+ },
+ "k2_klip10_11": {
+  "labels_sha256": "2f0e5156817af80bc13dece13e85a81cd8569539e385830faba77eb774869ef3",
+  "clips": {
+   "klip10": {
+    "source_sha256": "1b08f66a983554e66f5658f31ddb775f9f192747949fa581124a1685b2b0fef8",
+    "n_frames": 83,
+    "frame_wh": [
+     720,
+     406
+    ],
+    "label": {
+     "pita": {
+      "atas": false,
+      "bawah": false,
+      "kiri": true,
+      "kanan": true
+     },
+     "berpita": true,
+     "kotak_teks": true,
+     "kotak_teks_posisi": [
+      "kanan",
+      "atas"
+     ],
+     "tata_letak_berubah": false
+    },
+    "full": {
+     "R1": {
+      "band_px": {
+       "top": 0,
+       "bottom": 0,
+       "left": 90,
+       "right": 90
+      },
+      "overlay_px": {
+       "top": 0,
+       "bottom": 0,
+       "left": 0,
+       "right": 0
+      },
+      "active_xyxy_incl": [
+       90,
+       0,
+       629,
+       405
+      ],
+      "active_wh": [
+       540,
+       406
+      ],
+      "active_frac": 0.75,
+      "applied": true
+     },
+     "R2": {
+      "band_px": {
+       "top": 0,
+       "bottom": 0,
+       "left": 90,
+       "right": 90
+      },
+      "overlay_px": {
+       "top": 0,
+       "bottom": 0,
+       "left": 0,
+       "right": 0
+      },
+      "active_xyxy_incl": [
+       90,
+       0,
+       629,
+       405
+      ],
+      "active_wh": [
+       540,
+       406
+      ],
+      "active_frac": 0.75,
+      "applied": true
+     }
+    },
+    "r2_cropped": true,
+    "r1_equals_r2_full": true,
+    "K1": null,
+    "K2_angka": {
+     "label_sides": [
+      "left",
+      "right"
+     ],
+     "r2_cut_px": {
+      "top": 0,
+      "bottom": 0,
+      "left": 90,
+      "right": 90
+     },
+     "r2_band_px": {
+      "top": 0,
+      "bottom": 0,
+      "left": 90,
+      "right": 90
+     },
+     "r2_overlay_px": {
+      "top": 0,
+      "bottom": 0,
+      "left": 0,
+      "right": 0
+     },
+     "r2_sides_cut": [
+      "left",
+      "right"
+     ],
+     "sides_match_label": true,
+     "cropdetect_cut_px": {
+      "top": 0,
+      "bottom": 0,
+      "left": 90,
+      "right": 90
+     },
+     "kotak_teks_label": [
+      "kanan",
+      "atas"
+     ]
+    },
+    "K3_fp_vs_r2_full": 0,
+    "K3_fp_vs_frame": 5
+   },
+   "klip11": {
+    "source_sha256": "569391368f2d0242235a02da26a1330c60676779e3929946ac977c7422021bda",
+    "n_frames": 78,
+    "frame_wh": [
+     720,
+     1280
+    ],
+    "label": {
+     "pita": {
+      "atas": true,
+      "bawah": true,
+      "kiri": false,
+      "kanan": false
+     },
+     "berpita": true,
+     "kotak_teks": true,
+     "kotak_teks_posisi": [
+      "atas"
+     ],
+     "tata_letak_berubah": false
+    },
+    "full": {
+     "R1": {
+      "band_px": {
+       "top": 219,
+       "bottom": 223,
+       "left": 0,
+       "right": 4
+      },
+      "overlay_px": {
+       "top": 169,
+       "bottom": 1,
+       "left": 0,
+       "right": 0
+      },
+      "active_xyxy_incl": [
+       0,
+       388,
+       715,
+       1055
+      ],
+      "active_wh": [
+       716,
+       668
+      ],
+      "active_frac": 0.519,
+      "applied": true
+     },
+     "R2": {
+      "band_px": {
+       "top": 219,
+       "bottom": 223,
+       "left": 0,
+       "right": 0
+      },
+      "overlay_px": {
+       "top": 169,
+       "bottom": 1,
+       "left": 0,
+       "right": 0
+      },
+      "active_xyxy_incl": [
+       0,
+       388,
+       719,
+       1055
+      ],
+      "active_wh": [
+       720,
+       668
+      ],
+      "active_frac": 0.5219,
+      "applied": true
+     }
+    },
+    "r2_cropped": true,
+    "r1_equals_r2_full": false,
+    "K1": null,
+    "K2_angka": {
+     "label_sides": [
+      "bottom",
+      "top"
+     ],
+     "r2_cut_px": {
+      "top": 388,
+      "bottom": 224,
+      "left": 0,
+      "right": 0
+     },
+     "r2_band_px": {
+      "top": 219,
+      "bottom": 223,
+      "left": 0,
+      "right": 0
+     },
+     "r2_overlay_px": {
+      "top": 169,
+      "bottom": 1,
+      "left": 0,
+      "right": 0
+     },
+     "r2_sides_cut": [
+      "bottom",
+      "top"
+     ],
+     "sides_match_label": true,
+     "cropdetect_cut_px": {
+      "top": 218,
+      "bottom": 222,
+      "left": 0,
+      "right": 6
+     },
+     "kotak_teks_label": [
+      "atas"
+     ]
+    },
+    "K3_fp_vs_r2_full": 4,
+    "K3_fp_vs_frame": 5
+   }
+  }
+ },
+ "trimframe": {
+  "trim_frame": {
+   "klip5_0-92": {
+    "vf": "fps=24,trim=start_frame=0:end_frame=92,scale=720:-2:flags=area",
+    "s": 0.72,
+    "frames": 92,
+    "expected": 92,
+    "vs_clip_frames_offset_a": {
+     "n": 92,
+     "bytes_equal": 92,
+     "pixels_equal": 92,
+     "max_abs_diff": 0,
+     "mean_abs_diff_max": 0.0,
+     "missing_b": 0
+    }
+   },
+   "klip3_24-72": {
+    "vf": "fps=24,trim=start_frame=24:end_frame=72,scale=720:-2:flags=area",
+    "s": 0.61,
+    "frames": 48,
+    "expected": 48,
+    "vs_clip_frames_offset_a": {
+     "n": 48,
+     "bytes_equal": 48,
+     "pixels_equal": 48,
+     "max_abs_diff": 0,
+     "mean_abs_diff_max": 0.0,
+     "missing_b": 0
+    }
+   },
+   "test_24-72": {
+    "vf": "fps=24,trim=start_frame=24:end_frame=72,scale=480:-2:flags=area",
+    "s": 0.2,
+    "frames": 48,
+    "expected": 48,
+    "vs_clip_frames_offset_a": {
+     "n": 48,
+     "bytes_equal": 48,
+     "pixels_equal": 48,
+     "max_abs_diff": 0,
+     "mean_abs_diff_max": 0.0,
+     "missing_b": 0
+    }
+   },
+   "Klip2_12-60": {
+    "vf": "fps=24,trim=start_frame=12:end_frame=60,scale=720:-2:flags=area",
+    "s": 0.23,
+    "frames": 48,
+    "expected": 48,
+    "vs_clip_frames_offset_a": {
+     "n": 48,
+     "bytes_equal": 48,
+     "pixels_equal": 48,
+     "max_abs_diff": 0,
+     "mean_abs_diff_max": 0.0,
+     "missing_b": 0
+    }
+   },
+   "klip4_200-217": {
+    "vf": "fps=24,trim=start_frame=200:end_frame=217,scale=720:-2:flags=area",
+    "s": 0.35,
+    "frames": 17,
+    "expected": 17,
+    "vs_clip_frames_offset_a": {
+     "n": 17,
+     "bytes_equal": 17,
+     "pixels_equal": 17,
+     "max_abs_diff": 0,
+     "mean_abs_diff_max": 0.0,
+     "missing_b": 0
+    }
+   }
+  },
+  "trim_crop": {
+   "klip5_0-92": {
+    "vf": "fps=24,trim=start_frame=0:end_frame=92,crop=720:668:0:344:exact=1,scale=720:-2:flags=area",
+    "s": 0.62,
+    "frames": 92,
+    "vs_crop_full_offset_a": {
+     "n": 92,
+     "bytes_equal": 92,
+     "pixels_equal": 92,
+     "max_abs_diff": 0,
+     "mean_abs_diff_max": 0.0,
+     "missing_b": 0
+    }
+   },
+   "klip5_40-92": {
+    "vf": "fps=24,trim=start_frame=40:end_frame=92,crop=720:668:0:344:exact=1,scale=720:-2:flags=area",
+    "s": 0.46,
+    "frames": 52,
+    "vs_crop_full_offset_a": {
+     "n": 52,
+     "bytes_equal": 52,
+     "pixels_equal": 52,
+     "max_abs_diff": 0,
+     "mean_abs_diff_max": 0.0,
+     "missing_b": 0
+    }
+   }
+  }
+ },
+ "tahap3a": {
+  "test": {
+   "rc": 0,
+   "s": 4.58,
+   "frame_count": 283,
+   "working_wh": [
+    480,
+    854
+   ],
+   "meta_keys_extra": [],
+   "deteksi": {
+    "pita_terdeteksi": false,
+    "box_work": [
+     0,
+     0,
+     479,
+     853
+    ],
+    "n_frames": 283,
+    "detect_frame_size": [
+     480,
+     854
+    ]
+   },
+   "saran": null,
+   "kotak": false
+  },
+  "test_short": {
+   "rc": 0,
+   "s": 2.62,
+   "frame_count": 119,
+   "working_wh": [
+    480,
+    854
+   ],
+   "meta_keys_extra": [],
+   "deteksi": {
+    "pita_terdeteksi": false,
+    "box_work": [
+     0,
+     0,
+     479,
+     853
+    ],
+    "n_frames": 119,
+    "detect_frame_size": [
+     480,
+     854
+    ]
+   },
+   "saran": null,
+   "kotak": false
+  },
+  "Klip2": {
+   "rc": 0,
+   "s": 2.4,
+   "frame_count": 122,
+   "working_wh": [
+    720,
+    406
+   ],
+   "meta_keys_extra": [],
+   "deteksi": {
+    "pita_terdeteksi": true,
+    "box_work": [
+     245,
+     0,
+     474,
+     405
+    ],
+    "n_frames": 122,
+    "detect_frame_size": [
+     720,
+     406
+    ]
+   },
+   "saran": {
+    "box_work": [
+     245,
+     0,
+     474,
+     405
+    ],
+    "box_source": [
+     434,
+     0,
+     412,
+     720
+    ],
+    "band_px": {
+     "top": 0,
+     "bottom": 0,
+     "left": 245,
+     "right": 245
+    },
+    "overlay_px": {
+     "top": 0,
+     "bottom": 0,
+     "left": 0,
+     "right": 0
+    },
+    "cut_px": {
+     "top": 0,
+     "bottom": 0,
+     "left": 245,
+     "right": 245
+    },
+    "hints": {
+     "lines": {
+      "right": [
+       474,
+       474
+      ]
+     },
+     "count": {
+      "right": 1
+     },
+     "alt_box_work": [
+      245,
+      0,
+      473,
+      405
+     ],
+     "alt_box_source": [
+      434,
+      0,
+      410,
+      720
+     ]
+    }
+   },
+   "kotak": false
+  },
+  "klip3": {
+   "rc": 0,
+   "s": 6.84,
+   "frame_count": 182,
+   "working_wh": [
+    720,
+    1280
+   ],
+   "meta_keys_extra": [],
+   "deteksi": {
+    "pita_terdeteksi": false,
+    "box_work": [
+     0,
+     0,
+     719,
+     1279
+    ],
+    "n_frames": 182,
+    "detect_frame_size": [
+     720,
+     1280
+    ]
+   },
+   "saran": null,
+   "kotak": false
+  },
+  "klip4": {
+   "rc": 0,
+   "s": 7.05,
+   "frame_count": 217,
+   "working_wh": [
+    720,
+    1280
+   ],
+   "meta_keys_extra": [],
+   "deteksi": {
+    "pita_terdeteksi": false,
+    "box_work": [
+     0,
+     0,
+     719,
+     1279
+    ],
+    "n_frames": 217,
+    "detect_frame_size": [
+     720,
+     1280
+    ]
+   },
+   "saran": null,
+   "kotak": false
+  },
+  "klip5": {
+   "rc": 0,
+   "s": 5.66,
+   "frame_count": 133,
+   "working_wh": [
+    720,
+    1280
+   ],
+   "meta_keys_extra": [],
+   "deteksi": {
+    "pita_terdeteksi": true,
+    "box_work": [
+     0,
+     344,
+     719,
+     1011
+    ],
+    "n_frames": 133,
+    "detect_frame_size": [
+     720,
+     1280
+    ]
+   },
+   "saran": {
+    "box_work": [
+     0,
+     344,
+     719,
+     1011
+    ],
+    "box_source": [
+     0,
+     344,
+     720,
+     668
+    ],
+    "band_px": {
+     "top": 253,
+     "bottom": 268,
+     "left": 0,
+     "right": 0
+    },
+    "overlay_px": {
+     "top": 91,
+     "bottom": 0,
+     "left": 0,
+     "right": 0
+    },
+    "cut_px": {
+     "top": 344,
+     "bottom": 268,
+     "left": 0,
+     "right": 0
+    },
+    "hints": null
+   },
+   "kotak": false
+  },
+  "klip6": {
+   "rc": 0,
+   "s": 14.84,
+   "frame_count": 472,
+   "working_wh": [
+    720,
+    1280
+   ],
+   "meta_keys_extra": [],
+   "deteksi": {
+    "pita_terdeteksi": false,
+    "box_work": [
+     0,
+     0,
+     719,
+     1279
+    ],
+    "n_frames": 472,
+    "detect_frame_size": [
+     720,
+     1280
+    ]
+   },
+   "saran": null,
+   "kotak": false
+  },
+  "klip7": {
+   "rc": 0,
+   "s": 21.03,
+   "frame_count": 664,
+   "working_wh": [
+    720,
+    1280
+   ],
+   "meta_keys_extra": [],
+   "deteksi": {
+    "pita_terdeteksi": false,
+    "box_work": [
+     0,
+     0,
+     719,
+     1279
+    ],
+    "n_frames": 664,
+    "detect_frame_size": [
+     720,
+     1280
+    ]
+   },
+   "saran": null,
+   "kotak": false
+  },
+  "klip8": {
+   "rc": 0,
+   "s": 8.04,
+   "frame_count": 210,
+   "working_wh": [
+    720,
+    1280
+   ],
+   "meta_keys_extra": [],
+   "deteksi": {
+    "pita_terdeteksi": false,
+    "box_work": [
+     0,
+     0,
+     719,
+     1279
+    ],
+    "n_frames": 210,
+    "detect_frame_size": [
+     720,
+     1280
+    ]
+   },
+   "saran": null,
+   "kotak": false
+  },
+  "klip9": {
+   "rc": 0,
+   "s": 13.04,
+   "frame_count": 361,
+   "working_wh": [
+    720,
+    1280
+   ],
+   "meta_keys_extra": [],
+   "deteksi": {
+    "pita_terdeteksi": false,
+    "box_work": [
+     0,
+     0,
+     719,
+     1279
+    ],
+    "n_frames": 361,
+    "detect_frame_size": [
+     720,
+     1280
+    ]
+   },
+   "saran": null,
+   "kotak": false
+  },
+  "klip10": {
+   "rc": 0,
+   "s": 2.24,
+   "frame_count": 83,
+   "working_wh": [
+    720,
+    406
+   ],
+   "meta_keys_extra": [],
+   "deteksi": {
+    "pita_terdeteksi": true,
+    "box_work": [
+     90,
+     0,
+     629,
+     405
+    ],
+    "n_frames": 83,
+    "detect_frame_size": [
+     720,
+     406
+    ]
+   },
+   "saran": {
+    "box_work": [
+     90,
+     0,
+     629,
+     405
+    ],
+    "box_source": [
+     160,
+     0,
+     960,
+     720
+    ],
+    "band_px": {
+     "top": 0,
+     "bottom": 0,
+     "left": 90,
+     "right": 90
+    },
+    "overlay_px": {
+     "top": 0,
+     "bottom": 0,
+     "left": 0,
+     "right": 0
+    },
+    "cut_px": {
+     "top": 0,
+     "bottom": 0,
+     "left": 90,
+     "right": 90
+    },
+    "hints": null
+   },
+   "kotak": false
+  },
+  "klip11": {
+   "rc": 0,
+   "s": 3.87,
+   "frame_count": 78,
+   "working_wh": [
+    720,
+    1280
+   ],
+   "meta_keys_extra": [],
+   "deteksi": {
+    "pita_terdeteksi": true,
+    "box_work": [
+     0,
+     388,
+     719,
+     1055
+    ],
+    "n_frames": 78,
+    "detect_frame_size": [
+     720,
+     1280
+    ]
+   },
+   "saran": {
+    "box_work": [
+     0,
+     388,
+     719,
+     1055
+    ],
+    "box_source": [
+     0,
+     388,
+     720,
+     668
+    ],
+    "band_px": {
+     "top": 219,
+     "bottom": 223,
+     "left": 0,
+     "right": 0
+    },
+    "overlay_px": {
+     "top": 169,
+     "bottom": 1,
+     "left": 0,
+     "right": 0
+    },
+    "cut_px": {
+     "top": 388,
+     "bottom": 224,
+     "left": 0,
+     "right": 0
+    },
+    "hints": {
+     "lines": {
+      "top": [
+       388,
+       461
+      ]
+     },
+     "count": {
+      "top": 74
+     },
+     "alt_box_work": [
+      0,
+      462,
+      719,
+      1055
+     ],
+     "alt_box_source": [
+      0,
+      462,
+      720,
+      594
+     ]
+    }
+   },
+   "kotak": false
+  }
+ },
+ "tahap3a_cek": {
+  "Klip2": {
+   "kotak_box_source": [
+    434,
+    0,
+    412,
+    720
+   ],
+   "kotak_mode": "saran",
+   "working_wh": [
+    412,
+    720
+   ],
+   "frame_count": 122,
+   "meta_crop": {
+    "mode": "saran",
+    "box_source": [
+     434,
+     0,
+     412,
+     720
+    ],
+    "rounding": "outward-even",
+    "source_sha256": "ab2941a06f86b01dd7ae87ed3d4a490f813513cd82120444c6807cbd2cc5c30d",
+    "rule": "R2",
+    "rule_version": 1,
+    "rule_fingerprint": "d40c3dfdd270a715a7bbc9bfbec96ce69ce613a1dac7480c1bcd607ec6eb1da0",
+    "detect_frame_size": [
+     720,
+     406
+    ],
+    "box_work": [
+     245,
+     0,
+     474,
+     405
+    ],
+    "band_px": {
+     "top": 0,
+     "bottom": 0,
+     "left": 245,
+     "right": 245
+    },
+    "overlay_px": {
+     "top": 0,
+     "bottom": 0,
+     "left": 0,
+     "right": 0
+    }
+   },
+   "frames_vs_studi_psrc": {
+    "n_a": 122,
+    "n_b": 122,
+    "bytes_equal": 122,
+    "all_equal": true
+   }
+  },
+  "klip5": {
+   "kotak_box_source": [
+    0,
+    344,
+    720,
+    668
+   ],
+   "kotak_mode": "saran",
+   "working_wh": [
+    720,
+    668
+   ],
+   "frame_count": 133,
+   "meta_crop": {
+    "mode": "saran",
+    "box_source": [
+     0,
+     344,
+     720,
+     668
+    ],
+    "rounding": "outward-even",
+    "source_sha256": "6767730702ded14aa9556ba43ac843d3318532d5846eef5850c4c3832338a8bd",
+    "rule": "R2",
+    "rule_version": 1,
+    "rule_fingerprint": "d40c3dfdd270a715a7bbc9bfbec96ce69ce613a1dac7480c1bcd607ec6eb1da0",
+    "detect_frame_size": [
+     720,
+     1280
+    ],
+    "box_work": [
+     0,
+     344,
+     719,
+     1011
+    ],
+    "band_px": {
+     "top": 253,
+     "bottom": 268,
+     "left": 0,
+     "right": 0
+    },
+    "overlay_px": {
+     "top": 91,
+     "bottom": 0,
+     "left": 0,
+     "right": 0
+    }
+   },
+   "frames_vs_studi_psrc": {
+    "n_a": 133,
+    "n_b": 133,
+    "bytes_equal": 133,
+    "all_equal": true
+   }
+  }
+ },
+ "k6_angka": {
+  "Klip2": {
+   "kerja": {
+    "sebelum": [
+     720,
+     406
+    ],
+    "sesudah": [
+     412,
+     720
+    ]
+   },
+   "mp4": {
+    "sebelum": [
+     1080,
+     610,
+     122
+    ],
+    "sesudah": [
+     1080,
+     1888,
+     122
+    ]
+   },
+   "kotak_kerja_sebelum": [
+    245,
+    0,
+    474,
+    405
+   ],
+   "kotak_sumber": [
+    434,
+    0,
+    412,
+    720
+   ],
+   "qc_gagal": {
+    "sebelum": [
+     0,
+     122
+    ],
+    "sesudah": [
+     0,
+     122
+    ]
+   },
+   "strok": {
+    "sebelum": {
+     "frames": 122,
+     "strokes_per_frame": 18.16,
+     "per_type_per_frame": {
+      "silhouette": 2.93,
+      "silhouette_hole": 0.0,
+      "group_boundary": 15.13,
+      "occlusion": 0.09
+     },
+     "points_per_frame": 1577.5,
+     "strokes_all_in_band": 119,
+     "frames_with_band_strokes": 119
+    },
+    "sesudah": {
+     "frames": 122,
+     "strokes_per_frame": 19.58,
+     "per_type_per_frame": {
+      "silhouette": 1.98,
+      "silhouette_hole": 0.02,
+      "group_boundary": 16.52,
+      "occlusion": 1.07
+     },
+     "points_per_frame": 2787.7,
+     "strokes_all_in_band": 0,
+     "frames_with_band_strokes": 0
+    }
+   }
+  },
+  "klip5": {
+   "kerja": {
+    "sebelum": [
+     720,
+     1280
+    ],
+    "sesudah": [
+     720,
+     668
+    ]
+   },
+   "mp4": {
+    "sebelum": [
+     1080,
+     1920,
+     133
+    ],
+    "sesudah": [
+     1080,
+     1002,
+     133
+    ]
+   },
+   "kotak_kerja_sebelum": [
+    0,
+    344,
+    719,
+    1011
+   ],
+   "kotak_sumber": [
+    0,
+    344,
+    720,
+    668
+   ],
+   "qc_gagal": {
+    "sebelum": [
+     6,
+     133
+    ],
+    "sesudah": [
+     18,
+     133
+    ]
+   },
+   "strok": {
+    "sebelum": {
+     "frames": 133,
+     "strokes_per_frame": 31.85,
+     "per_type_per_frame": {
+      "silhouette": 3.71,
+      "silhouette_hole": 1.55,
+      "group_boundary": 16.42,
+      "occlusion": 10.17
+     },
+     "points_per_frame": 6703.8,
+     "strokes_all_in_band": 358,
+     "frames_with_band_strokes": 55
+    },
+    "sesudah": {
+     "frames": 133,
+     "strokes_per_frame": 29.62,
+     "per_type_per_frame": {
+      "silhouette": 2.78,
+      "silhouette_hole": 1.59,
+      "group_boundary": 15.49,
+      "occlusion": 9.75
+     },
+     "points_per_frame": 6136.0,
+     "strokes_all_in_band": 0,
+     "frames_with_band_strokes": 0
+    }
+   }
+  }
+ },
+ "k6_video": {
+  "K6_Klip2_berdampingan.mp4": {
+   "hasil": {
+    "width": 2546,
+    "height": 1080,
+    "frames": 122,
+    "fps": "24/1",
+    "duration_s": 5.083333
+   },
+   "bytes": 2243692
+  },
+  "K6_Klip2_berdampingan_0.5x.mp4": {
+   "hasil": {
+    "width": 2546,
+    "height": 1080,
+    "frames": 122,
+    "fps": "12/1",
+    "duration_s": 10.125
+   },
+   "bytes": 2920157
+  },
+  "K6_klip5_berdampingan.mp4": {
+   "hasil": {
+    "width": 2176,
+    "height": 1920,
+    "frames": 133,
+    "fps": "24/1",
+    "duration_s": 5.541667
+   },
+   "bytes": 8182807
+  },
+  "K6_klip5_berdampingan_0.5x.mp4": {
+   "hasil": {
+    "width": 2176,
+    "height": 1920,
+    "frames": 133,
+    "fps": "12/1",
+    "duration_s": 11.041667
+   },
+   "bytes": 10073821
+  }
+ },
+ "penilaian_k6": {
+  "sha256": "fe686fa66dac25ed003d8eb2465955ac1e0efedb7e3306928b815570d9d1dab8",
+  "jawaban": {
+   "Klip2": {
+    "penilaian": "lebih baik",
+    "kerusakan_baru": "tidak",
+    "kerusakan_detik": "tidak",
+    "komentar": ""
+   },
+   "klip5": {
+    "penilaian": "lebih baik",
+    "kerusakan_baru": "tidak ada",
+    "kerusakan_detik": "tidak ada",
+    "komentar": "Masih kurang bagus, namun akan diperbaiki di proses yang lain"
+   },
+   "klip11": {
+    "petunjuk_terlihat_jelas": "ya",
+    "komentar": ""
+   }
+  },
+  "hasil": "K6 lolos (Klip2, klip5); K2' klip11 lolos"
+ },
+ "tahap4": {
+  "config": {
+   "beda_selain_paths": [],
+   "beda_paths": [
+    "out_dir",
+    "work_dir"
+   ],
+   "sama": true
+  },
+  "jalankan": {
+   "ekspor4_test": {
+    "argv": [
+     "export",
+     "C:\\projects\\rotoscope\\samples\\test.mp4",
+     "--config",
+     "C:\\projects\\rotoscope\\work\\t607_scratch\\t4\\config.yaml"
+    ],
+    "rc": 0,
+    "detik": 24.0
+   },
+   "ekspor4_test_short": {
+    "argv": [
+     "export",
+     "C:\\projects\\rotoscope\\samples\\test_short.mp4",
+     "--config",
+     "C:\\projects\\rotoscope\\work\\t607_scratch\\t4\\config.yaml"
+    ],
+    "rc": 0,
+    "detik": 10.8
+   },
+   "ekspor4_klip3": {
+    "argv": [
+     "export",
+     "C:\\projects\\rotoscope\\samples\\klip3.mp4",
+     "--config",
+     "C:\\projects\\rotoscope\\work\\t607_scratch\\t4\\config.yaml"
+    ],
+    "rc": 0,
+    "detik": 21.6
+   },
+   "ekspor4_klip4": {
+    "argv": [
+     "export",
+     "C:\\projects\\rotoscope\\samples\\klip4.mp4",
+     "--config",
+     "C:\\projects\\rotoscope\\work\\t607_scratch\\t4\\config.yaml"
+    ],
+    "rc": 0,
+    "detik": 24.4
+   },
+   "run_test": {
+    "argv": [
+     "run",
+     "samples/test.mp4"
+    ],
+    "rc": 0,
+    "detik": 46.1
+   },
+   "run_test_short": {
+    "argv": [
+     "run",
+     "samples/test_short.mp4"
+    ],
+    "rc": 0,
+    "detik": 26.1
+   },
+   "run_klip3": {
+    "argv": [
+     "run",
+     "samples/klip3.mp4"
+    ],
+    "rc": 0,
+    "detik": 64.1
+   },
+   "run_klip4": {
+    "argv": [
+     "run",
+     "samples/klip4.mp4"
+    ],
+    "rc": 0,
+    "detik": 56.0
+   },
+   "ingest_Klip2_saran": {
+    "argv": [
+     "ingest",
+     "samples/Klip2.mp4"
+    ],
+    "rc": 0,
+    "detik": 2.7
+   },
+   "crop_Klip2_accept": {
+    "argv": [
+     "crop",
+     "samples/Klip2.mp4",
+     "--accept"
+    ],
+    "rc": 0,
+    "detik": 1.0
+   },
+   "ingest_Klip2_kotak": {
+    "argv": [
+     "ingest",
+     "samples/Klip2.mp4"
+    ],
+    "rc": 0,
+    "detik": 1.5
+   },
+   "run_Klip2": {
+    "argv": [
+     "run",
+     "samples/Klip2.mp4"
+    ],
+    "rc": 0,
+    "detik": 35.6
+   },
+   "ingest_klip5_saran": {
+    "argv": [
+     "ingest",
+     "samples/klip5.mp4"
+    ],
+    "rc": 0,
+    "detik": 5.3
+   },
+   "crop_klip5_accept": {
+    "argv": [
+     "crop",
+     "samples/klip5.mp4",
+     "--accept"
+    ],
+    "rc": 0,
+    "detik": 1.0
+   },
+   "ingest_klip5_kotak": {
+    "argv": [
+     "ingest",
+     "samples/klip5.mp4"
+    ],
+    "rc": 0,
+    "detik": 1.9
+   },
+   "run_klip5": {
+    "argv": [
+     "run",
+     "samples/klip5.mp4"
+    ],
+    "rc": 0,
+    "detik": 43.4
+   }
+  },
+  "ekspor4": {
+   "test": {
+    "mp4_sama": true,
+    "mp4_bytes": [
+     5872117,
+     5872117
+    ],
+    "svg": {
+     "berkas": [
+      284,
+      284
+     ],
+     "svg_sama": true,
+     "beda": [
+      ".rotoscope-clip.json"
+     ],
+     "penanda_beda_kunci": [
+      "created_utc"
+     ],
+     "penanda_hanya_waktu": true
+    },
+    "export_json_beda_selain_waktu": []
+   },
+   "test_short": {
+    "mp4_sama": true,
+    "mp4_bytes": [
+     2278043,
+     2278043
+    ],
+    "svg": {
+     "berkas": [
+      120,
+      120
+     ],
+     "svg_sama": true,
+     "beda": [
+      ".rotoscope-clip.json"
+     ],
+     "penanda_beda_kunci": [
+      "created_utc"
+     ],
+     "penanda_hanya_waktu": true
+    },
+    "export_json_beda_selain_waktu": []
+   },
+   "klip3": {
+    "mp4_sama": true,
+    "mp4_bytes": [
+     6042035,
+     6042035
+    ],
+    "svg": {
+     "berkas": [
+      183,
+      183
+     ],
+     "svg_sama": true,
+     "beda": [
+      ".rotoscope-clip.json"
+     ],
+     "penanda_beda_kunci": [
+      "created_utc"
+     ],
+     "penanda_hanya_waktu": true
+    },
+    "export_json_beda_selain_waktu": []
+   },
+   "klip4": {
+    "mp4_sama": true,
+    "mp4_bytes": [
+     5569817,
+     5569817
+    ],
+    "svg": {
+     "berkas": [
+      218,
+      218
+     ],
+     "svg_sama": true,
+     "beda": [
+      ".rotoscope-clip.json"
+     ],
+     "penanda_beda_kunci": [
+      "created_utc"
+     ],
+     "penanda_hanya_waktu": true
+    },
+    "export_json_beda_selain_waktu": []
+   }
+  },
+  "simpan": {
+   "berkas": {
+    "Klip2.export.json": {
+     "berkas": 1,
+     "bytes": 2552,
+     "sha256_sama": true
+    },
+    "Klip2.mp4": {
+     "berkas": 1,
+     "bytes": 599147,
+     "sha256_sama": true
+    },
+    "svg/Klip2": {
+     "berkas": 123,
+     "bytes": 9341043,
+     "sha256_sama": true
+    },
+    "klip5.export.json": {
+     "berkas": 1,
+     "bytes": 2556,
+     "sha256_sama": true
+    },
+    "klip5.mp4": {
+     "berkas": 1,
+     "bytes": 4380652,
+     "sha256_sama": true
+    },
+    "svg/klip5": {
+     "berkas": 134,
+     "bytes": 41722875,
+     "sha256_sama": true
+    }
+   },
+   "semua_sama": true
+  },
+  "cek": {
+   "Klip2": {
+    "meta_sama": true,
+    "meta_sha256": "9d195789f28d51d20c3fc3e833d63cc55400bf54f1c3c4e27d7416f41ef36c6f",
+    "manifest_t3_meta_sha256_cocok": {
+     "contours": true,
+     "depth": true,
+     "seg": true,
+     "stable": true,
+     "strokes": true
+    },
+    "export_t3_cocok": true,
+    "frames": {
+     "asli": 122,
+     "t3": 122,
+     "sama": true
+    },
+    "kerja": [
+     412,
+     720
+    ],
+    "key_crop": [
+     434,
+     0,
+     412,
+     720
+    ],
+    "crop_dir": {
+     "asli": [
+      "deteksi.json",
+      "kotak.json",
+      "pratinjau/1_awal_f00000.png",
+      "pratinjau/2_tengah_f00061.png",
+      "pratinjau/3_akhir_f00121.png",
+      "pratinjau/pratinjau.json",
+      "saran.json"
+     ],
+     "sama": true,
+     "beda": []
+    },
+    "config_sama": true,
+    "isolate_target_ada": false,
+    "lolos": true
+   },
+   "klip5": {
+    "meta_sama": true,
+    "meta_sha256": "314535d2c3de804903d42bc82d18833f309c1c0c6cd6d9a2d00a517ab79d5106",
+    "manifest_t3_meta_sha256_cocok": {
+     "contours": true,
+     "depth": true,
+     "seg": true,
+     "stable": true,
+     "strokes": true
+    },
+    "export_t3_cocok": true,
+    "frames": {
+     "asli": 133,
+     "t3": 133,
+     "sama": true
+    },
+    "kerja": [
+     720,
+     668
+    ],
+    "key_crop": [
+     0,
+     344,
+     720,
+     668
+    ],
+    "crop_dir": {
+     "asli": [
+      "deteksi.json",
+      "kotak.json",
+      "pratinjau/1_awal_f00000.png",
+      "pratinjau/2_tengah_f00066.png",
+      "pratinjau/3_akhir_f00132.png",
+      "pratinjau/pratinjau.json",
+      "saran.json"
+     ],
+     "sama": true,
+     "beda": []
+    },
+    "config_sama": true,
+    "isolate_target_ada": false,
+    "lolos": true
+   }
+  },
+  "ganti": {
+   "Klip2": {
+    "seg": {
+     "sudah_sama": true
+    },
+    "depth": {
+     "sudah_sama": true
+    },
+    "stable": {
+     "sudah_sama": true
+    },
+    "contours": {
+     "sudah_sama": true
+    },
+    "strokes": {
+     "sudah_sama": true
+    },
+    "qc_report.json": {
+     "berkas_baru": 1,
+     "berkas_lama_dihapus": 1,
+     "sha256_sama": true
+    },
+    "semua_sama_t3": true
+   },
+   "klip5": {
+    "seg": {
+     "berkas_baru": 268,
+     "berkas_lama_dihapus": 268,
+     "sha256_sama": true
+    },
+    "depth": {
+     "berkas_baru": 135,
+     "berkas_lama_dihapus": 135,
+     "sha256_sama": true
+    },
+    "stable": {
+     "berkas_baru": 268,
+     "berkas_lama_dihapus": 268,
+     "sha256_sama": true
+    },
+    "contours": {
+     "berkas_baru": 136,
+     "berkas_lama_dihapus": 136,
+     "sha256_sama": true
+    },
+    "strokes": {
+     "berkas_baru": 268,
+     "berkas_lama_dihapus": 268,
+     "sha256_sama": true
+    },
+    "qc_report.json": {
+     "berkas_baru": 1,
+     "berkas_lama_dihapus": 1,
+     "sha256_sama": true
+    },
+    "semua_sama_t3": true
+   }
+  },
+  "banding": {
+   "Klip2": {
+    "mp4_sama": true,
+    "mp4_bytes": [
+     2256101,
+     2256101
+    ],
+    "svg": {
+     "berkas": [
+      123,
+      123
+     ],
+     "svg_sama": true,
+     "beda": [
+      ".rotoscope-clip.json"
+     ],
+     "penanda_beda_kunci": [
+      "created_utc"
+     ],
+     "penanda_hanya_waktu": true
+    },
+    "export_json_beda_selain_waktu": []
+   },
+   "klip5": {
+    "mp4_sama": true,
+    "mp4_bytes": [
+     3668085,
+     3668085
+    ],
+    "svg": {
+     "berkas": [
+      134,
+      134
+     ],
+     "svg_sama": true,
+     "beda": [
+      ".rotoscope-clip.json"
+     ],
+     "penanda_beda_kunci": [
+      "created_utc"
+     ],
+     "penanda_hanya_waktu": true
+    },
+    "export_json_beda_selain_waktu": []
+   }
+  }
+ },
+ "mutasi": {
+  "n": 82,
+  "terbunuh": 82,
+  "kontrol": [
+   "604 passed, 2 skipped in 62.12s (0:01:02)"
+  ],
+  "daftar": {
+   "kontrol (sumber asli semua modul di-exec; harus LOLOS)": 0,
+   "01 syarat pasangan dihapus": 1,
+   "02 BAND_MIN_PX efektif 8 -> 7": 1,
+   "03 kotak teks kiri / kanan diizinkan": 1,
+   "04 syarat seragam pita dihapus": 1,
+   "05 pengaman area aktif 10% dihapus": 1,
+   "06 kotak teks tanpa pita ikut dikupas": 1,
+   "07 parameter beku diubah (sidik)": 1,
+   "08 pembulatan ke dalam (ceil di awal)": 1,
+   "09 genap dihapus": 1,
+   "10 clamp tepi sumber dihapus": 1,
+   "11 kotak manual dibulatkan ke dalam": 1,
+   "12 kotak manual tanpa batas minimum": 1,
+   "13 sha256 / ukuran tidak dicek": 1,
+   "14 path ikut dicek": 1,
+   "15 kunci D1 tanpa sha256 sumber": 1,
+   "16 ambang petunjuk tidak ikut validitas saran": 1,
+   "17 tanpa pita: deteksi.json tidak ditulis": 1,
+   "18 tanpa pita: saran basi tidak dihapus": 1,
+   "19 PERINGATAN aturan lain dihapus": 1,
+   "20 petunjuk juga di sisi tanpa potongan": 1,
+   "21 ambang petunjuk eksklusif (< jadi <=)": 1,
+   "22 kotak alternatif tanpa pengaman area": 1,
+   "23 zoom tidak berpusat di garis potong": 1,
+   "24 frame tengah pratinjau salah": 1,
+   "25 pesan saran menyebut --crop auto": 1,
+   "26 key crop ditulis untuk mode none": 1,
+   "27 key crop tanpa source_sha256": 1,
+   "28 --accept tanpa saran tidak ditolak": 1,
+   "29 --accept menerima aturan selain R2 beku": 1,
+   "30 --clear tanpa kotak.prev.json": 1,
+   "31 trim sebelum fps": 1,
+   "32 awal trim round (bukan ceil)": 1,
+   "33 toleransi 1e-6 dihapus": 1,
+   "34 akhir trim inklusif": 1,
+   "35 key trim untuk S = 0 tanpa akhir": 1,
+   "36 cek trim melewati akhir dihapus": 1,
+   "37 deteksi pada rentang trim": 1,
+   "38 saran dipakai tanpa kotak.json": 1,
+   "39 ingest mengabaikan kotak.json": 1,
+   "40 deteksi tetap jalan walau sudah diputuskan": 1,
+   "41 key crop tidak ditulis ke meta.json": 1,
+   "42 folder kerja tanpa trim": 1,
+   "43 run tidak berhenti pada saran tertunda": 1,
+   "44 crop.suggest false diabaikan cli": 1,
+   "45 pre-flight trim dihapus": 1,
+   "46 pre-flight export tanpa trim": 1,
+   "47 folder crop per folder trim (bukan per sumber)": 1,
+   "48 crop menerima --start / --end": 1,
+   "49 perintah restart tanpa flag trim": 1,
+   "50 cli_cmd tanpa flag trim": 1,
+   "51 pesan [2]/[2c] tanpa run --restart-from ingest": 1,
+   "52 segment tidak meneruskan run_cmd": 1,
+   "53 depth tidak meneruskan run_cmd": 1,
+   "54 nama export tanpa trim": 1,
+   "55 clip_name tanpa penanda trim": 1,
+   "56 pick_cmd tanpa flag trim": 1,
+   "57 pesan ukuran beda tanpa saran pindah berkas": 1,
+   "58 pesan basi [1b] versi lama": 1,
+   "59 validasi hint_static_frac dihapus": 1,
+   "60 default band_min_px 8 -> 9": 1,
+   "61 validasi band_min_px dihapus": 1,
+   "62 config_flag selalu kosong": 1,
+   "63 config default ikut dicetak": 1,
+   "64 cli.main tidak mencatat --config": 1,
+   "65 subperintah stage tidak mencatat --config": 1,
+   "66 main segment tidak mencatat --config": 1,
+   "67 main ingest tidak mencatat --config": 1,
+   "68 pesan exit 4 tanpa --config": 1,
+   "69 perintah crop tanpa --config": 1,
+   "70 pesan preview: perintah mentah": 1,
+   "71 pick: perintah ingest tanpa trim / --config": 1,
+   "72 pick_cmd tanpa --config": 1,
+   "73 saran --adopt di run memakai <video>": 1,
+   "74 stylize: `run <video>` di peringatan": 1,
+   "75 pesan saran: alternatif = saran tetap dicetak": 1,
+   "76 header pratinjau: alternatif = saran tetap dicetak": 1,
+   "77 pemetaan trim: detik kanonik, bukan yang diketik": 1,
+   "78 pemetaan trim: frame akhir inklusif salah (b)": 1,
+   "79 pemetaan trim: subperintah ingest diam": 1,
+   "80 pemetaan trim: run diam": 1,
+   "81 pemetaan trim: pick diam": 1,
+   "82 pemetaan trim: preview diam": 1
+  }
+ },
+ "suite": {
+  "lolos": 1656,
+  "skip": 4,
+  "gagal": 0,
+  "berkas": 35,
+  "catatan": "per berkas, berurutan, sesudah usulan A + B (Tahap 4)"
+ }
+}

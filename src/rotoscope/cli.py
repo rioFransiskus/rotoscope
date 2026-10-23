@@ -6,10 +6,13 @@
     python -m rotoscope ingest|isolate|segment|depth|stabilize|vectorize|stylize|export <video> [flag stage ...]
     python -m rotoscope download [--config PATH] [--seg-model 0.8b|0.4b]
     python -m rotoscope pick <video> [--frame N] [--config PATH] [--dry-run]
+    python -m rotoscope crop <video> [--accept | --box X Y W H | --none | --clear] [--config PATH]
 
 Satu video = satu folder kerja `<paths.work_dir>/clips/<nama video disanitasi>/` (nama disanitasi dengan fungsi
 yang sama dengan `{source}` di export.filename); `paths.out_dir` tidak berubah. Folder itu diteruskan ke tiap stage
-lewat `--work-dir` (menang atas config) — tanpa menulis YAML.
+lewat `--work-dir` (menang atas config) — tanpa menulis YAML. T-607: `--start S` / `--end E` (run, setiap stage, pick) = trim →
+folder `<nama>@S-E` (detik kanonik; nama export + folder SVG sama). Saran / kotak crop per SUMBER di `<paths.work_dir>/crop/<nama>/`
+(alat `crop`, BUKAN stage); `run` berhenti sesudah [1] dengan exit 4 bila saran ada dan belum diputuskan.
 
 Prinsip #3 docs/01: stage GPU ([1b] isolate, [2] segment, [2c] depth) selalu proses sendiri (subprocess; stdout/stderr
 diteruskan apa adanya) dan proses induk TIDAK meng-import torch / menyentuh CUDA. Stage CPU (ingest, stabilize,
@@ -21,7 +24,8 @@ subprocess dan tidak menulis apa pun (isolate/ lama dihapus in-process dengan pe
 (diteruskan ke stage); --limit tidak berlaku untuk [1b].
 
 Exit code: 0 sukses | 1 prasyarat gagal (config, pre-flight, VRAM, identitas, ...) | 2 salah pakai argumen |
-3 OOM di stage GPU | 130 dihentikan (Ctrl+C). Kode stage yang gagal dikembalikan apa adanya.
+3 OOM di stage GPU | 4 `run` berhenti sesudah [1]: saran crop belum diputuskan (T-607) | 130 dihentikan (Ctrl+C).
+Kode stage yang gagal dikembalikan apa adanya.
 """
 
 from __future__ import annotations
@@ -38,6 +42,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from rotoscope import crop as crop_mod
 from rotoscope import depth as depth_stage
 from rotoscope import export as export_stage
 from rotoscope import ingest as ingest_stage
@@ -52,12 +57,15 @@ from rotoscope.config import (
     DEFAULT_STYLE_NAME, ConfigError, PipelineConfig, load_pipeline, load_style, resolve_style, style_name,
 )
 from rotoscope.export import (
-    DEFAULT_CONFIG, check_svg_owner, manifest_path_for, read_manifest, resolve_filename,
+    DEFAULT_CONFIG, check_svg_owner, clip_name, manifest_path_for, read_manifest, resolve_filename,
     sanitize_source_name, svg_dir_for,
 )
-from rotoscope.ingest import META_FILENAME
+from rotoscope.ingest import DEFAULT_TARGET_FPS, DEFAULT_WORKING_WIDTH, META_FILENAME, IngestError, make_trim
 from rotoscope.segment import QC_REPORT_FILENAME
-from rotoscope.stage_common import EXIT_OK, EXIT_OOM, EXIT_PRECONDITION, StageError, reconfigure_stdio
+from rotoscope.stage_common import (
+    EXIT_CROP_DECISION, EXIT_OK, EXIT_OOM, EXIT_PRECONDITION, TRIM_SEP, StageError, cli_cmd, config_flag, quote_arg,
+    reconfigure_stdio, seconds_label, set_message_config, trim_label,
+)
 
 EXIT_USAGE = 2
 EXIT_INTERRUPTED = 130
@@ -111,6 +119,8 @@ class Ctx:
     limit: int | None = None
     restart: tuple[str, ...] = ()         # stage yang dijalankan dengan --restart
     yes: bool = False                     # T-605: diteruskan ke [1b] (izin memakai GPU); stage lain tidak menerimanya
+    trim: dict | None = None              # T-607: key `trim` yang diminta (ingest.make_trim); menentukan folder <nama>@S-E
+    crop_dir: Path | None = None          # T-607: <paths.work_dir>/crop/<nama>/ (per sumber)
     state: dict = field(default_factory=dict)   # {"stage": nama stage yang sedang jalan}
 
 
@@ -120,8 +130,54 @@ def _same_path(a: str | Path, b: str | Path) -> bool:
     return os.path.normcase(str(Path(a).resolve())) == os.path.normcase(str(Path(b).resolve()))
 
 
-def clip_work_dir(cfg: PipelineConfig, video: Path) -> Path:
-    return cfg.paths.work_dir / CLIPS_DIRNAME / sanitize_source_name(str(video))
+def clip_work_dir(cfg: PipelineConfig, video: Path, trim: dict | None = None) -> Path:
+    """<paths.work_dir>/clips/<nama>[@S-E]/ — `clip_name` + `trim_label` = fungsi yang sama dengan export dan folder SVG."""
+    return cfg.paths.work_dir / CLIPS_DIRNAME / clip_name(str(video), trim_label(trim))
+
+
+def crop_dir_of(cfg: PipelineConfig, video: Path) -> Path:
+    """T-607: saran / kotak crop per SUMBER (dipakai bersama semua folder <nama>@S-E), di luar folder klip."""
+    return crop_mod.crop_dir_for(cfg.paths.work_dir, sanitize_source_name(str(video)))
+
+
+def requested_trim(start: float | None, end: float | None) -> dict | None:
+    """--start / --end → key `trim` (detik kanonik; 24 fps = target ingest default). Masukan salah → exit 2."""
+    try:
+        return make_trim(start, end, DEFAULT_TARGET_FPS)
+    except ValueError as e:
+        raise CliError(str(e), EXIT_USAGE) from None
+
+
+def trim_args(trim: dict | None) -> list[str]:
+    """Flag trim untuk ingest = detik KANONIK (dibaca ulang memberi indeks frame yang sama)."""
+    if trim is None:
+        return []
+    out = ["--start", seconds_label(trim["start_s"])]
+    return out + (["--end", seconds_label(trim["end_s"])] if trim["end_s"] is not None else [])
+
+
+def print_trim_mapping(start: float | None, end: float | None, trim: dict | None, work_dir: Path) -> None:
+    """Sebelum [1] ingest ber-trim (T-607 Tahap 4, usulan B): detik yang DIKETIK → indeks frame (ceil) → folder klip."""
+    if trim is None:
+        return
+    typed = " ".join(f"{flag} {v:.15g}" for flag, v in (("--start", start), ("--end", end)) if v is not None)
+    a, b = trim["start_frame"], trim["end_frame"]
+    span = f"frame {a}–{b - 1} ({b - a} frame)" if b is not None else f"frame {a}–akhir klip"
+    print(f"[1] trim: {typed} → {span} pada {DEFAULT_TARGET_FPS:g} fps → folder {work_dir.name}", flush=True)
+
+
+def clip_folders(cfg: PipelineConfig, video: Path) -> list[Path]:
+    """Folder klip sumber ini yang sudah di-ingest: <nama> dan <nama>@S-E dengan meta.json source_path = video."""
+    root, name = cfg.paths.work_dir / CLIPS_DIRNAME, sanitize_source_name(str(video))
+    if not root.is_dir():
+        return []
+    out = []
+    for d in sorted(root.iterdir()):
+        if d.is_dir() and (d.name == name or d.name.startswith(name + TRIM_SEP)):
+            meta = _read_meta(d)
+            if meta and meta.get("source_path") and _same_path(meta["source_path"], video):
+                out.append(d)
+    return out
 
 
 def load_cfg(config: Path | None, seg_model: str | None = None) -> PipelineConfig:
@@ -141,8 +197,8 @@ def _read_meta(work_dir: Path) -> dict | None:
 
 
 # ── Pre-flight (CPU saja, SEBELUM penghapusan / ingest / subprocess apa pun) ──
-def preflight_video(video: Path, work_dir: Path) -> None:
-    """(a) file video ada; (b) folder kerja tidak berisi klip lain (ingest akan menghapus frame-nya)."""
+def preflight_video(video: Path, work_dir: Path, trim: dict | None = None) -> None:
+    """(a) file video ada; (b) folder kerja tidak berisi klip lain (ingest akan menghapus frame-nya): source_path DAN trim (T-607)."""
     if not video.is_file():
         raise CliError(f"file video tidak ditemukan: {video}")
     meta = _read_meta(work_dir)
@@ -155,6 +211,11 @@ def preflight_video(video: Path, work_dir: Path) -> None:
             f"Satu folder kerja = satu klip, dan namanya diturunkan dari nama file video "
             f"('{sanitize_source_name(str(video))}'). Ganti nama salah satu video. "
             f"(Kalau klip lama memang tidak dipakai lagi, folder itu bisa Anda hapus sendiri.)")
+    if old and meta.get("trim") != trim:
+        raise CliError(
+            f"{work_dir} berisi klip dengan trim LAIN (lama: {trim_label(meta.get('trim')) or 'tanpa trim'}, diminta: "
+            f"{trim_label(trim) or 'tanpa trim'}) — folder ini milik rentang lain. Periksa --start / --end "
+            f"(ingest dengan --target-fps selain {DEFAULT_TARGET_FPS:g} + trim memberi nama folder yang tidak cocok).")
 
 
 def pick_style(flag: str | Path | None, cfg: PipelineConfig) -> tuple[Path | None, str]:
@@ -167,12 +228,14 @@ def pick_style(flag: str | Path | None, cfg: PipelineConfig) -> tuple[Path | Non
     return path, style_name(path)
 
 
-def preflight_export_target(cfg: PipelineConfig, video: Path, limit: int | None, style_label: str = DEFAULT_STYLE_NAME) -> None:
+def preflight_export_target(cfg: PipelineConfig, video: Path, limit: int | None, style_label: str = DEFAULT_STYLE_NAME,
+                            trim: dict | None = None) -> None:
     """(c) target export milik video LAIN → berhenti sekarang, bukan di stage terakhir setelah ±78 mnt GPU.
     Pengaman export tidak bisa dilewati --restart. `--limit` menulis <nama>.limitN.mp4 tanpa pengaman → dilewati."""
     if limit is not None:
         return
-    target = cfg.paths.out_dir / resolve_filename(cfg.export.filename, str(video.resolve()), style=style_label)
+    target = cfg.paths.out_dir / resolve_filename(cfg.export.filename, str(video.resolve()), style=style_label,
+                                                  trim=trim_label(trim))
     old = read_manifest(manifest_path_for(target))
     old_src = (old or {}).get("clip", {}).get("source_path")
     if old_src and target.is_file() and not _same_path(old_src, video):
@@ -192,14 +255,14 @@ def preflight_style(path: Path | None) -> None:
 
 
 def preflight_svg_target(cfg: PipelineConfig, video: Path, limit: int | None, work_dir: Path,
-                         restart: bool, style_label: str = DEFAULT_STYLE_NAME) -> None:
+                         restart: bool, style_label: str = DEFAULT_STYLE_NAME, trim: dict | None = None) -> None:
     """(e) out/svg/<nama>/ milik video LAIN, atau penanda rusak (+ --restart tanpa semua SVG identik dengan strokes/)
     → berhenti sekarang (hanya source strokes menyalin SVG; --limit tidak). `restart` = export ikut ber-restart."""
     if limit is not None or cfg.export.source != "strokes":
         return
     try:
-        check_svg_owner(svg_dir_for(cfg.paths.out_dir, str(video.resolve()), cfg.export.filename, style_label), str(video.resolve()),
-                        work_dir / stylize_stage.STROKES_DIRNAME, restart)
+        check_svg_owner(svg_dir_for(cfg.paths.out_dir, str(video.resolve()), cfg.export.filename, style_label, trim_label(trim)),
+                        str(video.resolve()), work_dir / stylize_stage.STROKES_DIRNAME, restart)
     except StageError as e:
         raise CliError(str(e)) from None
 
@@ -298,11 +361,21 @@ def run_stage(stage: str, args: Sequence[str], ctx: Ctx | None = None) -> int:
     return run_gpu_stage(stage, args) if stage in GPU_STAGES else run_cpu_stage(stage, args)
 
 
+def ingest_args(ctx: Ctx) -> list[str]:
+    """argv [1] ingest: video + folder klip + folder crop per sumber + config (section ingest) + trim kanonik (T-607)."""
+    a = [str(ctx.video), "--work-dir", str(ctx.work_dir)]
+    if ctx.crop_dir is not None:
+        a += ["--crop-dir", str(ctx.crop_dir)]
+    if ctx.config is not None:
+        a += ["--config", str(ctx.config)]
+    return a + trim_args(ctx.trim)
+
+
 def stage_args(stage: str, ctx: Ctx) -> list[str]:
     """argv stage untuk `run`: folder kerja klip + flag yang relevan (tidak ada fallback model otomatis)."""
     a = ["--work-dir", str(ctx.work_dir)]
     if stage == "ingest":
-        return [str(ctx.video), *a]
+        return ingest_args(ctx)
     if ctx.config is not None:
         a += ["--config", str(ctx.config)]
     if stage == "segment" and ctx.seg_model:
@@ -353,12 +426,12 @@ def check_gpu_inputs(cfg: PipelineConfig, video: Path, work_dir: Path, lo: int, 
     except StageError as e:
         raise CliError(str(e)) from None
     names = sclip.names[lo:hi]
-    full = f"{PROG} run {video}"
-    limit_note = f"{hi} (K+N)"
+    full, seg_cmd, dep_cmd = (cli_cmd(s, work_dir) for s in ("run", "segment", "depth"))   # T-607: siap tempel (trim + --config)
+    limit_note = f"{hi} (--limit = K + N)"
     # seg/
     if not sclip.manifest_path.is_file():
         raise CliError(f"preview butuh hasil [2] segment, tetapi {sclip.manifest_path} tidak ada. Preview tidak menjalankan "
-                       f"stage GPU — jalankan {full} (penuh) atau {PROG} segment {video} --limit {limit_note}.")
+                       f"stage GPU — jalankan {full} (penuh) atau {seg_cmd} --limit {limit_note}.")
     try:
         sm = json.loads(sclip.manifest_path.read_text(encoding="utf-8"))
         segment_stage._require_same_clip(sclip, sm)
@@ -367,23 +440,23 @@ def check_gpu_inputs(cfg: PipelineConfig, video: Path, work_dir: Path, lo: int, 
     except StageError as e:
         raise CliError(str(e)) from None
     except (OSError, ValueError, KeyError, TypeError):
-        raise CliError(f"{sclip.manifest_path} rusak / tanpa num_labels, model — jalankan {PROG} segment {video} "
+        raise CliError(f"{sclip.manifest_path} rusak / tanpa num_labels, model — jalankan {seg_cmd} "
                        f"--restart --yes (MENJALANKAN GPU)") from None
     if seg_key != cfg.segment.model:
         raise CliError(f"seg/ dihitung dengan model {seg_key}, tetapi preview meminta model {cfg.segment.model} "
                        f"(--seg-model / segment.model). Model tidak pernah dicampur dalam satu klip dan preview tidak "
                        f"menjalankan GPU. Jalankan ulang tanpa --seg-model {cfg.segment.model} (atau ubah segment.model "
-                       f"menjadi {seg_key}); untuk mengganti model: {PROG} segment {video} --seg-model "
+                       f"menjadi {seg_key}); untuk mengganti model: {seg_cmd} --seg-model "
                        f"{cfg.segment.model} --restart --yes (MENJALANKAN GPU).")
     bad = [n for n in names if not sclip.frame_valid(n, num_labels)]
     if bad:
         raise CliError(f"seg/ belum valid untuk jendela: {len(bad)} dari {len(names)} frame, mis. {Path(bad[0]).stem}. "
-                       f"Preview tidak menjalankan stage GPU — jalankan {full} (penuh) atau {PROG} segment {video} "
+                       f"Preview tidak menjalankan stage GPU — jalankan {full} (penuh) atau {seg_cmd} "
                        f"--limit {limit_note}.")
     # depth/
     if not dclip.manifest_path.is_file():
         raise CliError(f"preview butuh hasil [2c] depth, tetapi {dclip.manifest_path} tidak ada. Preview tidak menjalankan "
-                       f"stage GPU — jalankan {full} (penuh) atau {PROG} depth {video} --limit {limit_note}.")
+                       f"stage GPU — jalankan {full} (penuh) atau {dep_cmd} --limit {limit_note}.")
     try:
         depth_stage._require_same_clip(dclip)
     except StageError as e:
@@ -391,7 +464,7 @@ def check_gpu_inputs(cfg: PipelineConfig, video: Path, work_dir: Path, lo: int, 
     bad = [n for n in dclip.names[lo:hi] if not dclip.frame_valid(n)]
     if bad:
         raise CliError(f"depth/ belum valid untuk jendela: {len(bad)} dari {hi - lo} frame, mis. {Path(bad[0]).stem}. "
-                       f"Preview tidak menjalankan stage GPU — jalankan {full} (penuh) atau {PROG} depth {video} "
+                       f"Preview tidak menjalankan stage GPU — jalankan {full} (penuh) atau {dep_cmd} "
                        f"--limit {limit_note}.")
 
 
@@ -410,7 +483,7 @@ def preview_args(stage: str, ctx: Ctx, k: int, n: int) -> list[str]:
     --limit N. Tidak ada --restart."""
     a = ["--work-dir", str(ctx.work_dir)]
     if stage == "ingest":
-        return [str(ctx.video), *a]
+        return ingest_args(ctx)
     if ctx.config is not None:
         a += ["--config", str(ctx.config)]
     if stage in ("stylize", "export") and ctx.style is not None:
@@ -463,8 +536,10 @@ def cmd_preview(a: argparse.Namespace) -> int:
         raise CliError(f"--preview tidak bisa dipakai bersama {', '.join(bad)}")
     cfg = load_cfg(a.config, a.seg_model)
     video = a.video
-    ctx = Ctx(video=video, cfg=cfg, work_dir=clip_work_dir(cfg, video), config=a.config, seg_model=a.seg_model)
-    preflight_video(video, ctx.work_dir)
+    trim = requested_trim(a.trim_start, a.trim_end)
+    ctx = Ctx(video=video, cfg=cfg, work_dir=clip_work_dir(cfg, video, trim), config=a.config, seg_model=a.seg_model,
+              trim=trim, crop_dir=crop_dir_of(cfg, video))
+    preflight_video(video, ctx.work_dir, trim)
     spath, label = pick_style(a.style, cfg)
     ctx.style = spath if a.style is not None else None      # stage memilih sendiri lewat resolver yang sama (kunci `style` di config)
     preflight_style(spath)
@@ -472,9 +547,10 @@ def cmd_preview(a: argparse.Namespace) -> int:
     k, n = preview_window(a, ctx.work_dir)
     if _read_meta(ctx.work_dir) is not None:        # gagal cepat sebelum ingest (diulang sesudahnya)
         check_gpu_inputs(cfg, video, ctx.work_dir, k, k + n)
-    target = cfg.paths.out_dir / resolve_filename(cfg.export.filename, str(video.resolve()), n, k, label)
+    target = cfg.paths.out_dir / resolve_filename(cfg.export.filename, str(video.resolve()), n, k, label, trim_label(trim))
 
     print(f"run {video.name} --preview {n} --from {k}: folder kerja {ctx.work_dir}, keluaran {target}", flush=True)
+    print_trim_mapping(a.trim_start, a.trim_end, trim, ctx.work_dir)
     timings: list[tuple[str, float]] = []
     try:
         for stage in PREVIEW_STAGES:
@@ -517,26 +593,32 @@ def cmd_run(a: argparse.Namespace) -> int:
     if a.start is not None:
         raise CliError("--from hanya bersama --preview N (jendela K..K+N-1)")
     if a.adopt or a.qc_only:
+        stage_cmd = f"{quote_arg(a.video)}{''.join(f' {x}' for x in trim_args(requested_trim(a.trim_start, a.trim_end)))}" \
+                    f"{config_flag()}"
         raise CliError("--adopt / --qc-only tidak tersedia di `run` — pakai subperintah stage: "
-                       f"{PROG} segment <video> --qc-only|--adopt (depth: --adopt)")
+                       f"{PROG} segment {stage_cmd} {'--adopt' if a.adopt else '--qc-only'}"
+                       + (f" (depth: {PROG} depth {stage_cmd} --adopt)" if a.adopt else ""))
     if a.limit is not None and a.limit < 1:
         raise CliError(f"--limit harus ≥ 1, dapat {a.limit}")
     cfg = load_cfg(a.config, a.seg_model)
     video = a.video
-    ctx = Ctx(video=video, cfg=cfg, work_dir=clip_work_dir(cfg, video), config=a.config,
-              seg_model=a.seg_model, limit=a.limit, restart=RESTART_SCOPE.get(a.restart_from, ()), yes=a.yes)
+    trim = requested_trim(a.trim_start, a.trim_end)
+    ctx = Ctx(video=video, cfg=cfg, work_dir=clip_work_dir(cfg, video, trim), config=a.config,
+              seg_model=a.seg_model, limit=a.limit, restart=RESTART_SCOPE.get(a.restart_from, ()), yes=a.yes,
+              trim=trim, crop_dir=crop_dir_of(cfg, video))
     # Pre-flight CPU-only — sebelum penghapusan, ingest, atau subprocess apa pun
-    preflight_video(video, ctx.work_dir)
+    preflight_video(video, ctx.work_dir, trim)
     spath, label = pick_style(a.style, cfg)
     ctx.style = spath if a.style is not None else None      # stage memilih sendiri lewat resolver yang sama (kunci `style` di config)
     preflight_style(spath)
     preflight_tools()
-    preflight_export_target(cfg, video, a.limit, label)
-    preflight_svg_target(cfg, video, a.limit, ctx.work_dir, "export" in ctx.restart, label)
+    preflight_export_target(cfg, video, a.limit, label, trim)
+    preflight_svg_target(cfg, video, a.limit, ctx.work_dir, "export" in ctx.restart, label, trim)
     if a.restart_from:
         require_yes(ctx.restart, ctx, a.yes, f"run --restart-from {a.restart_from}")
 
     print(f"run {video.name}: folder kerja {ctx.work_dir}, output {cfg.paths.out_dir}", flush=True)
+    print_trim_mapping(a.trim_start, a.trim_end, trim, ctx.work_dir)
     timings: list[tuple[str, float]] = []
     try:
         for stage in STAGES:
@@ -557,6 +639,16 @@ def cmd_run(a: argparse.Namespace) -> int:
                 print(f"\nERROR: run berhenti di stage {LABELS[stage]} (exit {rc}).{hint} {_resume_hint(a.restart_from)}",
                       file=sys.stderr)
                 return rc
+            if stage == "ingest" and cfg.ingest.crop.suggest and crop_mod.pending_saran(ctx.crop_dir) is not None:
+                v = quote_arg(video.resolve())
+                print(f"\nrun berhenti sesudah [1] (exit {EXIT_CROP_DECISION}): saran crop untuk {video.name} belum diputuskan "
+                      f"(lihat [1] di atas; pratinjau: {ctx.crop_dir / crop_mod.PREVIEW_DIRNAME}). Stage GPU TIDAK dijalankan.\n"
+                      f"  Pilih SATU (siap tempel):\n"
+                      f"    {crop_mod.crop_cmd(v, '--accept')}\n"
+                      f"    {crop_mod.crop_cmd(v, '--none')}\n"
+                      f"    {crop_mod.crop_cmd(v, '--box X Y W H')}   (ganti X Y W H, px sumber)\n"
+                      f"  lalu jalankan ulang: {cli_cmd('run', ctx.work_dir)}", file=sys.stderr, flush=True)
+                return EXIT_CROP_DECISION
             if stage == "segment" and (w := qc_warning(ctx.work_dir)):
                 print(w, file=sys.stderr, flush=True)
     except KeyboardInterrupt:
@@ -580,27 +672,32 @@ def cmd_stage(a: argparse.Namespace) -> int:
     pre.add_argument("--restart", action="store_true")
     pre.add_argument("--yes", action="store_true")
     pre.add_argument("--work-dir", default=None)
+    pre.add_argument("--crop-dir", default=None)
+    pre.add_argument("--start", dest="trim_start", type=float, default=None)
+    pre.add_argument("--end", dest="trim_end", type=float, default=None)
     known, rest = pre.parse_known_args(a.rest)
+    set_message_config(known.config)                 # T-607: --config non-default ikut di perintah siap tempel
     stage = a.stage
-    if known.work_dir is not None:
-        raise CliError("--work-dir ditentukan oleh cli dari nama video (<work_dir>/clips/<nama>/); "
-                       "ubah paths.work_dir di config untuk memindahkan semuanya", EXIT_USAGE)
+    if known.work_dir is not None or known.crop_dir is not None:
+        raise CliError("--work-dir / --crop-dir ditentukan oleh cli dari nama video (<work_dir>/clips/<nama>[@S-E]/, "
+                       "<work_dir>/crop/<nama>/); ubah paths.work_dir di config untuk memindahkan semuanya", EXIT_USAGE)
     if known.seg_model and stage != "segment":
         raise CliError("--seg-model hanya untuk subperintah segment", EXIT_USAGE)
     if known.restart and stage == "ingest":
         raise CliError("ingest selalu menulis ulang frames/ + meta.json — tidak ada --restart", EXIT_USAGE)
 
     cfg = load_cfg(known.config, known.seg_model)
-    ctx = Ctx(video=a.video, cfg=cfg, work_dir=clip_work_dir(cfg, a.video), config=known.config,
-              seg_model=known.seg_model)
+    trim = requested_trim(known.trim_start, known.trim_end)
+    ctx = Ctx(video=a.video, cfg=cfg, work_dir=clip_work_dir(cfg, a.video, trim), config=known.config,
+              seg_model=known.seg_model, trim=trim, crop_dir=crop_dir_of(cfg, a.video))
     if stage == "ingest":
-        preflight_video(a.video, ctx.work_dir)
+        preflight_video(a.video, ctx.work_dir, trim)
     if known.restart:
         require_yes([stage], ctx, known.yes, f"{PROG} {stage} --restart")
 
     args = ["--work-dir", str(ctx.work_dir)]
     if stage == "ingest":
-        args = [str(a.video), *args]
+        args = ingest_args(ctx)
     elif known.config is not None:
         args += ["--config", str(known.config)]
     if known.seg_model:
@@ -609,6 +706,8 @@ def cmd_stage(a: argparse.Namespace) -> int:
         args.append("--restart")
     if stage == "isolate" and known.yes:      # T-605: [1b] menerima --yes (izin GPU); segment / depth tidak
         args.append("--yes")
+    if stage == "ingest":
+        print_trim_mapping(known.trim_start, known.trim_end, trim, ctx.work_dir)
     rc = run_stage(stage, [*args, *rest], ctx)
     return rc
 
@@ -636,15 +735,55 @@ def cmd_pick(a: argparse.Namespace) -> int:
     if a.frame < 0:
         raise CliError(f"--frame harus ≥ 0, dapat {a.frame}", EXIT_USAGE)
     cfg = load_cfg(a.config)
-    ctx = Ctx(video=a.video, cfg=cfg, work_dir=clip_work_dir(cfg, a.video), config=a.config)
-    preflight_video(a.video, ctx.work_dir)
+    trim = requested_trim(a.trim_start, a.trim_end)
+    ctx = Ctx(video=a.video, cfg=cfg, work_dir=clip_work_dir(cfg, a.video, trim), config=a.config, trim=trim,
+              crop_dir=crop_dir_of(cfg, a.video))
+    preflight_video(a.video, ctx.work_dir, trim)
     if _read_meta(ctx.work_dir) is None:
         print(f"frames/ belum ada di {ctx.work_dir} — [1] ingest dijalankan dulu (CPU)", flush=True)
+        print_trim_mapping(a.trim_start, a.trim_end, trim, ctx.work_dir)
         rc = run_stage("ingest", stage_args("ingest", ctx), ctx)
         if rc != EXIT_OK:
             print(f"ERROR: [1] ingest gagal (exit {rc}) — pick tidak dibuka", file=sys.stderr)
             return rc
     return pick_mod.run_pick(ctx.work_dir, a.frame, video=str(a.video), dry_run_only=a.dry_run)
+
+
+def cmd_crop(a: argparse.Namespace) -> int:
+    """`crop <video> [--accept | --box X Y W H | --none | --clear]` (T-607): keputusan kotak crop per SUMBER →
+    <paths.work_dir>/crop/<nama>/kotak.json. BUKAN stage; tidak memotong apa pun sekarang — kotak dipakai ingest berikutnya."""
+    if a.trim_start is not None or a.trim_end is not None:
+        raise CliError("crop: kotak berlaku per SUMBER video (semua folder <nama> dan <nama>@S-E) — --start / --end tidak "
+                       "dipakai di sini", EXIT_USAGE)
+    cfg = load_cfg(a.config)
+    if not a.video.is_file():
+        raise CliError(f"file video tidak ditemukan: {a.video}")
+    preflight_tools()
+    action = ("accept" if a.accept else "none" if a.none else "clear" if a.clear else "box" if a.box is not None
+              else "status")
+    try:
+        changed = crop_mod.run_crop(crop_dir=crop_dir_of(cfg, a.video), video=a.video, cfg=cfg.ingest.crop, action=action,
+                                    box=a.box, target_fps=DEFAULT_TARGET_FPS, working_width=DEFAULT_WORKING_WIDTH,
+                                    log=lambda m: print(m, flush=True))
+    except (StageError, IngestError) as e:
+        raise CliError(str(e)) from None
+    folders = clip_folders(cfg, a.video)
+    if action == "status":
+        for wd in folders:
+            meta = _read_meta(wd) or {}
+            print(f"  folder {wd.name}: {meta.get('working_width')} × {meta.get('working_height')}, "
+                  f"crop {'ya' if meta.get('crop') else 'tidak'}", flush=True)
+        return EXIT_OK
+    if changed and folders:
+        print("Folder klip sumber ini yang sudah di-ingest — kotak berlaku sesudah ingest ulang; hitung ulang SEMUA stage "
+              "(MENJALANKAN GPU):", flush=True)
+        for wd in folders:
+            print(f"  {cli_cmd('run', wd)} --restart-from ingest --yes", flush=True)
+        print("Titik pick (bila ada) jadi basi bila ukuran frame berubah → pick ulang.", flush=True)
+    elif changed:
+        print(f"Kotak dipakai pada ingest berikutnya: {PROG} run {quote_arg(a.video.resolve())}{config_flag()} "
+              f"(tambahkan --start S --end E untuk klip ber-trim)", flush=True)
+    return EXIT_OK
 
 
 # ── Argparse ───────────────────────────────────────
@@ -668,6 +807,7 @@ def build_parser() -> argparse.ArgumentParser:
                         "tanpa GPU: seg/ dan depth/ harus sudah valid untuk jendela")
     r.add_argument("--from", dest="start", type=int, default=None, metavar="K",
                    help="frame awal jendela --preview (hanya bersama --preview)")
+    _add_trim_args(r)
     r.add_argument("--restart-from", choices=STAGES, default=None,
                    help="hapus hasil stage ini lalu jalankan ulang (ingest = semua stage; isolate / segment / depth = hanya "
                         "stage itu — depth tidak bergantung pada segment). Stage GPU wajib --yes; vectorize / "
@@ -715,13 +855,38 @@ def build_parser() -> argparse.ArgumentParser:
     k.add_argument("--dry-run", action="store_true",
                    help="tanpa jendela: kanvas → <klip>/target/pick_dryrun/frame_%%05d.png + tata letak; "
                         "points.json tidak disentuh")
+    _add_trim_args(k)
     k.set_defaults(func=cmd_pick)
+
+    c = sub.add_parser("crop", help="T-607: keputusan kotak crop per sumber (bukan stage) → <work_dir>/crop/<nama>/kotak.json",
+                       description="Saran crop dibuat [1] ingest (deteksi R2 pada rentang penuh sumber + pratinjau). Tanpa flag = "
+                                   "status. Tidak memotong sekarang: kotak dipakai pada ingest berikutnya; folder klip yang "
+                                   "sudah ada perlu run --restart-from ingest --yes.")
+    c.add_argument("video", type=Path, help="video sumber")
+    c.add_argument("--config", type=Path, default=None)
+    g = c.add_mutually_exclusive_group()
+    g.add_argument("--accept", action="store_true", help="terima saran (kotak.json mode saran)")
+    g.add_argument("--box", type=int, nargs=4, metavar=("X", "Y", "W", "H"), default=None,
+                   help="kotak sendiri dalam px SUMBER (sesudah rotasi); dibulatkan keluar ke genap")
+    g.add_argument("--none", action="store_true", help="tolak saran: tanpa potong (kotak.json mode none)")
+    g.add_argument("--clear", action="store_true", help="hapus keputusan (kotak.json → kotak.prev.json)")
+    c.add_argument("--start", dest="trim_start", type=float, default=None, help=argparse.SUPPRESS)
+    c.add_argument("--end", dest="trim_end", type=float, default=None, help=argparse.SUPPRESS)
+    c.set_defaults(func=cmd_crop)
     return p
+
+
+def _add_trim_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--start", dest="trim_start", type=float, default=None, metavar="S",
+                        help="trim: detik awal (indeks frame sesudah fps 24; dihitung dari frame pertama) → folder <nama>@S-E")
+    parser.add_argument("--end", dest="trim_end", type=float, default=None, metavar="E",
+                        help="trim: detik akhir (eksklusif); tanpa --end = sampai akhir klip")
 
 
 def main(argv: list[str] | None = None) -> int:
     reconfigure_stdio()
     args = build_parser().parse_args(argv)
+    set_message_config(getattr(args, "config", None))   # T-607: --config non-default ikut di perintah siap tempel
     try:
         return int(args.func(args))
     except CliError as e:

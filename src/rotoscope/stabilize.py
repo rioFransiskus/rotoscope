@@ -64,7 +64,7 @@ from rotoscope.config import (
 from rotoscope.ingest import FRAMES_DIRNAME
 from rotoscope.stage_common import (
     CLIP_KEY, EXIT_OK, EXIT_PRECONDITION, StageError, add_work_dir_arg, append_jsonl, clean_tmp, cli_cmd,
-    clip_identity, describe_identity, last_frame_records, load_frame_list, reconfigure_stdio, utc_now,
+    clip_identity, describe_identity, last_frame_records, load_frame_list, reconfigure_stdio, set_message_config, utc_now,
     work_dir_overrides, write_bytes_atomic, write_json_atomic,
 )
 
@@ -839,6 +839,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--restart", action="store_true", help="hapus output [3] lama (stable/) lalu hitung ulang")
     p.add_argument("--limit", type=int, default=None, help="hanya N frame pertama")
     args = p.parse_args(argv)
+    set_message_config(args.config)          # T-607: --config non-default ikut di perintah siap tempel
     reconfigure_stdio()
 
     def log(msg: str) -> None:

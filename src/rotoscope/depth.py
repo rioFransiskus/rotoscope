@@ -57,8 +57,8 @@ from rotoscope.stage_common import (
     COMMIT_HASH_RE, DOWNLOAD_REVISION_FALLBACK, EXIT_OK, EXIT_OOM, EXIT_PRECONDITION, MIB, BackendOOM,
     StageError, StageOOMError, add_work_dir_arg, adopt_identity, append_jsonl, cached_file, clean_tmp, cli_cmd,
     clip_identity, ensure_cached, hf_offline_active, is_oom, load_frame_list, read_rgb, reconfigure_stdio,
-    require_frames, require_same_clip, set_offline, utc_now, vram_state, work_dir_overrides, write_bytes_atomic,
-    write_json_atomic,
+    require_frames, require_same_clip, set_message_config, set_offline, utc_now, vram_state, work_dir_overrides,
+    write_bytes_atomic, write_json_atomic,
 )
 
 # ── Layout output (docs/01 [2c]) ───────────────────
@@ -364,7 +364,7 @@ def _require_same_clip(clip: Clip) -> None:
     if clip.manifest_path.is_file():
         manifest = json.loads(clip.manifest_path.read_text(encoding="utf-8"))
         require_same_clip(manifest, clip_identity(clip.work_dir), stage="[2c]", out_dir=clip.depth_dir,
-                          cmd=stage_cmd(clip.work_dir))
+                          cmd=stage_cmd(clip.work_dir), run_cmd=f"{cli_cmd('run', clip.work_dir)} --restart-from ingest --yes")
 
 
 def adopt_depth(cfg: PipelineConfig, *, log: Callable[[str], None] = print) -> dict:
@@ -536,6 +536,7 @@ def main(argv: list[str] | None = None, backend_factory: BackendFactory | None =
                    help="catat identitas klip saat ini ke manifest [2c] yang ada (tanpa inferensi) lalu keluar; "
                         "pernyataan Anda bahwa output itu milik klip ini")
     args = p.parse_args(argv)
+    set_message_config(args.config)          # T-607: --config non-default ikut di perintah siap tempel
     reconfigure_stdio()  # stdout cp1252 (diarahkan ke file di Windows) tidak boleh membuat print crash
 
     def log(msg: str) -> None:

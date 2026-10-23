@@ -9,7 +9,8 @@ Segmentasi bagian tubuh = **Sapiens2-seg** (29 kelas), garis oklusi = **Depth An
 ```
 video.mp4
    │
-   ├─[1]  ingest ─────► frames/*.png + meta.json                  (24 fps, resolusi kerja)
+   ├─[1]  ingest ─────► frames/*.png + meta.json                  (24 fps, resolusi kerja; T-607: trim --start / --end,
+   │                     (+ saran crop di <work_dir>/crop/<nama>/)   crop HANYA bila kotak diterima lewat `crop`, D-013)
    │
    ├─[1b] isolate ────► isolate/labels/*.png + isolate/frames.jsonl (GPU, proses sendiri; HANYA bila
    │                     + isolate/manifest.json                     target/points.json ada — T-605, D-011)
@@ -38,6 +39,8 @@ Di luar pipeline: `python -m rotoscope pick` (T-604, BUKAN stage) menulis `targe
 `target/pick_dryrun/`) di folder kerja klip; dibaca stage [1b] isolate (T-605, lihat "`pick.py`" dan "[1b] `isolate.py`").
 `isolate/` (T-605) dibaca stage [3] (T-606, D-012) — hanya bila masker berlaku (kunci [1b] = titik + frame sekarang); [2] / [2c]
 tidak membacanya.
+`python -m rotoscope crop` (T-607, D-013; BUKAN stage) menulis keputusan kotak crop `<paths.work_dir>/crop/<nama>/kotak.json` per
+SUMBER video (di luar folder klip); dibaca [1] ingest (lihat "[1] `ingest.py`" dan "`crop.py`").
 
 ## Prinsip (D-010)
 
@@ -80,6 +83,10 @@ memakai output klip lama tanpa error, manifest [2], [2c], [3] (dan export sejak 
   (13 field), jadi ingest ulang video + parameter yang sama menghasilkan byte identik (test
   `test_meta_json_is_byte_deterministic`), sedangkan `target_fps` / `working_width` / `source_path` berbeda →
   identitas berbeda. Bentuk `clip` sama dengan manifest export lama, jadi manifest export tidak jadi basi.
+- **T-607 (D-013):** key `trim` dan `crop` di akhir `meta.json` HANYA bila dipakai → klip tanpa trim / kotak tetap 13 field, byte-identik
+  dengan sebelum T-607 (tanpa hitung ulang; dibuktikan di 4 klip lama + `out/`). Klip yang ingest-nya berubah (kotak diterima / trim) →
+  `meta.json` lain → identitas lain → [2] / [2c] menolak; pesan penolakannya menyebut `python -m rotoscope run <video> [--start S --end
+  E] --restart-from ingest --yes` (MENJALANKAN GPU).
 - **Perilaku saat identitas berbeda:**
   - **[2], [2c] (GPU):** **tolak** (exit 1) SEBELUM `resolve_revision` / load backend; pesan menyebut klip lama
     (`source_path` + hash pendek) vs klip baru. Berlaku juga untuk `--limit` dan `--qc-only` ([2]). Satu-satunya
@@ -106,7 +113,8 @@ memakai output klip lama tanpa error, manifest [2], [2c], [3] (dan export sejak 
 - (b) `--adopt` adalah **pernyataan pengguna** bahwa output milik klip ini. Cek kewajaran tidak bisa
   membedakan klip lain yang ber-`frame_size` dan `frame_count` sama.
 - (c) `meta.json` tidak memuat ukuran / hash file video: video lain dengan 13 field yang sama (fps, durasi,
-  ukuran, jumlah frame, rotasi, audio) di path yang sama tidak terdeteksi.
+  ukuran, jumlah frame, rotasi, audio) di path yang sama tidak terdeteksi. **T-607:** tertutup untuk klip ber-crop (key
+  `crop.source_sha256` = sha256 berkas video; `kotak.json` milik sumber lain juga ditolak ingest).
 - (d) Determinisme `meta.json` hanya terbukti pada mesin + build ffmpeg yang sama; update ffmpeg lalu ingest
   ulang bisa mengubah identitas (belum terbukti) → konsekuensinya `--restart` / hitung ulang, bukan hasil salah.
 
@@ -120,15 +128,19 @@ internal yang dipanggil cli, bukan cara pakai utama.
 
 | Subperintah | Fungsi |
 |---|---|
-| `run <video>` | ingest → isolate (T-605; HANYA bila `target/points.json` ada) → segment → depth → stabilize → vectorize → stylize → export (T-203b); flag `--config --style --seg-model --limit --restart-from --yes` (`--yes` juga = izin GPU untuk [1b]); **T-204:** `--preview N [--from K]` (jendela K..K+N-1, tanpa GPU, tanpa [1b]; lihat "`run --preview`" di bawah) |
+| `run <video>` | ingest → isolate (T-605; HANYA bila `target/points.json` ada) → segment → depth → stabilize → vectorize → stylize → export (T-203b); flag `--config --style --seg-model --limit --restart-from --yes` (`--yes` juga = izin GPU untuk [1b]); **T-204:** `--preview N [--from K]` (jendela K..K+N-1, tanpa GPU, tanpa [1b]; lihat "`run --preview`" di bawah); **T-607:** `--start S --end E` (trim → folder `<stem>@S-E`); `run` penuh berhenti sesudah [1] dengan **exit 4** bila saran crop belum diputuskan |
 | `isolate <video> [--config P] [--yes] [--restart] [--dry-run]` | **T-605:** stage [1b] sendiri (subprocess); `--yes` wajib bila GPU dipakai (hitung baru / basi); `--restart` butuh `--yes`; `--dry-run` = status + adegan + job + perkiraan tanpa GPU / tulis. Lihat "[1b] `isolate.py`" |
-| `ingest\|segment\|depth\|stabilize\|vectorize\|stylize\|export <video> [flag stage]` | satu stage; sisa argumen diteruskan apa adanya ke `main(argv)` stage (flag stage tidak diparse ulang di cli). `vectorize` (T-201a, T-201b): flag `--restart --limit` (`--limit N` tetap membaca SEMUA frame untuk ambang per klip, `clip_stats.json`), CPU in-process, `--restart` tanpa `--yes`. `stylize` (T-203a; `--from` T-204): flag `--style PATH --restart --limit [--from K]`, CPU in-process, `--restart` tanpa `--yes` (hanya menghapus `strokes/`). Keduanya (dan `export`) juga bagian urutan `run` sejak T-203b |
+| `ingest\|segment\|depth\|stabilize\|vectorize\|stylize\|export <video> [flag stage]` | satu stage; sisa argumen diteruskan apa adanya ke `main(argv)` stage (flag stage tidak diparse ulang di cli). `vectorize` (T-201a, T-201b): flag `--restart --limit` (`--limit N` tetap membaca SEMUA frame untuk ambang per klip, `clip_stats.json`), CPU in-process, `--restart` tanpa `--yes`. `stylize` (T-203a; `--from` T-204): flag `--style PATH --restart --limit [--from K]`, CPU in-process, `--restart` tanpa `--yes` (hanya menghapus `strokes/`). Keduanya (dan `export`) juga bagian urutan `run` sejak T-203b. **T-607:** `--start S --end E` di semua subperintah ini (dan `isolate`) memilih folder `<stem>@S-E` (ingest: juga memotong); `--work-dir` / `--crop-dir` ditentukan cli (exit 2) |
 | `download [--config P] [--seg-model 0.8b\|0.4b]` | unduh checkpoint (online, sekali jalan): Sapiens2-seg (default **0.8b**; `--seg-model 0.4b` = fallback), Depth Anything V2 Small, **dan** SAM 2.1 hiera tiny ([1b], T-605; 6 berkas jalur `transformers`) + model card. Subprocess mewarisi environment; **tidak** memaksa `HF_HUB_OFFLINE=1` (run biasa offline) |
-| `pick <video> [--frame N] [--config P] [--dry-run]` | **T-604:** jendela klik target (BUKAN stage, tidak masuk urutan `run`) → `target/points.json`. `meta.json` belum ada → [1] ingest dulu (CPU, argumen sama dengan `run`); sudah ada → `frames/` tidak disentuh. Lihat "`pick.py`" di bawah |
+| `pick <video> [--frame N] [--config P] [--start S --end E] [--dry-run]` | **T-604:** jendela klik target (BUKAN stage, tidak masuk urutan `run`) → `target/points.json`. `meta.json` belum ada → [1] ingest dulu (CPU, argumen sama dengan `run`); sudah ada → `frames/` tidak disentuh. Lihat "`pick.py`" di bawah |
+| `crop <video> [--accept \| --box X Y W H \| --none \| --clear] [--config P]` | **T-607 (D-013):** keputusan kotak crop per SUMBER video (BUKAN stage, CPU) → `<paths.work_dir>/crop/<nama>/kotak.json`; tanpa aksi = status. `--start` / `--end` ditolak (exit 2: kotak berlaku untuk semua folder `<nama>@…`). Lihat "`crop.py`" di bawah |
 
 - **Folder kerja per klip:** `<paths.work_dir>/clips/<stem>/`; `stem` = nama video disanitasi dengan fungsi yang sama
   dengan `{source}` di `export.filename` (`export.sanitize_source_name`). Layout `clips/` memisahkan data klip dari
   folder eksperimen di `work/` (`t102c`, `t106`, …) — tanpa daftar nama dicadangkan. `paths.out_dir` tidak berubah.
+  **T-607:** klip ber-trim → `<stem>@S-E` (S, E = detik kanonik, lihat [1]; tanpa akhir = `<stem>@S-end`); `export.clip_name` +
+  `stage_common.trim_label` = fungsi yang sama untuk folder kerja, nama export, dan folder SVG. Saran / kotak crop per SUMBER di
+  `<paths.work_dir>/crop/<stem>/` (dipakai bersama semua folder `<stem>@…`; tidak tersentuh `--restart-from ingest`).
 - **`--work-dir DIR` di setiap `main()` stage** (ingest sudah punya; segment, depth, stabilize, export sejak
   T-104b): menang atas `paths.work_dir` config (lewat `overrides`, T-104a — tanpa menulis YAML); `paths.out_dir` tidak
   berubah. cli selalu menambahkannya sendiri; `--work-dir` di baris perintah cli ditolak (exit 2).
@@ -140,7 +152,7 @@ internal yang dipanggil cli, bukan cara pakai utama.
   dan ditunggu selesai; pesan "dihentikan; jalankan ulang untuk resume".
 - **Pre-flight CPU-only** (`run`; ingest sendiri hanya (a)+(b)) — SEBELUM penghapusan, ingest, atau subprocess apa pun:
   (a) file video ada; (b) folder kerja tidak berisi klip lain (`meta.json` `source_path` ≠ video, dibandingkan dengan
-  `Path.resolve` yang sama dengan ingest, bukan string mentah); (c) target export `out/<nama>.mp4` tidak milik video
+  `Path.resolve` yang sama dengan ingest, bukan string mentah; T-607: juga key `trim` ≠ trim yang diminta); (c) target export `out/<nama>.mp4` tidak milik video
   lain (`<nama>.export.json` `clip.source_path`; fungsi nama export yang sama; dilewati bila `--limit`). Alasan (c):
   pengaman export tidak bisa dilewati `--restart`, jadi tanpa ini klip bernama sama baru gagal di stage terakhir
   setelah ±78 mnt GPU. Pesan bentrok TIDAK menyarankan `--restart`: ganti nama salah satu video (atau ubah
@@ -154,6 +166,21 @@ internal yang dipanggil cli, bukan cara pakai utama.
   video lain yang menimpa path yang sama menulis ulang `meta.json` → identitas berubah → [2]/[2c] menolak (exit 1).
   (Melewati ingest kalau `meta.json` cocok akan melebarkan batas (c) "Identitas klip": video apa pun di path yang sama
   tidak terdeteksi.) Ingest hanya detik.
+- **Trim (T-607, D-013):** hanya lewat `--start S` / `--end E` (detik dari frame pertama hasil ingest, frame n = n / 24 s; TIDAK ada di
+  YAML: nilai YAML berlaku untuk semua klip). Indeks: a = ceil(S · 24 − 1e-6), b = ceil(E · 24 − 1e-6), frame a … b − 1 (akhir
+  eksklusif), dinomori ulang dari 0. cli meneruskan detik KANONIK (floor(n · 1000 / 24) / 1000) ke ingest, jadi masukan setara (mis.
+  `--end 3.8333` dan `--end 3.83333`) memberi folder yang sama; dua indeks berbeda tidak pernah bernama sama. Sebelum [1] ingest
+  ber-trim (`run`, `run --preview`, `ingest`, `pick`) cli mencetak pemetaannya, mis. `[1] trim: --end 3.8334 → frame 0–92 (93 frame)
+  pada 24 fps → folder klip5@0-3.875`. `--start 0` tanpa `--end` = tanpa trim. Masukan salah (E ≤ S, tanpa frame, S < 0) → exit 2;
+  melewati akhir klip → [1] exit 1 dengan panjang klip.
+- **Saran crop di `run` (T-607):** bila sesudah [1] ada saran yang BELUM diputuskan (`saran.json` ada, `kotak.json` tidak), `run`
+  penuh **berhenti dengan exit 4** (`EXIT_CROP_DECISION`) SEBELUM stage GPU, dengan tiga perintah siap tempel (`crop … --accept` /
+  `--none` / `--box X Y W H`) + "lalu jalankan ulang: `run …`". `run --preview`, `ingest`, dan `pick` tidak berhenti (hanya mencetak
+  saran). Klip tanpa saran dan `ingest.crop.suggest: false` tidak terdampak.
+- **Perintah siap tempel (T-607, keputusan Rio 2026-10-22):** setiap perintah yang dicetak untuk ditempel memakai `stage_common.cli_cmd`
+  (video dari `meta.json` + flag trim + `--config <path absolut>` bila config non-default dipakai; `configs/default.yaml` tidak dicetak)
+  atau `crop.crop_cmd`. `--config` dicatat oleh `cli.main`, subperintah stage, dan `main()` setiap stage (juga subprocess GPU) lewat
+  `stage_common.set_message_config`.
 - **Flag `run`:** `--config`, `--style NAMA|PATH` (T-406: nama preset di `configs/styles/` atau path YAML; diteruskan ke stylize DAN export; flag mengalahkan kunci `style` di
   `default.yaml`; satu fungsi `config.resolve_style` untuk stylize / export / run / preview / pre-flight, nama tak dikenal = exit 1 + daftar preset sebelum stage mana pun;
   pre-flight target export dan folder SVG memakai nama style untuk `{style}`; docs/02 "Memilih style"), `--seg-model 0.8b|0.4b` (hanya segment;
@@ -235,7 +262,7 @@ internal yang dipanggil cli, bukan cara pakai utama.
   (stage [3] memberi bobot, D-010), exit 0. Tanpa parameter YAML baru.
 - **Exit code `run`:** 0 sukses (atau semua dilewati) | 1 prasyarat gagal (config, pre-flight, VRAM, identitas, flag
   terlarang, `--limit` < 1) | 2 salah pakai argumen (argparse; juga argparse stage in-process) | 3 OOM di segment/depth |
-  130 dihentikan (Ctrl+C). Kode stage yang gagal dikembalikan apa adanya; pesan menyebut stage + cara resume.
+  4 saran crop belum diputuskan (T-607; hanya `run` penuh, sesudah [1]) | 130 dihentikan (Ctrl+C). Kode stage yang gagal dikembalikan apa adanya; pesan menyebut stage + cara resume.
 - **Batas yang diketahui (backlog):** `segment` / `depth` memakai ±21–28 s per `run` walau semua frame dilewati (impor torch +
   pengecekan resume di subprocess).
 
@@ -247,15 +274,41 @@ Resolusi kerja = resolusi `frames/` (`meta.json` `working_width` × `working_hei
 480×854). Estimasi disk = klip 15 s, 360 frame, 480×854 (409 920 px/frame); tanda *est.* = harus
 diukur saat implementasi.
 
-### [1] `ingest.py` — `DONE` (T-101)
-- **In:** path video, `target_fps` (default 24), `working_width` (default 720)
-- **Out:** `frames/frame_%05d.png`, plus `meta.json` (fps asli, durasi, jumlah frame, resolusi kerja)
-- **Lib:** ffmpeg via subprocess (`fps` + `scale`), ffprobe untuk metadata
+### [1] `ingest.py` — `DONE` (T-101; crop + trim T-607, D-013)
+- **In:** path video, `target_fps` (default 24), `working_width` (default 720); sejak T-607: config section `ingest`
+  (`crop.suggest`, `crop.detect.*` = 5 parameter R2 beku, `crop.preview.hint_static_frac`; docs/02), `--start` / `--end` (trim, lihat
+  "CLI"), dan `<paths.work_dir>/crop/<nama>/kotak.json` bila ada (keputusan dari alat `crop`).
+- **Out:** `frames/frame_%05d.png`, plus `meta.json` (fps asli, durasi, jumlah frame, resolusi kerja; + key `trim` / `crop` HANYA bila
+  dipakai) + per SUMBER `<paths.work_dir>/crop/<nama>/deteksi.json` (selalu, juga "tanpa pita") + `saran.json` + `pratinjau/` (hanya bila
+  pita terdeteksi dan belum ada `kotak.json`). Format berkas crop: "`crop.py`".
+- **Lib:** ffmpeg via subprocess (`fps` [+ `trim`] [+ `crop`] + `scale`), ffprobe untuk metadata
 - Resize proporsional. Jangan upscale kalau sumber lebih kecil.
-- **CLI:** `python -m rotoscope ingest <video> [--target-fps N] [--working-width N]` (folder kerja =
-  `<paths.work_dir>/clips/<nama>/`; pre-flight (a)+(b) di bagian "CLI"). Di `run` ingest **selalu** dijalankan ulang
-  (`meta.json` byte-deterministik, jadi klip yang sama lolos identitas T-108). Ingest tidak membaca config (tanpa
-  `--config`); entry point modul: `python -m rotoscope.ingest <video> [--work-dir DIR]`. Exit code 0 / 1.
+- **Ingest TIDAK pernah memotong tanpa `kotak.json`** (saran + konfirmasi; mode `auto` dihapus sesudah K2 gagal, docs/04). Tanpa
+  `kotak.json` dan `crop.suggest` true → deteksi R2 beku pada RENTANG PENUH SUMBER (pipa rawvideo `fps=24,scale=W:-2`, tanpa PNG; trim
+  tidak memengaruhi saran) → bila pita ada: saran + pratinjau + pesan (kotak kerja → sumber, path pratinjau, petunjuk + perintah
+  alternatif, perintah `crop --accept` / `--box X Y W H` / `--none`), dicetak SESUDAH dump `meta.json`. **D1:** deteksi dilewati bila
+  `deteksi.json` memuat kunci yang sama {identitas sumber, `target_fps`, `working_width`, aturan + parameter + sidik R2, versi ffmpeg};
+  dengan `kotak.json` valid tidak ada deteksi. Parameter R2 ≠ beku → PERINGATAN "aturan belum divalidasi" (saran itu ditolak `crop
+  --accept`). Deteksi gagal (ffmpeg pipa error) → PERINGATAN, ingest tetap jalan tanpa saran.
+- **Dengan `kotak.json`:** identitas sumber dicek (sha256 byte + ukuran + dimensi; path hanya info) → beda → **exit 1** + perintah `crop …
+  --clear`. `mode: none` = tanpa potong, tanpa key `crop` (byte-identik dengan klip tanpa kotak). `saran` / `manual` → vf
+  `fps=24[,trim=start_frame=a:end_frame=b],crop=w:h:x:y:exact=1,scale=…` (crop di koordinat SUMBER, SEBELUM scale = P-src; kotak
+  dibulatkan KE LUAR + genap: konten tidak pernah terpotong) → key `meta.json` `crop` = `{mode, box_source, rounding: "outward-even",
+  source_sha256}` + mode saran `{rule, rule_version, rule_fingerprint, detect_frame_size, box_work, band_px, overlay_px}` / mode manual
+  `box_requested`. Lebar kerja = min(lebar kotak, `working_width`), tanpa upscale.
+- **Key `trim`:** `{start_s, end_s, start_frame, end_frame}` (detik kanonik = nama folder; `end_s` / `end_frame` null = sampai akhir).
+  Tanpa trim / kotak → perintah ffmpeg dan `meta.json` sama persis dengan sebelum T-607.
+- **CLI:** `python -m rotoscope ingest <video> [--start S --end E] [--config P] [--target-fps N] [--working-width N]` (folder kerja =
+  `<paths.work_dir>/clips/<nama>[@S-E]/`; pre-flight (a)+(b) di bagian "CLI"). Di `run` ingest **selalu** dijalankan ulang
+  (`meta.json` byte-deterministik, jadi klip yang sama lolos identitas T-108). Entry point modul: `python -m rotoscope.ingest <video>
+  [--work-dir DIR] [--config P] [--crop-dir DIR] [--start S] [--end E]` (tanpa `--crop-dir` = tanpa saran / kotak; cli selalu
+  memberinya). Exit code 0 / 1 (saran tidak membuat ingest gagal; yang berhenti dengan exit 4 hanya `run` penuh).
+- **Terukur (Tahap 3a, proses CLI penuh dengan deteksi pertama):** 2,2–21,0 s (klip7 664 frame); D1 sesudahnya ingest saja (klip11
+  0,5 s); ingest ber-crop Klip2 / klip5 0,6–0,9 s.
+- **Batas yang diketahui:** satu kotak per SUMBER (tata letak yang berubah di tengah klip tidak ditangani); letterbox satu sisi dan crop
+  per adegan di luar lingkup; R2 gagal pada kotak teks sebagian / noise kompresi di konten kerumunan (klip11: 74 baris tersisa →
+  petunjuk menandainya) dan bisa memotong berlebih pada rentang pendek berobjek gelap di kedua tepi (klip6, K3) — karena itu konfirmasi
+  wajib; petunjuk hanya di sisi yang dipotong saran (strip kanan satu sisi 4 px klip11 tidak ditandai).
 
 ### [1b] `isolate.py` — isolasi target, SAM 2.1 hiera tiny (GPU, proses sendiri, OPT-IN; T-605, D-011)
 - **Peran:** masker target per frame dari klik `pick` (T-604). Hanya MENGHASILKAN masker; pemakainya = **[3] langkah 1b** (T-606,
@@ -314,7 +367,7 @@ diukur saat implementasi.
   - **Klik kanan (bukan target) membantu:** klip3 dengan 4 klik kanan (titik T-602) dinilai Rio lebih baik daripada 16 klik kiri saja.
   - **Masker memotong per piksel:** lubang kecil (dekat tangan, celah lengan–badan) bisa menjadi garis palsu bila masker dipakai
     langsung per piksel — karena itu [3] memakai algoritma H (pilih komponen + isi lubang + lebar 4 px; T-606, D-012).
-  - Frame utuh tanpa crop letterbox (backlog); frame dibaca malas lewat atribut dalam `transformers` (`processed_frames`; versi di-pin
+  - Frame = frame kerja [1] (sejak T-607 sudah terpotong bila kotak crop diterima; pick ulang bila ukuran berubah); frame dibaca malas lewat atribut dalam `transformers` (`processed_frames`; versi di-pin
     5.17.0, test kontrak bobot asli di CPU `ROTOSCOPE_SAM_CPU_TESTS=1`); sesi per target menghitung ulang fitur gambar per target;
     VRAM ±2 MiB / frame / target dan RAM ±4,3 MiB / frame / target tumbuh selama satu sesi.
 
@@ -1148,6 +1201,11 @@ dengan aturan tetap)*:
 - **Identitas klip (T-108):** `stable/manifest.json` tanpa `clip` / milik klip lain → berhenti (jalankan ulang
   [3]; output basi dihitung ulang otomatis). Field `clip` manifest export memakai helper bersama
   `stage_common.clip_identity_from_bytes` (bentuk sama dengan sebelumnya).
+- **Trim (T-607):** `{source}` = `<stem>@S-E` untuk klip ber-trim (`clip_name(source_path, trim_label(meta["trim"]))`, fungsi yang sama
+  dengan folder kerja) → MP4, manifest, dan folder SVG per rentang (`klip5@0-3.833.mp4`, `out/svg/klip5@0-3.833/`). Klip tanpa trim:
+  nama tidak berubah — `out/` test, test_short, klip3, klip4 dibuktikan byte-identik dengan kode export baru (Tahap 4, export ke folder
+  scratch: MP4 + SVG identik, `.rotoscope-clip.json` hanya `created_utc`). Klip ber-crop: ukuran output mengikuti frame kerja baru
+  (rumus [5] tidak berubah; Klip2 412 × 720 → 1080 × 1888, klip5 720 × 668 → 1080 × 1002).
 - **Kertas bertekstur (T-404a, Opsi B; keputusan Rio):** `run_export(cfg, style=...)`, CLI `python -m rotoscope export <video> [--style PATH]` dan `run --style` (diteruskan ke stylize DAN export; `run` / `--preview` pre-flight memvalidasi `--style` dan, bila tekstur dipakai, gambar kertas ada + terdekode, sebelum stage mana pun / GPU). Source strokes: per frame baca PNG datar → `LevelMap` (invers LUT dari `paper.color` / `stroke.color` di `strokes/manifest.json` → `style_params`) → `compose_textured` di atas `render_paper` → encode (crf tetap 18). `paper.color` style harus = `paper.color` strokes (beda → StageError). Tanpa `style` (API) atau kertas datar → PNG apa adanya (MP4 byte-identik T-403). Manifest export: `paper` = `paper_ref(style)` (parameter kertas + `texture_sha256`; None bila datar; IKUT pencocokan basi → mengubah parameter kertas / isi berkas tekstur = MP4 di-encode ulang, strokes tetap), `paper_info` (ukuran, orientasi, fit, statistik; informasi). Salinan SVG tidak berubah. `--limit` / `--from` memakai jalur yang sama. Metrik kertas bertekstur (`tests/export_metrics.py`): mask tinta dari f pulih (`stylize_metrics.recover_f` dengan `render_paper(...).f32`), PSNR ≥ `PSNR_TEXTURED_MIN_DB` 39,8 (di antara crf 23 tertinggi 39,44 dan crf 18 terendah 40,19 pada kandidat op ≤ 0,5; aturan harfiah "min crf 18 − 1 dB" = 37,46 tidak membedakan crf 23), MAE tinta ≤ 4,2, selisih maks ≤ 90, bias kertas jauh dari tinta ≤ 3. Terukur (test_short frame 73–112, crf 18): ukuran vs datar ×1,10 (vignette) … ×1,72 (op 0,35 gain 1 + vig) … ×2,26 (gain 3) … ×3,09 (op 0,5 gain 6 / op 1,0 gain 3) … ×4,04 (op 1,0 gain 10) (opsi A, kertas di [5]; Opsi B menghasilkan MP4 setara karena frame sama ≤ 1 level — ukuran default: lihat docs/04 "Hasil T-404a").
 - **Tekstur garis DITOLAK (T-404b, keputusan Rio, docs/04 "Hasil T-404b"):** export [6] tidak punya tekstur garis; satu-satunya tekstur adalah kertas (T-404a). Jalur komposisi tetap `paper.compose_textured(img, levels, layer, ink)`; manifest export tidak punya blok `texture`; style yang memuat blok `texture:` ditolak saat load.
 - Terukur klip uji, silhouette (T-103; 283 frame, 480×854, crf 18): 2.4 s, 497.6 KiB (509 571 B).
@@ -1168,7 +1226,8 @@ dengan aturan tetap)*:
 - **In:** `meta.json` + `frames/frame_%05d.png`. `meta.json` belum ada → cli menjalankan [1] ingest dulu (argumen sama dengan
   `run`); sudah ada → `frames/` / `meta.json` tidak disentuh. **Out:** `target/points.json` (+ `target/points.prev.json` = isi
   sebelum simpan terakhir, cadangan satu tingkat); `--dry-run` → `target/pick_dryrun/frame_%05d.png` (kanvas yang akan tampil).
-- **CLI:** `python -m rotoscope pick <video> [--frame N] [--config P] [--dry-run]`; `--frame` = angka di `frame_%05d.png`
+- **CLI:** `python -m rotoscope pick <video> [--frame N] [--config P] [--start S --end E] [--dry-run]` (T-607: trim memilih folder
+  `<stem>@S-E`); `--frame` = angka di `frame_%05d.png`
   (default 0), harus di rentang klip. Satu sesi = satu frame; beberapa frame = beberapa sesi ke berkas yang sama. Exit 0
   (tersimpan / tanpa perubahan / dibatalkan / dry-run) | 1 (prasyarat: video, klip lain, ingest gagal, frame di luar klip / hilang,
   `points.json` rusak / milik klip lain / ukuran frame lain, jendela diskalakan sistem, OpenCV tanpa jendela, frame berubah selama
@@ -1216,7 +1275,8 @@ dengan aturan tetap)*:
   {0, 1}, koordinat bukan bilangan hingga / di luar frame, kotak bukan 4 angka / terbalik / di luar frame, `frame_index` / `id`
   ganda, id < 1, `frame_file` ≠ indeks, sidik bukan 64 hex, frame tanpa target, target tanpa titik dan tanpa kotak, target hanya
   klik kanan tanpa kotak); `clip.source_path` ≠ `meta.json` (klip lain); `frame_size` ≠ `meta.json` (semua titik basi → pindahkan
-  / hapus berkas). **Status per frame:** `ok` (sidik sama) | `basi` (sidik berbeda: isi frame berubah) | `hilang` (indeks di luar
+  / hapus berkas; T-607: pesan menyebut "frame berubah sejak diklik (ingest memakai crop / trim / ukuran kerja lain)" + saran ganti
+  nama ke `points.old.json` + perintah `pick` siap tempel; dipakai juga oleh [1b]). **Status per frame:** `ok` (sidik sama) | `basi` (sidik berbeda: isi frame berubah) | `hilang` (indeks di luar
   klip / berkas tidak terbaca). Frame ini basi → titik lama TIDAK dimuat (pesan di panel + terminal), simpan menggantinya; frame
   lain basi / hilang → peringatan + perintah pick ulang saat buka dan simpan (tidak dihapus diam-diam). `meta_sha256` berbeda saja =
   peringatan.
@@ -1233,9 +1293,61 @@ dengan aturan tetap)*:
   peringatan. Layar 1920 × 1080 skala 125% (aware, area kerja 1920 × 1020): frame 720 × 1280 → s 0,7531, gambar 542 × 964, kanvas
   942 × 964; 1 px tampilan ≈ 1,33 px frame. Konstanta UI (panel 400, tinggi min 600, cadangan 16 × 56, tarik 6 px, s maks 1, warna)
   = konstanta modul, BUKAN YAML (tidak memengaruhi keluaran pipeline; docs/02 tidak berubah).
-- **Batas yang diketahui:** tanpa zoom (tidak diperlukan; diputuskan Rio setelah uji 2026-10-17); tanpa crop letterbox (klip5 tampil utuh, s 0,75);
+- **Batas yang diketahui:** tanpa zoom (tidak diperlukan; diputuskan Rio setelah uji 2026-10-17); letterbox dibuang lewat [1] hanya bila
+  kotak crop diterima (T-607; klip5 asli sejak 2026-10-23 720 × 668);
   satu frame per sesi; panel di kanvas pendek (600 px) dengan sangat banyak target + pesan bisa terpotong di bawah (blok saran dibuang
   dulu); belum diuji di multi-monitor / skala Windows selain 125%; teks panel ASCII (font Hershey).
+
+### `crop.py` — saran + keputusan kotak crop (T-607, D-013; alat CLI `crop`, BUKAN stage, CPU)
+- **Peran:** deteksi pita letterbox / pillarbox + kotak teks meme (aturan **R2 beku**) → SARAN; kotak dipakai [1] ingest HANYA bila
+  diterima di sini (konfirmasi; tidak ada pemotongan otomatis). Modul juga dipakai ingest (deteksi, saran, pratinjau, `kotak.json`).
+- **Berkas per SUMBER video** di `<paths.work_dir>/crop/<nama>/` (di luar folder klip; dipakai bersama semua folder `<nama>@S-E`):
+
+  | berkas | format | ditulis oleh | isi |
+  |---|---|---|---|
+  | `deteksi.json` | `rotoscope-crop-deteksi/1` | ingest | kunci D1 + hasil (`pita_terdeteksi`, `box_work`, `n_frames`), juga "tanpa pita"; ditulis TERAKHIR (valid ⇒ saran + pratinjau lengkap) |
+  | `saran.json` | `rotoscope-crop-saran/1` | ingest | kotak kerja (inklusif) + kotak sumber `[x, y, w, h]`, `band_px` / `overlay_px` / `cut_px` per sisi, sidik R2, `hints`; HANYA bila pita terdeteksi |
+  | `pratinjau/` | `rotoscope-crop-pratinjau/1` | ingest / `crop --box` | `1_awal_fNNNNN.png`, `2_tengah_…`, `3_akhir_…` + `pratinjau.json` (kotak, frame, sha256) |
+  | `kotak.json` | `rotoscope-crop-kotak/1` | HANYA alat `crop` | keputusan `saran` \| `manual` \| `none` + identitas sumber; isi lama → `kotak.prev.json` |
+
+  **Identitas sumber** = `{sha256 byte, bytes, width, height}` (sesudah rotasi) + `path` sebagai info (TIDAK dicek: video yang dipindah
+  tetap cocok). `kotak.json` / saran milik sumber lain → tidak dipakai (ingest exit 1 untuk `kotak.json`).
+- **Aturan R2 (beku, docs/04 "R2 DIBEKUKAN"):** statistik temporal per piksel pada rentang penuh sumber (rata-rata + simpangan baku,
+  BGR) → kupas pita statis (≥ `static_line_frac` 0,99 piksel dengan sd ≤ `static_std_max` 3,0) + seragam (`uniform_std_max` 6,0) dari
+  tepi; pita sah hanya BERPASANGAN (atas + bawah, atau kiri + kanan) dan masing-masing ≥ `band_min_px` 8; kotak teks (baris statis tak
+  seragam) hanya di atas / bawah dan hanya bila menempel pada pita; area aktif < `min_active_frac` 0,10 → tanpa potong. Sidik
+  `d40c3dfd…` (sha256 JSON kanonik aturan + parameter); parameter lain → PERINGATAN dan `--accept` ditolak.
+- **Pembulatan ke sumber:** kotak kerja inklusif → sumber `[x, y, w, h]`: awal floor, akhir ceil, lalu genap (yuv420) dan di-clamp ke
+  frame = KE LUAR (`outward-even`): konten tidak pernah terpotong, sisa tepi tipis dibiarkan (Klip2 3 kolom gelap + 1 peralihan per sisi,
+  klip5 4 baris hampir putih + 2 gelap; dinilai Rio di K6).
+- **Petunjuk (informasi; kotak tidak diubah):** baris / kolom di DALAM kotak, dari garis potong ke dalam, yang ≥
+  `ingest.crop.preview.hint_static_frac` (0,95) diam — hanya di sisi yang DIPOTONG saran. Diarsir oranye di pratinjau + disebut di
+  pesan, dengan perintah `crop <video> --box X Y W H` siap tempel untuk kotak tanpa baris itu. Tidak dicetak bila kotak alternatif <
+  `min_active_frac` frame, atau (keputusan Rio 2026-10-23) bila sesudah pembulatan keluar + genap kotak alternatif = kotak saran
+  ("tidak ada perintah lain"; petunjuk tetap ditandai). Contoh klip11: atas 74 baris (388–461) → `--box 0 462 720 594`; Klip2: kanan 1
+  kolom (474) → `--box 434 0 410 720` (≠ saran 412: 2 kolom sumber lagi).
+- **Pratinjau:** 3 frame kerja rentang penuh (awal / tengah / akhir), resolusi kerja, satu PNG per frame: asli + kotak magenta | zoom kiri
+  | zoom kanan | zoom atas + bawah (bila dipotong atas / bawah) | hasil potong; zoom 48 px × 4 berpusat di garis potong (48 px terluar bila
+  sisi itu tidak dipotong); header ASCII (frame, kotak kerja + sumber, pita / kotak teks per sisi, petunjuk). Konstanta tata letak di
+  modul (preseden `pick`), bukan YAML. `crop --box` menulis pratinjau kotak manual (jenis `manual`).
+- **CLI:** `python -m rotoscope crop <video> [--accept | --box X Y W H | --none | --clear] [--config P]` (satu aksi; `--config` untuk
+  `paths.work_dir` + parameter R2):
+  - tanpa aksi = **status**: identitas sumber, saran (pesan yang sama dengan ingest), `kotak.json` (atau "belum diputuskan" / "MILIK
+    SUMBER LAIN"), dan per folder klip sumber ini ukuran frame + apakah `meta.json`-nya sudah ber-crop;
+  - `--accept` → `kotak.json` `mode: saran`. Ditolak (exit 1) bila tidak ada saran untuk sumber ini (perintah `ingest` siap tempel) atau
+    sidik saran ≠ R2 beku;
+  - `--box X Y W H` (px SUMBER sesudah rotasi) → dibulatkan keluar + genap, divalidasi (di dalam frame, ≥ 16 × 16, ≠ frame penuh → pakai
+    `--none`) → `mode: manual` (`box_requested` + `box_source`) + pratinjau kotak itu;
+  - `--none` → `mode: none` (saran ditolak; `meta.json` tanpa key `crop`, byte-identik dengan klip tanpa kotak; `run` tidak berhenti);
+  - `--clear` → `kotak.json` dipindah ke `kotak.prev.json` (ingest berikutnya tanpa potong; saran masih ada → `run` berhenti lagi).
+  - Sesudah `--accept` / `--box` / `--none` / `--clear`: satu perintah per folder klip sumber ini yang sudah di-ingest:
+    `python -m rotoscope run <video> [--start S --end E] --restart-from ingest --yes` (MENJALANKAN GPU) + catatan titik `pick` basi bila
+    ukuran frame berubah; belum ada folder → satu perintah `run <video>` biasa. `--start` / `--end` ditolak (exit 2). Exit 0 / 1 / 2.
+- **Terukur (Tahap 3a):** deteksi (pipa rentang penuh) 9,5–12,8 ms / frame di 720 × 406, 26–31 ms / frame di 720 × 1280; pratinjau
+  0,55–2,2 MB per PNG; berkas JSON < 4 KB. Kotak diterima Klip2 (412 × 720) dan klip5 (720 × 668) = frame P-src studi Tahap 1a
+  byte-identik.
+- **Batas yang diketahui:** lihat [1] (satu kotak per sumber; R2 bisa salah → konfirmasi wajib; validasi buta K2' klip11 tidak lagi buta);
+  UI tarik kotak (seperti `pick`) = backlog docs/05.
 
 ### Anggaran disk per klip (360 frame, *est.*)
 
@@ -1305,16 +1417,17 @@ rotoscope/
 │   ├── stabilize.py  vectorize.py  stylize.py  export.py
 │   ├── config.py  cli.py  __main__.py   # python -m rotoscope (T-104b)
 │   ├── pick.py           # `pick` (T-604): jendela klik target → <klip>/target/points.json (bukan stage)
+│   ├── crop.py           # [1] saran crop R2 beku + alat `crop` (T-607): <work_dir>/crop/<nama>/kotak.json (bukan stage)
 │   ├── stage_common.py   # helper bersama stage: tulis atomik + retry, frames.jsonl, daftar frame,
 │   │                     # error/exit code; khusus GPU: offline/revision/cache HF, VRAM, OOM (T-105)
 │   └── data/sapiens2_classes.json   # nama 29 kelas (data paket)
 ├── configs/
-│   ├── default.yaml       # paths, style, isolate, segment, depth, qc, groups, stabilize, vectorize, export
+│   ├── default.yaml       # paths, style, ingest, isolate, segment, depth, qc, groups, stabilize, vectorize, export
 │   └── styles/rough-sketch.yaml
 ├── assets/        # brushes/, paper/
 ├── scripts/       # smoke_test.py, alat sekali pakai (A/B, T-102c)
 ├── samples/       # video test (tidak di-commit)
-├── work/          # intermediate (paths.work_dir), gitignored; klip di work/clips/<nama video>/
+├── work/          # intermediate (paths.work_dir), gitignored; klip di work/clips/<nama video>[@S-E]/, crop di work/crop/<nama>/
 ├── out/           # hasil (paths.out_dir), gitignored
 └── tests/
 ```

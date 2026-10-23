@@ -65,8 +65,8 @@ from rotoscope.ingest import FRAME_PATTERN, FRAMES_DIRNAME
 from rotoscope.stage_common import (
     CLIP_KEY, COMMIT_HASH_RE, DOWNLOAD_REVISION_FALLBACK, EXIT_OK, EXIT_OOM, EXIT_PRECONDITION, MIB, REPLACE_DELAY_S,
     REPLACE_RETRIES, BackendOOM, StageError, StageOOMError, add_work_dir_arg, cached_file, cli_cmd, clip_identity,
-    ensure_cached, hf_offline_active, is_oom, load_frame_list, read_rgb, reconfigure_stdio, require_frames, set_offline,
-    utc_now, vram_state, work_dir_overrides, write_bytes_atomic, write_json_atomic,
+    ensure_cached, hf_offline_active, is_oom, load_frame_list, read_rgb, reconfigure_stdio, require_frames, set_message_config,
+    set_offline, utc_now, vram_state, work_dir_overrides, write_bytes_atomic, write_json_atomic,
 )
 
 EXIT_INTERRUPTED = 130
@@ -456,9 +456,10 @@ def load_valid_points(clip: Clip, per_frame_sha: Mapping[int, str]) -> dict:
     """points.json valid untuk klip + frame SEKARANG; galat = StageError dengan perintah perbaikan."""
     try:
         doc = pick.load_points(clip.points_path)
-        pick.check_doc_matches_clip(doc, clip_identity(clip.work_dir), clip.width, clip.height, clip.points_path)
+        pick.check_doc_matches_clip(doc, clip_identity(clip.work_dir), clip.width, clip.height, clip.points_path,
+                                    cli_cmd("pick", clip.work_dir))
     except pick.PointsError as e:
-        raise StageError(f"{e} — perbaiki dengan python -m rotoscope pick <video>, atau pindahkan berkas itu bila isolasi "
+        raise StageError(f"{e} — perbaiki dengan {cli_cmd('pick', clip.work_dir)}, atau pindahkan berkas itu bila isolasi "
                          f"tidak dipakai") from None
     except pick.PickError as e:
         raise StageError(str(e)) from None
@@ -474,7 +475,8 @@ def load_valid_points(clip: Clip, per_frame_sha: Mapping[int, str]) -> dict:
         frames = sorted(bad)
         raise StageError(
             f"titik frame {', '.join(map(str, frames))} tidak bisa dipakai ({', '.join(f'f{f}: {s}' for f, s in sorted(bad.items()))}"
-            f"; basi = isi frame berubah sejak diklik, mis. ingest diulang; hilang = di luar klip / tidak terbaca). "
+            f"; basi = isi frame berubah sejak diklik (mis. ingest diulang dengan crop / trim / video lain); hilang = di luar klip / "
+            f"tidak terbaca). "
             f"Pick ulang: {video} --frame {frames[0]}" + (f" (lalu {', '.join(f'--frame {f}' for f in frames[1:])})"
                                                         if len(frames) > 1 else "")
             + f", atau pindahkan {clip.points_path} bila isolasi tidak dipakai. Tidak ada yang dihitung.")
@@ -904,7 +906,7 @@ def run_isolate(cfg: PipelineConfig, *, yes: bool = False, restart: bool = False
         raise StageError(
             f"[1b] isolate butuh GPU ({why}" + (f": {'; '.join(reasons[:4])}" if reasons else "") + f") — {n_gpu} frame × "
             f"≈ {SECONDS_PER_FRAME_ESTIMATE} s ≈ {est / 60:.1f} mnt. Tidak ada yang dihitung / dihapus. Jalankan ulang dengan "
-            f"--yes: {stage_cmd(clip.work_dir)} --yes (atau run <video> --yes). Rencana: "
+            f"--yes: {stage_cmd(clip.work_dir)} --yes (atau {cli_cmd('run', clip.work_dir)} --yes). Rencana: "
             f"{stage_cmd(clip.work_dir)} --dry-run")
     if state == "basi":
         log(f"PERINGATAN: isolate/ basi — dihitung ulang seluruh klip:\n  " + "\n  ".join(reasons))
@@ -1068,6 +1070,7 @@ def main(argv: list[str] | None = None, backend_factory: BackendFactory | None =
     p.add_argument("--dry-run", action="store_true", help="tampilkan status + adegan + job + perkiraan; tanpa GPU / tulis")
     p.add_argument("--download", action="store_true", help="unduh SAM 2.1 tiny + model card (online) lalu keluar")
     args = p.parse_args(argv)
+    set_message_config(args.config)          # T-607: --config non-default ikut di perintah siap tempel
     reconfigure_stdio()
 
     def log(msg: str) -> None:

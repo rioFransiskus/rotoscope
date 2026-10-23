@@ -35,6 +35,7 @@ REPLACE_DELAY_S = 0.2
 EXIT_OK = 0
 EXIT_PRECONDITION = 1
 EXIT_OOM = 3
+EXIT_CROP_DECISION = 4          # T-607: `run` berhenti sesudah [1] — saran crop belum diputuskan (crop --accept / --box / --none)
 
 MIB = 2**20
 
@@ -169,9 +170,10 @@ def identity_diff(old: dict | None, new: dict) -> list[str]:
     return out
 
 
-def require_same_clip(manifest: dict, current: dict, *, stage: str, out_dir: Path, cmd: str) -> None:
+def require_same_clip(manifest: dict, current: dict, *, stage: str, out_dir: Path, cmd: str, run_cmd: str | None = None) -> None:
     """Tolak output stage GPU milik klip lain / tanpa identitas (stage [2]/[2c]; --qc-only juga).
-    `cmd` = perintah CLI stage (cli_cmd), mis. 'python -m rotoscope segment "C:/clips/a.mp4"'."""
+    `cmd` = perintah CLI stage (cli_cmd), mis. 'python -m rotoscope segment "C:/clips/a.mp4"'. `run_cmd` (T-607) = perintah
+    `run … --restart-from ingest --yes` untuk klip yang ingest-nya berubah (crop / trim / video lain)."""
     old = manifest.get(CLIP_KEY)
     if not isinstance(old, dict) or not old.get("meta_sha256"):
         raise StageError(
@@ -185,7 +187,9 @@ def require_same_clip(manifest: dict, current: dict, *, stage: str, out_dir: Pat
             f"  klip lama (output): {describe_identity(old)}\n"
             f"  klip baru (meta.json): {describe_identity(current)}\n"
             f"Satu-satunya jalan: {cmd} --restart --yes (menghapus output lama). --adopt tidak berlaku untuk "
-            f"identitas berbeda.")
+            f"identitas berbeda."
+            + (f"\nBila ingest klip ini berubah (crop / trim / video lain), hitung ulang SEMUA stage: {run_cmd} "
+               f"(MENJALANKAN GPU)" if run_cmd else ""))
 
 
 def adopt_identity(*, stage: str, manifest_path: Path, frames_log: Path, work_dir: Path, size: dict,
@@ -333,17 +337,71 @@ CLI_PROG = "python -m rotoscope"
 VIDEO_PLACEHOLDER = "<video>"
 
 
+def quote_arg(arg: str | Path) -> str:
+    return f'"{arg}"' if " " in str(arg) else str(arg)
+
+
+def trim_flags(work_dir: Path | None) -> str:
+    """T-607: ` --start S [--end E]` dari key `trim` <work_dir>/meta.json (detik kanonik, sama dengan nama folder <nama>@S-E),
+    supaya perintah yang disarankan menuju folder yang sama; klip tanpa trim / meta tak terbaca → ''."""
+    if work_dir is None:
+        return ""
+    try:
+        trim = json.loads((Path(work_dir) / META_FILENAME).read_text(encoding="utf-8")).get("trim")
+        if not isinstance(trim, dict):
+            return ""
+        out = f" --start {seconds_label(trim['start_s'])}"
+        return out + (f" --end {seconds_label(trim['end_s'])}" if trim.get("end_s") is not None else "")
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return ""
+
+
+def seconds_label(v: float) -> str:
+    """Detik kanonik (sudah dibulatkan ke milidetik) tanpa nol di belakang: 0.0 → '0', 3.833 → '3.833', 2.5 → '2.5'."""
+    return f"{float(v):.3f}".rstrip("0").rstrip(".")
+
+
+TRIM_SEP = "@"
+TRIM_END_LABEL = "end"
+
+
+def trim_label(trim: dict | None) -> str | None:
+    """Key `trim` meta.json (atau `ingest.make_trim`) → 'S-E' / 'S-end' untuk nama folder kerja, export, dan folder SVG
+    (`<nama>@S-E`, T-607); None = tanpa trim. SATU fungsi untuk semua tempat."""
+    if not trim:
+        return None
+    end = trim.get("end_s")
+    return f"{seconds_label(trim['start_s'])}-{seconds_label(end) if end is not None else TRIM_END_LABEL}"
+
+
+MESSAGE_DEFAULT_CONFIG = Path("configs") / "default.yaml"
+_message_config: Path | None = None             # --config non-default proses ini (T-607): ikut di setiap perintah siap tempel
+
+
+def set_message_config(path: str | Path | None) -> None:
+    """Dipanggil cli + main() setiap stage dengan `--config` yang dipakai: None / config default (configs/default.yaml) → tidak dicetak;
+    selain itu perintah yang dicetak untuk ditempel (cli_cmd, pesan crop / pick / exit 4) membawa `--config <path absolut>`."""
+    global _message_config
+    p = Path(path).resolve() if path is not None else None
+    _message_config = None if p is None or p == MESSAGE_DEFAULT_CONFIG.resolve() else p
+
+
+def config_flag() -> str:
+    return f" --config {quote_arg(_message_config)}" if _message_config is not None else ""
+
+
 def cli_cmd(stage: str, work_dir: Path | None = None) -> str:
-    """Perintah CLI final untuk satu stage, dipakai di pesan error: `python -m rotoscope <stage> "<video>"`.
-    Path video dibaca dari <work_dir>/meta.json; tidak terbaca → `<video>`."""
+    """Perintah CLI final siap tempel untuk satu stage, dipakai di pesan error: `python -m rotoscope <stage> "<video>"
+    [--start S --end E] [--config P]`. Path video dibaca dari <work_dir>/meta.json; tidak terbaca → `<video>`. Klip ber-trim
+    (T-607) → flag trim ikut; `--config` non-default yang dipakai proses ini (set_message_config) → ikut."""
     video = VIDEO_PLACEHOLDER
     if work_dir is not None:
         try:
             src = json.loads((Path(work_dir) / META_FILENAME).read_text(encoding="utf-8"))["source_path"]
-            video = f'"{src}"' if " " in str(src) else str(src)
+            video = quote_arg(src)
         except (OSError, ValueError, KeyError, TypeError):
             pass
-    return f"{CLI_PROG} {stage} {video}"
+    return f"{CLI_PROG} {stage} {video}{trim_flags(work_dir)}{config_flag()}"
 
 
 def add_work_dir_arg(parser) -> None:

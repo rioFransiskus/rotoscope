@@ -44,7 +44,7 @@ from rotoscope import vectorize as vz
 from rotoscope.config import ConfigError, StyleConfig, ensure_dir, load_pipeline, load_style, resolve_style, style_name
 from rotoscope.stage_common import (
     CLIP_KEY, EXIT_OK, EXIT_PRECONDITION, StageError, add_work_dir_arg, append_jsonl, clean_tmp, cli_cmd,
-    clip_identity, describe_identity, reconfigure_stdio, utc_now, window_bounds, work_dir_overrides,
+    clip_identity, describe_identity, reconfigure_stdio, set_message_config, utc_now, window_bounds, work_dir_overrides,
     write_bytes_atomic, write_json_atomic,
 )
 
@@ -1241,7 +1241,7 @@ def run_stylize(cfg, style: StyleConfig, style_name: str = "default", *, restart
                 n_old = sum(1 for _ in clip.strokes_dir.glob("frame_*" + PNG_SUFFIX))
                 log(f"PERINGATAN: output [5] basi (setelan / input berubah):\n  " + "\n  ".join(stale) +
                     f"\n  strokes/ DIHAPUS seluruhnya ({n_old} frame), hanya jendela {lo}-{hi - 1} yang dihitung; "
-                    f"MP4 utama dan out/svg/ tetap versi lama sampai `run <video>` penuh berikutnya "
+                    f"MP4 utama dan out/svg/ tetap versi lama sampai `{cli_cmd('run', clip.work_dir)}` penuh berikutnya "
                     f"(export penuh sebelum itu gagal: jalankan {cli_cmd('stylize', clip.work_dir)})")
             restart_outputs(clip)
     elif _has_outputs(clip):
@@ -1301,6 +1301,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--from", dest="start", type=int, default=None,
                    help="jendela mulai frame K: frame K..K+N-1; WAJIB bersama --limit N")
     args = p.parse_args(argv)
+    set_message_config(args.config)          # T-607: --config non-default ikut di perintah siap tempel
     reconfigure_stdio()
 
     def log(msg: str) -> None:

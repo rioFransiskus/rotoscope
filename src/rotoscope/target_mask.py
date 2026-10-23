@@ -137,7 +137,7 @@ class MaskSet:
             label = cv2.imdecode(np.fromfile(path, np.uint8), cv2.IMREAD_UNCHANGED) if path.is_file() else None
             if label is None or label.dtype != np.uint8 or label.shape != fg.shape:
                 raise StageError(f"isolate/labels/{path.name} hilang / rusak padahal manifest [1b] berlaku — jalankan "
-                                 f"ulang [1b]: python -m rotoscope isolate <video> --yes --restart")
+                                 f"ulang [1b]: {cli_cmd('isolate', self.labels_dir.parents[1])} --yes --restart")
             keep, info = apply_h(fg, label != 0, self.params)
             remove = fg & ~keep
         to_background(sums, tie, remove)
