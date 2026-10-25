@@ -1,0 +1,545 @@
+{
+ "clip": "klip5",
+ "frames": 133,
+ "fps": 24,
+ "qc_fail_frames": [
+  0,
+  6,
+  7,
+  9,
+  10,
+  14,
+  15,
+  16,
+  47,
+  54,
+  55,
+  56,
+  57,
+  58,
+  59,
+  64,
+  103,
+  104
+ ],
+ "cut_frames": [
+  22,
+  60,
+  61,
+  62,
+  63,
+  64,
+  65,
+  66,
+  67,
+  68,
+  72,
+  73,
+  74,
+  88,
+  89,
+  90,
+  91,
+  92,
+  93,
+  94,
+  95,
+  96,
+  97,
+  98,
+  99,
+  100,
+  101,
+  102,
+  103,
+  104,
+  106,
+  108
+ ],
+ "zoom_range_frames": [
+  63,
+  77
+ ],
+ "variants": {
+  "b0": {
+   "t_high": 0.017511876299977303,
+   "t_low": 0.007988499477505684,
+   "frame_fg_iou_min": {
+    "frame": 54,
+    "detik": 2.25,
+    "fg_iou": 0.4225,
+    "group_iou_min": 0.0,
+    "qc_gagal": true,
+    "jarak_cut_frame": 6,
+    "zoom": false
+   },
+   "frame_fg_iou_terburuk3": [
+    {
+     "frame": 54,
+     "detik": 2.25,
+     "fg_iou": 0.4225,
+     "group_iou_min": 0.0,
+     "qc_gagal": true,
+     "jarak_cut_frame": 6,
+     "zoom": false
+    },
+    {
+     "frame": 55,
+     "detik": 2.29,
+     "fg_iou": 0.7263,
+     "group_iou_min": 0.4967,
+     "qc_gagal": true,
+     "jarak_cut_frame": 5,
+     "zoom": false
+    },
+    {
+     "frame": 10,
+     "detik": 0.42,
+     "fg_iou": 0.7771,
+     "group_iou_min": 0.0,
+     "qc_gagal": true,
+     "jarak_cut_frame": 12,
+     "zoom": false
+    }
+   ],
+   "frame_group_iou_min": {
+    "frame": 6,
+    "detik": 0.25,
+    "fg_iou": 0.8141,
+    "group_iou_min": 0.0,
+    "qc_gagal": true,
+    "jarak_cut_frame": 16,
+    "zoom": false
+   },
+   "frame_group_iou_terburuk3": [
+    {
+     "frame": 6,
+     "detik": 0.25,
+     "fg_iou": 0.8141,
+     "group_iou_min": 0.0,
+     "qc_gagal": true,
+     "jarak_cut_frame": 16,
+     "zoom": false
+    },
+    {
+     "frame": 7,
+     "detik": 0.29,
+     "fg_iou": 0.8764,
+     "group_iou_min": 0.0,
+     "qc_gagal": true,
+     "jarak_cut_frame": 15,
+     "zoom": false
+    },
+    {
+     "frame": 8,
+     "detik": 0.33,
+     "fg_iou": 0.9629,
+     "group_iou_min": 0.0,
+     "qc_gagal": false,
+     "jarak_cut_frame": 14,
+     "zoom": false
+    }
+   ],
+   "fidelity_all": {
+    "fg_iou_min": 0.4225,
+    "group_iou_min": 0.0
+   },
+   "fidelity_tanpa_qc": {
+    "frames": 115,
+    "fg_iou_min": 0.888,
+    "group_iou_min": 0.0,
+    "fg_iou_median": 0.9966,
+    "group_iou_median": 0.9085
+   }
+  },
+  "b0.3": {
+   "t_high": 0.017522085737437007,
+   "t_low": 0.007997132651507859,
+   "frame_fg_iou_min": {
+    "frame": 54,
+    "detik": 2.25,
+    "fg_iou": 0.6477,
+    "group_iou_min": 0.5998,
+    "qc_gagal": true,
+    "jarak_cut_frame": 6,
+    "zoom": false
+   },
+   "frame_fg_iou_terburuk3": [
+    {
+     "frame": 54,
+     "detik": 2.25,
+     "fg_iou": 0.6477,
+     "group_iou_min": 0.5998,
+     "qc_gagal": true,
+     "jarak_cut_frame": 6,
+     "zoom": false
+    },
+    {
+     "frame": 55,
+     "detik": 2.29,
+     "fg_iou": 0.8318,
+     "group_iou_min": 0.6343,
+     "qc_gagal": true,
+     "jarak_cut_frame": 5,
+     "zoom": false
+    },
+    {
+     "frame": 47,
+     "detik": 1.96,
+     "fg_iou": 0.8479,
+     "group_iou_min": 0.8308,
+     "qc_gagal": true,
+     "jarak_cut_frame": 13,
+     "zoom": false
+    }
+   ],
+   "frame_group_iou_min": {
+    "frame": 6,
+    "detik": 0.25,
+    "fg_iou": 0.8779,
+    "group_iou_min": 0.0,
+    "qc_gagal": true,
+    "jarak_cut_frame": 16,
+    "zoom": false
+   },
+   "frame_group_iou_terburuk3": [
+    {
+     "frame": 6,
+     "detik": 0.25,
+     "fg_iou": 0.8779,
+     "group_iou_min": 0.0,
+     "qc_gagal": true,
+     "jarak_cut_frame": 16,
+     "zoom": false
+    },
+    {
+     "frame": 7,
+     "detik": 0.29,
+     "fg_iou": 0.9174,
+     "group_iou_min": 0.0,
+     "qc_gagal": true,
+     "jarak_cut_frame": 15,
+     "zoom": false
+    },
+    {
+     "frame": 8,
+     "detik": 0.33,
+     "fg_iou": 0.9634,
+     "group_iou_min": 0.0,
+     "qc_gagal": false,
+     "jarak_cut_frame": 14,
+     "zoom": false
+    }
+   ],
+   "fidelity_all": {
+    "fg_iou_min": 0.6477,
+    "group_iou_min": 0.0
+   },
+   "fidelity_tanpa_qc": {
+    "frames": 115,
+    "fg_iou_min": 0.9239,
+    "group_iou_min": 0.0,
+    "fg_iou_median": 0.9976,
+    "group_iou_median": 0.9237
+   }
+  },
+  "b0.6": {
+   "t_high": 0.01752506829798222,
+   "t_low": 0.007998508028686048,
+   "frame_fg_iou_min": {
+    "frame": 54,
+    "detik": 2.25,
+    "fg_iou": 0.8747,
+    "group_iou_min": 0.8598,
+    "qc_gagal": true,
+    "jarak_cut_frame": 6,
+    "zoom": false
+   },
+   "frame_fg_iou_terburuk3": [
+    {
+     "frame": 54,
+     "detik": 2.25,
+     "fg_iou": 0.8747,
+     "group_iou_min": 0.8598,
+     "qc_gagal": true,
+     "jarak_cut_frame": 6,
+     "zoom": false
+    },
+    {
+     "frame": 47,
+     "detik": 1.96,
+     "fg_iou": 0.9122,
+     "group_iou_min": 0.9028,
+     "qc_gagal": true,
+     "jarak_cut_frame": 13,
+     "zoom": false
+    },
+    {
+     "frame": 14,
+     "detik": 0.58,
+     "fg_iou": 0.9184,
+     "group_iou_min": 0.5195,
+     "qc_gagal": true,
+     "jarak_cut_frame": 8,
+     "zoom": false
+    }
+   ],
+   "frame_group_iou_min": {
+    "frame": 6,
+    "detik": 0.25,
+    "fg_iou": 0.9316,
+    "group_iou_min": 0.0,
+    "qc_gagal": true,
+    "jarak_cut_frame": 16,
+    "zoom": false
+   },
+   "frame_group_iou_terburuk3": [
+    {
+     "frame": 6,
+     "detik": 0.25,
+     "fg_iou": 0.9316,
+     "group_iou_min": 0.0,
+     "qc_gagal": true,
+     "jarak_cut_frame": 16,
+     "zoom": false
+    },
+    {
+     "frame": 8,
+     "detik": 0.33,
+     "fg_iou": 0.964,
+     "group_iou_min": 0.0,
+     "qc_gagal": false,
+     "jarak_cut_frame": 14,
+     "zoom": false
+    },
+    {
+     "frame": 9,
+     "detik": 0.38,
+     "fg_iou": 0.9433,
+     "group_iou_min": 0.0,
+     "qc_gagal": true,
+     "jarak_cut_frame": 13,
+     "zoom": false
+    }
+   ],
+   "fidelity_all": {
+    "fg_iou_min": 0.8747,
+    "group_iou_min": 0.0
+   },
+   "fidelity_tanpa_qc": {
+    "frames": 115,
+    "fg_iou_min": 0.9546,
+    "group_iou_min": 0.0,
+    "fg_iou_median": 0.9984,
+    "group_iou_median": 0.9466
+   }
+  },
+  "b1.0": {
+   "t_high": 0.017497960664331916,
+   "t_low": 0.00799252847209573,
+   "frame_fg_iou_min": {
+    "frame": 14,
+    "detik": 0.58,
+    "fg_iou": 0.9611,
+    "group_iou_min": 0.8434,
+    "qc_gagal": true,
+    "jarak_cut_frame": 8,
+    "zoom": false
+   },
+   "frame_fg_iou_terburuk3": [
+    {
+     "frame": 14,
+     "detik": 0.58,
+     "fg_iou": 0.9611,
+     "group_iou_min": 0.8434,
+     "qc_gagal": true,
+     "jarak_cut_frame": 8,
+     "zoom": false
+    },
+    {
+     "frame": 15,
+     "detik": 0.62,
+     "fg_iou": 0.9616,
+     "group_iou_min": 0.8468,
+     "qc_gagal": true,
+     "jarak_cut_frame": 7,
+     "zoom": false
+    },
+    {
+     "frame": 10,
+     "detik": 0.42,
+     "fg_iou": 0.9619,
+     "group_iou_min": 0.0,
+     "qc_gagal": true,
+     "jarak_cut_frame": 12,
+     "zoom": false
+    }
+   ],
+   "frame_group_iou_min": {
+    "frame": 6,
+    "detik": 0.25,
+    "fg_iou": 0.9731,
+    "group_iou_min": 0.0,
+    "qc_gagal": true,
+    "jarak_cut_frame": 16,
+    "zoom": false
+   },
+   "frame_group_iou_terburuk3": [
+    {
+     "frame": 6,
+     "detik": 0.25,
+     "fg_iou": 0.9731,
+     "group_iou_min": 0.0,
+     "qc_gagal": true,
+     "jarak_cut_frame": 16,
+     "zoom": false
+    },
+    {
+     "frame": 7,
+     "detik": 0.29,
+     "fg_iou": 0.9715,
+     "group_iou_min": 0.0,
+     "qc_gagal": true,
+     "jarak_cut_frame": 15,
+     "zoom": false
+    },
+    {
+     "frame": 9,
+     "detik": 0.38,
+     "fg_iou": 0.9715,
+     "group_iou_min": 0.0,
+     "qc_gagal": true,
+     "jarak_cut_frame": 13,
+     "zoom": false
+    }
+   ],
+   "fidelity_all": {
+    "fg_iou_min": 0.9611,
+    "group_iou_min": 0.0
+   },
+   "fidelity_tanpa_qc": {
+    "frames": 115,
+    "fg_iou_min": 0.9648,
+    "group_iou_min": 0.0,
+    "fg_iou_median": 0.9992,
+    "group_iou_median": 0.9708
+   }
+  },
+  "bs": {
+   "t_high": 0.017501583322882652,
+   "t_low": 0.007987071759998798,
+   "frame_fg_iou_min": {
+    "frame": 54,
+    "detik": 2.25,
+    "fg_iou": 0.4225,
+    "group_iou_min": 0.0,
+    "qc_gagal": true,
+    "jarak_cut_frame": 6,
+    "zoom": false
+   },
+   "frame_fg_iou_terburuk3": [
+    {
+     "frame": 54,
+     "detik": 2.25,
+     "fg_iou": 0.4225,
+     "group_iou_min": 0.0,
+     "qc_gagal": true,
+     "jarak_cut_frame": 6,
+     "zoom": false
+    },
+    {
+     "frame": 55,
+     "detik": 2.29,
+     "fg_iou": 0.7263,
+     "group_iou_min": 0.4967,
+     "qc_gagal": true,
+     "jarak_cut_frame": 5,
+     "zoom": false
+    },
+    {
+     "frame": 10,
+     "detik": 0.42,
+     "fg_iou": 0.7771,
+     "group_iou_min": 0.0,
+     "qc_gagal": true,
+     "jarak_cut_frame": 12,
+     "zoom": false
+    }
+   ],
+   "frame_group_iou_min": {
+    "frame": 6,
+    "detik": 0.25,
+    "fg_iou": 0.8141,
+    "group_iou_min": 0.0,
+    "qc_gagal": true,
+    "jarak_cut_frame": 16,
+    "zoom": false
+   },
+   "frame_group_iou_terburuk3": [
+    {
+     "frame": 6,
+     "detik": 0.25,
+     "fg_iou": 0.8141,
+     "group_iou_min": 0.0,
+     "qc_gagal": true,
+     "jarak_cut_frame": 16,
+     "zoom": false
+    },
+    {
+     "frame": 7,
+     "detik": 0.29,
+     "fg_iou": 0.8764,
+     "group_iou_min": 0.0,
+     "qc_gagal": true,
+     "jarak_cut_frame": 15,
+     "zoom": false
+    },
+    {
+     "frame": 8,
+     "detik": 0.33,
+     "fg_iou": 0.9634,
+     "group_iou_min": 0.0,
+     "qc_gagal": false,
+     "jarak_cut_frame": 14,
+     "zoom": false
+    }
+   ],
+   "fidelity_all": {
+    "fg_iou_min": 0.4225,
+    "group_iou_min": 0.0
+   },
+   "fidelity_tanpa_qc": {
+    "frames": 115,
+    "fg_iou_min": 0.9239,
+    "group_iou_min": 0.0,
+    "fg_iou_median": 0.9976,
+    "group_iou_median": 0.9237
+   }
+  }
+ },
+ "uji_hipotesis_ambang": {
+  "bs": {
+   "vs": "b0.3",
+   "t_high_sama": false,
+   "frames_strokes_berubah": 51,
+   "strok_selisih_total_geometri": 1481,
+   "frames_hanya_occlusion": 26,
+   "frames_tanpa_occlusion": 12,
+   "frames_strok_berubah_peta_sama": 35,
+   "contoh_frames_peta_sama": [
+    1,
+    8,
+    11,
+    12,
+    13,
+    17,
+    18,
+    19,
+    20,
+    27,
+    34,
+    35
+   ]
+  }
+ }
+}

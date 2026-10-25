@@ -5439,6 +5439,132 @@ ditulis lebih dulu; lalu `T607-prompt.md` + `work/t607_scratch/` (10 folder, ±4
    (`tahap4.json`, log, `t607_data.json`, F1) ditulis skrip yang dijalankan. Tanpa commit.
 6. Komentar Rio klip5 ("akan diperbaiki di proses yang lain") tidak dikaitkan ke task tertentu (Rio tidak menyebut prosesnya).
 
+### Keputusan T-304 (kalibrasi `boil_preserve`, stage [3]), 2026-10-23 — Tahap 1 berjalan (dicatat SEBELUM pengukuran)
+
+Sumber: `T304-prompt.md` (keputusan Rio). Aturan berikut mengikat Tahap 1–4 dan tidak disetel ulang sesudah melihat hasil.
+
+1. **Varian b** = {0; 0,3; 0,6; 1,0}. Parameter lain tetap: α 0,7, q 0,1, `cut_diff` 0,06, M2-H (T-606), VF (T-305f), crop / pick produksi tiap klip.
+2. **Angka** di semua klip produksi: `test`, `test_short`, `Klip2`, `klip3`, `klip4`, `klip5`. **Papan visual:** `test`, `klip4`, `klip3`.
+3. **Jendela papan** otomatis per klip: 1 statis + 2 cepat (aturan jendela T-302, `tests/temporal_metrics.py`) + 1 jendela berisi frame gagal QC bila ada. Rentang dicatat dalam frame dan detik. Video normal + 0,5×.
+4. **Papan buta:** varian = huruf A–D, urutan acak per klip (seed tetap, dicatat). Kunci di `scripts/t304_kunci.json`; TIDAK ditampilkan di laporan, papan, atau PANDUAN.
+5. **Template penilaian Rio per klip:** urutan A–D (1 = paling disukai); pasangan yang "tidak terlihat beda"; komentar bebas.
+6. **Aturan hasil** (ditetapkan sekarang): pemenang = varian peringkat 1 di ≥ 2 dari 3 klip. Bila Rio menandai pemenang "tidak terlihat beda" dari 0,3 di klip itu → default tetap 0,3 (tanpa hitung ulang produksi). Tidak ada pemenang / jawaban tidak konsisten → chat bertanya sekali ke Rio.
+7. Angka kesetiaan T-302 (definisi sama dengan `tests/temporal_metrics.py`), derau jendela statis, dan pop hilir [4] = **INFORMASI** per varian, bukan gerbang.
+8. Prototipe **"B-sehat"** (b = 0 di frame gagal QC, b nominal di frame sehat) diukur di scratch saja; implementasi diputuskan sesudah data.
+9. Bila b 0 dipilih: P-001 direvisi dan dicatat di docs/04 dengan alasan (bukan diam-diam).
+
+**Lingkup Tahap 1–3:** hanya nilai b + prototipe B-sehat; tanpa perubahan `src/`, `configs/`, `tests/` (hanya docs + `scripts/t304_*`). Tanpa GPU, tanpa unduhan, tanpa dependency baru. Klip yang butuh hitung ulang [1b] / [2] / [2c] → berhenti dan lapor.
+
+### Hasil T-304 Tahap 1 (2026-10-23) — ukur saja, BERHENTI menunggu keputusan Rio
+
+Alat: `scripts/t304_tahap1.py` (`run`, `metrics`, `porsi`, `bsehat`) + `scripts/t304_hash.py`. Data: `work/t304/` (`run/*.json`, `tahap1_metrics.json`, `porsi.json`, `bsehat.json`, `f1_*.json`; ignored). Scratch `work/t304_scratch/{b0,b0.3,b0.6,b1.0,bs}/<klip>/` (input hard-link, output baru). 30 run [3]+[4] (6 klip × 5 varian), semua rc 0, tanpa GPU.
+
+- **Kontrol:** b 0,3 scratch = produksi (test_short): groups PNG, depth, dan strok identik; hanya timestamp manifest / `clip_stats` yang beda.
+- **Waktu:** [3] 1 307 s total, [4] 899 s total untuk 30 run (≈ 0,28 s / frame [3] + 0,2 s / frame [4]); satu varian semua klip ≈ 6 menit. Disk C: 27 → 20 GB bebas (output scratch ≈ 6 GB; `du` menghitung hard link).
+- **F1:** sebelum 10 719 berkas; sesudah 10 719, identik (0 berubah). `work/clips/`, `work/crop/`, `out/` tidak tersentuh.
+- **Verifikasi porsi bobot (dari kode `stabilize.py` 647–660):** hitungan benar untuk frame sehat di tengah klip: b 0 / 0,3 / 0,6 / 1 → 0,707 / 0,795 / 0,883 / 1 (terukur 0,7066 / 0,7946 / 0,8826 / 1). Frame gagal QC di tengah (klip3 f121): 0,194 / 0,436 / 0,678 / 1 (terukur 0,1941 / 0,4359 / 0,6776 / 1). Terbukti dari kode: suku b memakai `sums` mentah tanpa q → perlindungan QC melemah saat b naik. Koreksi kecil: frame dekat tepi / cut punya total bobot lebih kecil (klip3 f86 → 0,806; klip5 f0 gagal QC → 0,325 / 0,528 / 0,730 / 1), jadi angka chat hanya berlaku untuk frame interior.
+- **Derau statis (flip-flop per 10k piksel fg; % terhadap argmax mentah seg):** test: raw 29,4 → b0 −36 %, b0,3 −26 %, b0,6 −15 %, b1 0 %. test_short: −40 / −29 / −16 / +3. Klip2: −24 / −17 / −10 / 0. klip5: −44 / −33 / −20 / 0. (T-302 mencatat −41 / −36 vs −31 / −26 untuk test_short / test; hampir sama, tidak identik karena jendela / definisi.) Derau jendela cepat berkurang sedikit (klip3 −13 / −10 / −7 / −3 %, klip4 −8 / −5 / −3 / 0 %). Jumlah flip-flop naik monoton dengan b di SEMUA klip (`tahap1_metrics.json`).
+- **Kesetiaan (informasi):** fg-IoU min dan IoU grup min naik monoton dengan b di semua klip; jarak centroid p95 turun (test 1,14 → 0,11 px). Rasio luas lengan min naik (test 0,975 → 0,986; klip5 0,600 → 0,927). Area lag tidak berubah. klip3 IoU grup min hanya 0,05–0,08 dan lengan 0,29 di SEMUA varian → didominasi masker T-606 (raw seg tanpa masker), bukan b; klip5 f-gagal-QC menurunkan kesetiaan di b rendah (fg-IoU min 0,42 di b 0 → 0,96 di b 1).
+- **Pop / id / umur [4] (informasi):** pop energi total naik dengan b (test 0,061 → 0,071; klip5 0,391 → 0,432). `group_boundary` id baru per strok-frame naik (test 0,078 → 0,088; klip3 0,275 → 0,314; klip5 0,471 → 0,526); `occlusion` relatif stabil (0,44 → 0,42). Umur median `group_boundary` turun 3 → 2 frame di b 1 (test, test_short, Klip2).
+- **Jendela (aturan T-302, dari argmax mentah, 24 fps):** test: statis 26–40 (1,1–1,7 s); cepat 147–169 (6,1–7,0 s), 171–186. test_short: statis 26–40; cepat 77–86. Klip2: statis 3–95 + 104–113 (panjang); cepat tidak ada. klip4: **statis TIDAK ADA**; cepat 113–123, 152–161, 187–196, 200–214. klip3: **statis TIDAK ADA**; cepat 85–97, 112–127, 129–140, 142–158, 161–171; gagal QC 121 → jendela 111–131 (21 frame). klip5: statis 112–132; cepat 71–81, 83–92; gagal QC di 18 frame (0, 6, 7, 9, 10, 14–16, 47, 54–59, 64, 103, 104) → jendela 0–10.
+- **B-sehat (geometri strok; `track_id` diabaikan karena ikut bergeser):** klip3: 1 frame gagal (f121) berubah 2 921 px (fg-IoU 0,985); strok berbeda di 4 frame (f119–123 sekitar, 33 di f121). klip5: 16 frame peta berubah, 306 208 px total (f54: 85 058 px, fg-IoU 0,65); strok berbeda di 124 frame, termasuk frame tanpa perubahan peta (mis. f1: 10 strok) — kemungkinan efek hilir [4] (ambang per klip dari seluruh klip, dan arah strok terbuka berkesinambungan), BELUM dibuktikan. test, test_short, Klip2, klip4: tanpa frame gagal QC → B-sehat = b 0,3 (tidak perlu papan).
+
+**Yang perlu diputuskan Rio sebelum Tahap 2:** (1) klip3 dan klip4 tidak punya jendela statis menurut aturan T-302 — pilih: jendela termundur-gerak terendah sebagai pengganti (usulan Claude Code, ditandai di papan) atau papan tanpa statis untuk dua klip itu; (2) B-sehat ikut papan atau tidak (hanya klip3 / klip5 punya frame gagal QC); (3) klip5 punya 18 frame gagal QC — dua jendela QC atau satu (jendela 0–10 saja, usulan).
+
+### Keputusan T-304 lanjutan (Tahap 2–3, keputusan Rio atas laporan Tahap 1), 2026-10-23 — dicatat SEBELUM render
+
+Lanjutan "Keputusan T-304" (no. 1–9 tetap berlaku; F1–F4 di `T304-prompt.md` tetap berlaku).
+
+- **A. Papan utama = klip PENUH, buta.** Klip: `test`, `klip4`, `klip3`. Varian b {0; 0,3; 0,6; 1,0} → huruf A–D **acak per klip** (`random.Random(304 + indeks klip)`, indeks tetap). Kunci di `scripts/t304_kunci.json`; kunci TIDAK ditampilkan di laporan, papan, atau PANDUAN. Versi normal + 0,5×.
+- **B. Detik fokus** di PANDUAN (frame + detik + jenis: statis / cepat / QC) = jendela Tahap 1. Untuk `klip3` dan `klip4` (tanpa statis) jendela **gerak terendah** ditandai "pengganti statis". Definisi (ditetapkan di sini, bukan dari hasil): dari SEMUA jendela 21 frame berurutan pada argmax mentah, pilih yang meminimalkan rata-rata kecepatan centroid foreground (px / frame), dengan syarat tidak memuat frame gagal QC (bila ada, pilih yang pertama).
+- **C. Papan cek klip5** = klip penuh, buta, 4 varian (acak SENDIRI, seed `304 + 10`). TIDAK ikut aturan hasil no. 6. Jawaban Rio: "varian rusak jelas? huruf + detik / tidak ada".
+- **D. Papan B-sehat klip5** = klip penuh, buta A/B: b 0,3 vs B-sehat (0,3 di frame sehat, 0 di frame gagal QC), urutan A/B acak (seed `304 + 20`) dan masuk kunci. PANDUAN mendaftar SEMUA frame yang peta grupnya berubah (frame + detik + px, urut px terbesar). klip3 f121 TIDAK dinilai. Aturan: B-sehat hanya dipertimbangkan bila pemenang b > 0; jawaban "tidak terlihat beda" → tidak diimplementasikan.
+- **E. Data tambahan klip5 (tanpa render):** per varian: frame dengan fg-IoU minimum dan IoU grup minimum, status QC, jarak ke cut terdekat, dan apakah frame di zoom f63–f77; kesetiaan dihitung ulang TANPA frame gagal QC; T_high / T_low [4] per varian (menguji dugaan "strok berubah di 124 frame karena ambang per klip").
+- **F. Tata letak** muat 1920 × 1080 tanpa diperkecil player: klip portrait = 1 baris × 4 panel; landscape / persegi = 2 × 2; papan A/B = 1 × 2. Semua panel dalam satu papan berskala sama; label huruf besar; nomor frame + detik di setiap panel.
+- **G. Style default `rough-sketch`.** [5]–[6] di `work/t304_scratch/`; video + `PANDUAN.md` di `work/t304/nilai/`.
+- **Aturan kerja:** semua berkas ditulis lewat Write / Edit (termasuk runner di `work/`); ukur waktu satu klip dan estimasi disk sebelum run penuh (F2: disk C bebas < 15 GiB → berhenti); run > 8 menit → background, berurutan; PNG / MP4 tidak dibuka; tidak commit.
+
+### Hasil T-304 Tahap 2–3 (2026-10-23) — papan buta dibuat; MENUNGGU penilaian Rio
+
+Tanpa perubahan `src/` / `configs/` / `tests/`; tidak commit. Render: `scripts/t304_tahap2.py` ([5] + [6] style `rough-sketch` di `work/t304_scratch/`, out dir scratch); papan: `scripts/t304_board.py` (`kunci`, `layout`, `compose`, `pandu`); data E: `scripts/t304_data_e.py` → `scripts/t304_data_e.json`. Kunci: `scripts/t304_kunci.json` (TIDAK ditampilkan di laporan, papan, atau PANDUAN).
+
+**Waktu:** render 18 run ([5] total 1 010 s, [6] total 402 s; ≈ 0,35 s / frame total termasuk ukur awal test_short). **Disk:** `work/t304_scratch/` 9,5 GB (out 0,94 GB); disk C bebas 20 → 17 GB (di atas batas F2 15 GiB, margin ±2 GB).
+
+**Video papan** (`work/t304/nilai/`, 24 fps; normal dan 0,5×):
+
+| berkas | resolusi | durasi normal / 0,5× | ukuran normal / 0,5× |
+|---|---|---|---|
+| test | 1920 × 854 (1 × 4) | 11,79 s / 23,54 s | 8,24 / 10,71 MB |
+| klip4 | 1920 × 852 (1 × 4) | 9,04 s / 18,04 s | 8,02 / 10,35 MB |
+| klip3 | 1920 × 852 (1 × 4) | 7,58 s / 15,12 s | 8,41 / 10,84 MB |
+| klip5_cek | 1164 × 1080 (2 × 2) | 5,54 s / 11,04 s | 6,61 / 8,46 MB |
+| klip5_bsehat | 1920 × 890 (1 × 2) | 5,54 s / 11,04 s | 6,34 / 8,21 MB |
+
+Panel diberi huruf besar (kiri atas) + "frame N  detik s" (sumber). Klip5 cek 2 × 2 berskala 582 × 540 per panel (dibatasi tinggi 1080). Ffmpeg tanpa path drive di `fontfile=` (font dicari dari `C:/Windows/Fonts`).
+
+**Detik fokus (PANDUAN):** test: statis f15–f24 dan f26–f40, cepat f147–f169 dan f171–f186. klip4: pengganti statis f72–f92 (gerak terendah, kecepatan rata-rata 21 frame minimum tanpa frame QC), cepat f113–f123, f152–f161, f187–f196, f200–f214. klip3: pengganti statis f4–f24, cepat f85–f97, f112–f127, f129–f140, f142–f158, f161–f171, QC f111–f131.
+
+**B-sehat klip5 (PANDUAN):** 16 frame yang peta grupnya berubah — SEMUA frame gagal QC — urut px: f54 (85 058), f10 (34 287), f6, f104, f14, f7, f9, f47, f16, f55, f15, f0, f59, f56, f58, f57. Frame 0 dan 6–10 mengubah peta paling banyak.
+
+**Data E klip5** (`scripts/t304_data_e.json`; per varian, nama varian — bukan papan buta):
+- T_high / T_low [4]: b 0 = 0,01751 / 0,00799; b 0,3 = 0,01752 / 0,00800; b 0,6 = 0,01753 / 0,00800; b 1 = 0,01750 / 0,00799; B-sehat = 0,01750 / 0,00799. Selisih ≈ 10⁻⁵ (tidak monoton).
+- Kesetiaan terburuk (semua frame): fg-IoU min b 0 0,4225 (f54, gagal QC, jarak cut 6), b 0,3 0,6477 (f54), b 0,6 0,8747 (f54), b 1 0,9611 (f14, gagal QC). Tidak ada frame di zoom f63–f77 pada nilai terburuk.
+- Kesetiaan TANPA frame gagal QC (115 frame): fg-IoU min b 0 0,888 / b 0,3 0,924 / b 0,6 0,955 / b 1 0,965; median fg-IoU 0,9966 / 0,9976 / 0,9984 / 0,9992. IoU grup min = 0 di semua varian: ada grup ≥ 200 px di argmax mentah yang hilang dari peta di frame tanpa QC (belum diselidiki; metrik ini tidak informatif).
+- **Uji hipotesis "strok berubah karena ambang"** (b 0,3 vs B-sehat): ambang memang berbeda sedikit (T_high 0,01752 vs 0,01750). Perhitungan awal "124 frame" **TERLALU TINGGI**: ikut menghitung pergeseran titik awal (anchor) silhouette, pembalikan arah strok terbuka (arah berkesinambungan T-202), dan nomor `track_id` yang bergeser. Setelah perbandingan tanpa id dan tanpa arah: 51 frame berubah geometri; 26 hanya tipe `occlusion` (konsisten dengan ambang); 12 tanpa `occlusion` (silhouette / group_boundary); 35 frame dengan peta grup IDENTIK tetapi geometri berbeda. Pada frame 1 perbedaan itu satu loop terbuka 12 titik yang bergeser 2 px (`group_boundary`, peta identik) — penyebabnya BELUM terjelaskan; ditandai di backlog [4].
+
+**Kesimpulan kerja (sebelum penilaian Rio):** ambang [4] menjelaskan sebagian kecil perubahan strok (tipe occlusion); sisanya dari sensitivitas [4] (anchor, arah, loop kecil), bukan dari b. Bukan dasar keputusan default.
+
+**F1 sesudah (`after_2`):** 10 719 berkas identik dengan sebelum (0 berubah). `out/` produksi tidak tersentuh.
+
+**Status:** papan + PANDUAN siap di `work/t304/nilai/`. Menunggu jawaban Rio (template di PANDUAN). Tahap 4 belum dimulai.
+
+### Hasil T-304 — penilaian Rio + penutupan (2026-10-25) — **DONE**
+
+Dibaca ulang sebelum mulai: `T304-prompt.md` (aturan hasil no. 6, Tahap 4), "Keputusan T-304" (no. 1–9), dan "Keputusan T-304 lanjutan" (A–G). Penilaian verbatim: `scripts/t304_penilaian.json` (ter-track).
+
+**1. Penilaian Rio (verbatim):**
+- test: urutan A B C D ; tidak terlihat beda: SEMUA ; komentar: TIDAK ADA
+- klip4: urutan A B C D ; tidak terlihat beda: SEMUA ; komentar: TIDAK ADA
+- klip3: urutan A B C D ; tidak terlihat beda: SEMUA ; komentar: TIDAK ADA
+- klip5 cek: SEMUA RUSAK JELAS
+- B-sehat klip5: tidak terlihat beda ; detik: SEMUA ("SAYA AKAN MEMBERESKAN KERUSAKAN INI NANTI")
+
+**Interpretasi:** urutan A B C D bukan preferensi karena semua huruf ditandai tidak terlihat beda. Tidak ada pemenang (rule no. 6: pemenang = peringkat 1 di ≥ 2 dari 3 klip). Tidak ada jawaban tidak konsisten, jadi tidak ada pertanyaan ulang ke Rio.
+
+**2. Kunci papan (dibuka sekarang untuk dicatat; `scripts/t304_kunci.json`):**
+
+| papan | A | B | C | D |
+|---|---|---|---|---|
+| test | b0.6 | b1.0 | b0 | b0.3 |
+| klip4 | b0 | b1.0 | b0.6 | b0.3 |
+| klip3 | b0.3 | b0 | b0.6 | b1.0 |
+| klip5 cek | b0.6 | b0 | b1.0 | b0.3 |
+| klip5 B-sehat | bs (B-sehat) | b0.3 | — | — |
+
+**3. Hasil (aturan no. 6 dan D):**
+1. **Default `stabilize.temporal.boil_preserve` TETAP 0,3.** `configs/` tidak diubah; tanpa run produksi (default tetap → tanpa run). P-001 tidak direvisi (b 0 tidak dipilih).
+2. **B-sehat TIDAK diimplementasikan** ("tidak terlihat beda" → tidak diimplementasikan). `src/` dan `tests/` tidak diubah.
+3. **klip5: kerusakan ada di SEMUA varian** → bukan berasal dari b. Masuk backlog "pengolahan khusus klip5" (lihat `docs/05` Backlog).
+
+**4. Temuan:**
+- **b 0 sampai b 1,0 (tanpa stabilisasi grup) TIDAK terlihat beda** di test / klip4 / klip3 pada style default. Artinya efek stabilisasi grup [3] tidak terlihat di hasil akhir pada klip ini. Bahan T-305 induk (definisi milestone "flicker terkendali"). Tanpa tindakan sekarang.
+- **Batas papan:** panel diperkecil ±0,44× (sumber export 1080 px lebar; 1 × 4 di 1920 × 854 → panel 480 px). Klip5 di luar aturan tata letak/skala (2 × 2 → panel 582 × 540 dari sumber 1080 × 1002 ≈ 0,54×).
+- **Koreksi Tahap 1:** angka 124 frame strok berubah → **51** setelah perbandingan tanpa id, tanpa arah, dan dengan anchor dinetralkan (`scripts/t304_data_e.py`). **Hipotesis ambang [4] dibantah** untuk sebagian besar perubahan: selisih T_high / T_low hanya ±10⁻⁵; 26 dari 51 frame hanya tipe `occlusion`, sisanya bukan ambang.
+
+**5. Backlog [4] (ditambahkan ke docs/05):**
+- 35 frame klip5 dengan peta grup identik tetapi geometri strok berbeda. Dugaan: ketergantungan pada frame sebelumnya; deterministik. Frame 1: loop terbuka 12 titik bergeser 2 px (`group_boundary`). Belum diselidiki.
+- IoU grup minimum = 0 di klip5 (grup ≥ 200 px hilang dari peta di frame tanpa QC). Belum diselidiki.
+
+**6. Catatan skrip / data (F3, F4):**
+- Skrip `scripts/t304_tahap1.py`, `t304_tahap2.py`, `t304_board.py` **TIDAK bisa dijalankan ulang** sesudah `work/t304_scratch/` (scratch Tahap 1–3) dihapus. Hasil yang dipertahankan: `scripts/t304_tahap1_data.json` (metrik, porsi, B-sehat, waktu run / render, F1), `scripts/t304_data_e.json` (data E), `scripts/t304_kunci.json`, `scripts/t304_penilaian.json`, dikemas oleh `scripts/t304_pack.py`.
+- `work/t304/` (data + papan + PANDUAN, ter-ignore) dipertahankan. `work/t304_scratch/` dihapus (9,5 GB). `T304-prompt.md` dihapus (F4).
+
+**7. F1 final:** hash produksi enam klip + `out/` sesudah penutupan **identik** dengan `before` (lihat `work/t304/f1_after_3.json`). Scratch hanya berisi hard link ke input produksi; penghapusan scratch tidak menyentuh berkas produksi.
+
+**8. Tes:** `src/`, `configs/`, `tests/` tidak berubah → suite penuh tidak dijalankan; hanya tes yang membaca `docs/` (lihat laporan).
+
+**9. `docs/02`:** satu catatan prosa di luar blok YAML: "`boil_preserve` 0,3 dikonfirmasi T-304." Blok YAML tidak diubah.
+
 ## Pitfall yang sudah diketahui
 
 ### P-001 — Temporal flicker / boiling 🔴 RISIKO TERTINGGI

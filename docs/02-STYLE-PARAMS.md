@@ -326,6 +326,8 @@ Bagian `temporal:` lama (mask_ema_alpha, boil_preserve) **pindah** ke
 `stabilize.temporal` di `default.yaml` — dibaca stage [3], bukan [5] (D-010). `optical_flow_blend` (juga di bagian lama
 itu) DIHAPUS di T-303: optical flow ditolak berdasarkan data (docs/04 "Hasil T-303 (ditolak)").
 
+`stabilize.temporal.boil_preserve` 0,3 dikonfirmasi T-304 (papan buta, penilaian Rio; default tetap, docs/04 "Hasil T-304").
+
 ### Validasi style (saat load)
 
 | parameter | range / aturan |

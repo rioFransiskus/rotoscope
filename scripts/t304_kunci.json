@@ -1,0 +1,55 @@
+{
+ "versi": 1,
+ "dibuat": "2026-10-23",
+ "aturan": "huruf = urutan acak (random.Random(seed).shuffle) atas daftar varian papan; JANGAN ditampilkan di laporan, papan, atau PANDUAN",
+ "papan": {
+  "test": {
+   "klip": "test",
+   "seed": 304,
+   "huruf_ke_varian": {
+    "A": "b0.6",
+    "B": "b1.0",
+    "C": "b0",
+    "D": "b0.3"
+   }
+  },
+  "klip4": {
+   "klip": "klip4",
+   "seed": 305,
+   "huruf_ke_varian": {
+    "A": "b0",
+    "B": "b1.0",
+    "C": "b0.6",
+    "D": "b0.3"
+   }
+  },
+  "klip3": {
+   "klip": "klip3",
+   "seed": 306,
+   "huruf_ke_varian": {
+    "A": "b0.3",
+    "B": "b0",
+    "C": "b0.6",
+    "D": "b1.0"
+   }
+  },
+  "klip5_cek": {
+   "klip": "klip5",
+   "seed": 314,
+   "huruf_ke_varian": {
+    "A": "b0.6",
+    "B": "b0",
+    "C": "b1.0",
+    "D": "b0.3"
+   }
+  },
+  "klip5_bsehat": {
+   "klip": "klip5",
+   "seed": 324,
+   "huruf_ke_varian": {
+    "A": "bs",
+    "B": "b0.3"
+   }
+  }
+ }
+}
