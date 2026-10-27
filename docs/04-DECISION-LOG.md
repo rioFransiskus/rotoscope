@@ -5883,6 +5883,88 @@ proses Python 0. **Pola dua proses (anak + induk) terbukti di konsol nyata.**
 **Status akhir K1–K5:** K1 lulus; K2 lulus; K3 lulus untuk frame dan klip, exit batch 4 karena Klip2 (keputusan B); K4 lulus palsu
 (belum nyata); K5 lulus dengan catatan. Papan: T-603 DONE.
 
+### Keputusan penutupan T-305 induk (2026-10-27) — Tahap 1; dicatat SEBELUM F1 dan bahan penilaian
+
+Dibaca ulang sebelum mulai: `T305tutup-prompt.md` (bagian 1 "Keputusan Rio", 2 lingkup, 4 aturan file, 5 Tahap 1), docs/05 T-305 induk / T-305b / T-305e / T-501 / T-502, docs/04 D-002, D-010 (Q3), "Hasil T-304 — penilaian Rio + penutupan", "Hasil T-305 induk Tahap 1 (uji klip baru)", "Penilaian Rio Tahap 1 + keputusan Tahap 1b", "Kalibrasi cut_diff (2026-10-10)", "Tahap 3b". Tidak ada pertentangan dengan keputusan di bawah.
+
+1. **Tidak ada sweep** N / K / M / D / L / persentil / `min_hole_area`. Alasan: T-303 (`min_hole_area` 50–300 menggeser pop lubang ≤ 3%), T-304 (derau grup −36% vs 0% tidak terlihat), klip4 default dinilai 5.
+2. **Definisi milestone "flicker terkendali"** (dikunci sebelum menilai): Rio menonton tiap klip layar penuh, normal lalu lambat 0,5×, dan memilih satu jawaban:
+   - **A** = garis berkedip / muncul-hilang tidak terlihat;
+   - **B** = terlihat tetapi tidak mengganggu (terasa seperti gambar tangan);
+   - **C** = mengganggu → wajib detik + jenis garis (garis luar badan / garis di dalam badan / lubang / tidak tahu).
+
+   **Lolos** = semua klip lingkup A atau B.
+3. **Klip lingkup:** `test`, `Klip2`, `klip3` (dengan pick), `klip4` = output produksi yang ada (`out/<klip>.mp4`), tanpa run ulang. `klip5` di luar lingkup (backlog pengolahan khusus klip5); metriknya hanya pembanding.
+4. **Aturan hasil:**
+   - semua A / B → T-305 induk DONE; semua default tetap (`configs/` tidak diubah, tanpa run produksi);
+   - ada C → Tahap 2 (diagnosis detik C, CPU baca-saja) → Rio memutuskan task lanjutan terarah; T-305 induk tetap WIP. Kandidat terdaftar: histeresis temporal strok oklusi ("kandidat A", "Tahap 3b" T-305b).
+5. **Metrik output akhir bersifat deskriptif, BUKAN kriteria.** Per klip dan per tipe strok, dari `contours/` yang ada: `pop_energy_by_type`, kelahiran + kematian per detik (deret per detik), umur track median, strok / frame.
+6. **T-501 / T-502 → `SKIP`.** Ini meninjau ulang D-010 Q3 (fallback ditunda; alternatif "hapus total" ditolak demi cadangan D-002).
+   - **Alasan:** cadangan D-002 (MediaPipe Pose) ditolak T-701 (P1 gagal uji (c), confidence / getaran buruk, multi-orang di luar cakupan model card; docs/04 "Keputusan akhir T-701"); mask kapsul dari pose dinilai kaku / generik (D-002, T-701 Tahap 3); frame gagal QC di klip lingkup ≈ 0 (`test` 0, Klip2 0, klip4 0, klip3 1; "Hasil T-305 induk Tahap 1"); klip5 = sumber ekstrem → backlog.
+   - Milestone Phase 5 "pipeline tahan input buruk" gugur; dicatat.
+   - **Syarat buka ulang:** klip baru (bukan klip5) dengan frame gerak cepat yang rusak terlihat, dan bobot QC tidak cukup.
+   - D-010 tidak diedit; entri revisi baru yang merujuk D-010 Q3 + D-002 ditulis di "Hasil penutupan T-305 induk" (Tahap 4).
+7. **`stabilize.temporal.cut_diff` tetap 0,06.**
+   - Label baru tercatat: klip4 f209 = positif palsu (0,0613); klip5 f92–104 = cut sungguhan (0,071–0,109); klip3 7 cut (0,0718–0,0897) + f49 positif palsu (0,0652).
+   - Jendela pemisah 0,0652–0,071 ada, tetapi margin ±4% di kedua sisi, dan FN lebih mahal (keputusan T-302) → tidak diubah.
+   - `tests/test_cut_diff.py` tidak diubah.
+8. **T-305e tetap `TODO` (DITUNDA)**, dinilai ulang saat pengolahan khusus klip5.
+
+**Catatan pemeriksaan (bukan perubahan keputusan):**
+- Angka "klip5 18 frame gagal QC" di prompt = keadaan SETELAH crop T-607 (docs/05 T-305e update log 2026-10-23: 6 → 18). Angka 6 di "Hasil T-305 induk Tahap 1" = sebelum crop. Keduanya konsisten; klip5 di luar lingkup.
+- Prompt menulis D-002 "ditolak T-701 karena melewatkan orang di klip multi-orang". docs/04 "Keputusan akhir T-701" mencatat alasan P1 (MediaPipe) ditolak sebagai gabungan: gagal uji (c), confidence / getaran buruk, dan multi-orang di luar cakupan model card. Alasan multi-orang ada, tetapi bukan satu-satunya.
+
+**Tahap 1 berjalan:** F1 sebelum (`work/t305tutup/f1_before.json`), metrik deskriptif (`work/t305tutup/metrics.json`), bahan penilaian (`work/t305tutup/nilai/`). Tanpa GPU, tanpa `run` / `batch`, tanpa perubahan `src/` / `configs/` / `tests/`; tidak commit.
+
+### Hasil penutupan T-305 induk (2026-10-27) — **DONE**
+
+Dibaca ulang sebelum mulai: `T305tutup-prompt.md` (bagian 1, 5 Tahap 4), entri "Keputusan penutupan T-305 induk (2026-10-27)" di atas. Data: `scripts/t305tutup_data.json` (metrik, cek, cut klip5, hitungan papan); penilaian verbatim: `scripts/t305tutup_penilaian.json`.
+
+**1. Penilaian Rio (verbatim):** test: **A** · Klip2: **A** · klip3: **A** · klip4: **A**. Tidak ada komentar.
+
+**Konteks chat (dicatat bersama penilaian):** sebelum menjawab, Rio bertanya apakah garis di siku saat tangan melipat termasuk penilaian. Jawaban chat: garis yang muncul lalu tetap ada selama siku terlipat = **garis oklusi yang diinginkan, bukan flicker**. Yang dinilai hanya garis yang **muncul-hilang dari frame ke frame**. Bentuk / letak salah dicatat di komentar dan tidak memengaruhi A / B / C.
+
+**2. Interpretasi:** semua klip lingkup **A** → aturan no. 4 "semua A / B" terpenuhi → T-305 induk **DONE**. Tahap 2 (diagnosis C) tidak dikerjakan. Semua default tetap (`configs/` tidak diubah, tanpa run produksi).
+
+**3. Definisi milestone "flicker terkendali" (final):** semua klip lingkup (`test`, Klip2, klip3, klip4) dinilai **A** atau **B** oleh Rio pada output akhir `out/<klip>.mp4`, dengan penilaian normal lalu 0,5×. Yang dihitung sebagai flicker hanya garis yang **muncul-hilang dari frame ke frame**. Garis oklusi yang muncul lalu tetap selama sendi terlipat (mis. siku) **bukan flicker**. Metrik deskriptif (pop energy, kelahiran / kematian, umur track, strok / frame) **bukan kriteria**.
+
+**4. Metrik deskriptif (data: `scripts/t305tutup_data.json` → `metrik`; ringkasan Tahap 1 di atas):**
+- Kelahiran + kematian per detik (semua tipe, rata-rata): test 29,3 / 29,6; Klip2 48,3 / 47,3; klip3 243,4 / 247,9; klip4 129,2 / 130,3 (klip5, pembanding: 304,3 / 307,2).
+- Umur track median (semua tipe): test 2, Klip2 2, klip3 1, klip4 1.
+- Porsi pop energy batas grup: test 29,7 %, Klip2 61,0 %, klip3 44,5 %, klip4 79,7 %.
+- **Catatan (wajib):** pergantian `track_id` per detik **tinggi di klip3 dan klip4** (243 dan 129 kelahiran per detik) **tetapi dinilai A**. Jadi metrik id / pergantian track **bukan kriteria flicker**. Penyebab kelahiran tinggi itu **belum diselidiki**; yang tercatat hanya penilaian Rio A.
+
+**5. `cut_diff` (koreksi no. 7 keputusan 2026-10-27):**
+- `stabilize.temporal.cut_diff` **tetap 0,06**. `tests/test_cut_diff.py` tidak diubah.
+- **Koreksi:** jendela pemisah **0,0652–0,071** dan kutipan skor klip5 **0,071–0,109** di keputusan no. 7 berlaku HANYA untuk data **sebelum crop T-607**. Sesudah crop (`scripts/t305tutup_data.json` → `cut_klip5`):
+  - klip5 terdeteksi **32** cut (sebelum crop 10). Skor cut sesudah crop 0,0622–0,2115; skor non-cut tertinggi **0,0594**.
+  - **Label Rio f92–104** (cut sungguhan): sesudah crop 13 frame terdeteksi (92–104; termasuk 97–99 yang sebelum crop tidak terdeteksi), skor **0,1013–0,2115** (sebelum crop 0,0711–0,1089 untuk 10 frame).
+  - Tidak ada trim di klip5 (`meta.json`), jumlah frame tetap 133 → **indeks label tidak bergeser**; pemetaan f92–104 identik.
+  - **Cut di luar label Rio = BELUM BERLABEL** (19 frame: 22, 60–68, 72–74, 88–91, 106, 108; skor 0,0622–0,1124). Belum ada keputusan apakah ini cut, positif palsu, atau gerakan. **Tidak disebut positif palsu.**
+  - Dugaan (BELUM dibuktikan): pita hitam sebelum crop mengencerkan skor cut; crop menghapusnya sehingga skor naik. Dugaan ini belum diuji.
+- Jendela pemisah 0,0652–0,071 hanya berlaku untuk data sebelum crop. Untuk data sesudah crop, belum ada pemisah yang terukur. Peninjauan `cut_diff` dicatat sebagai backlog (docs/05 "Backlog").
+
+**6. T-305e:** tetap `TODO` (DITUNDA), dinilai ulang saat pengolahan khusus klip5.
+
+**7. T-501 / T-502 → `SKIP`** (tinjauan ulang D-010 Q3; lihat revisi di bawah).
+- Alasan (ringkas): D-002 (MediaPipe Pose) ditolak T-701; mask kapsul dari pose kaku / generik; frame gagal QC klip lingkup ≈ 0 (klip3 1); klip5 sumber ekstrem → backlog.
+- **Syarat buka ulang:** klip baru (bukan klip5) dengan frame gerak cepat yang rusak terlihat, dan bobot QC tidak cukup.
+- Milestone Phase 5 "pipeline tahan input buruk" **gugur**; dicatat.
+- SKIP tidak dihitung selesai (preseden T-404b / T-601).
+
+**8. Hitungan papan (dihitung dari docs/05 oleh `scripts/t305tutup.py papan`):** Phase 3 **6/11 → 7/11** (T-305 DONE), Phase 5 **0/2** (T-501 / T-502 SKIP), total **41/50 → 42/50**. Sesuai perkiraan Rio; tidak ada perbedaan.
+
+**9. F1:** `after_final` = `before`: **10 701 / 10 701 berkas identik** (sha256 + ukuran produksi 6 klip `work/clips/<klip>/` + `out/`; `qc_report.json` tanpa `created_utc`; `work/t305tutup/f1_after_final.json`). `f1_after1` juga identik.
+
+### Revisi D-010 Q3 + D-002 (2026-10-27) — entri baru; D-010 dan D-002 tidak diedit
+
+- **Ditinjau ulang:** D-010 Q3 ("fallback pose ditunda; frame gagal QC diberi bobot temporal kecil di [3]") dan D-002 ("MediaPipe Pose sebagai fallback, bukan primary"; dipakai hanya untuk frame gagal QC).
+- **Keputusan (Rio, 2026-10-27, penutupan T-305 induk):** T-501 / T-502 **SKIP**. Fallback pose tidak dibangun. Alternatif "hapus total" (tanpa cadangan) ditolak demi cadangan D-002 — cadangan itu juga tidak dibangun, karena frame gagal QC di klip lingkup ≈ 0.
+- **Alasan:** (a) cadangan D-002 (MediaPipe Pose) ditolak T-701 (P1 gagal uji (c), confidence / getaran buruk, multi-orang di luar cakupan model card; docs/04 "Keputusan akhir T-701"); (b) mask kapsul dari pose dinilai kaku / generik (D-002, T-701 Tahap 3); (c) frame gagal QC di klip lingkup: `test` 0, Klip2 0, klip4 0, klip3 1; (d) klip5 (18 frame gagal QC sesudah crop) = sumber ekstrem → backlog pengolahan khusus klip5.
+- **Dampak:** milestone Phase 5 "pipeline tahan input buruk" gugur. CLAUDE.md dan docs/02 sudah ditandai SKIP. docs/01 (kontrak [2b], masih menulis `DITUNDA`) tidak disentuh task ini dan perlu disinkronkan di task berikutnya yang menyentuh docs/01.
+- **Syarat buka ulang:** klip baru (bukan klip5) dengan frame gerak cepat yang rusak terlihat, dan bobot QC `qc_fail_weight` tidak cukup.
+- D-010 dan D-002 **tidak diedit**; entri ini merujuk keduanya.
+
 ## Pitfall yang sudah diketahui
 
 ### P-001 — Temporal flicker / boiling 🔴 RISIKO TERTINGGI

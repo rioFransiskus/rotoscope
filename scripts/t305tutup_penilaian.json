@@ -1,0 +1,25 @@
+{
+  "tanggal": "2026-10-27",
+  "sumber": "penilaian Rio di chat (verbatim) sesudah work/t305tutup/nilai/PANDUAN.md (Tahap 1)",
+  "klip_lingkup": ["test", "Klip2", "klip3", "klip4"],
+  "penilaian_verbatim": [
+    "test: A",
+    "Klip2: A",
+    "klip3: A",
+    "klip4: A"
+  ],
+  "penilaian": {
+    "test": "A",
+    "Klip2": "A",
+    "klip3": "A",
+    "klip4": "A"
+  },
+  "konteks_chat": "Sebelum menjawab, Rio bertanya apakah garis di siku saat tangan melipat termasuk penilaian. Jawaban chat: garis yang muncul lalu tetap ada selama siku terlipat = garis oklusi yang diinginkan, bukan flicker. Yang dinilai hanya garis yang muncul-hilang dari frame ke frame. Bentuk/letak salah dicatat di komentar, tidak memengaruhi A/B/C.",
+  "aturan_hasil": "semua A/B → Tahap 4 (penutupan); Tahap 2 tidak dikerjakan (docs/04 'Keputusan penutupan T-305 induk (2026-10-27)' no. 4)",
+  "komentar": {
+    "test": "-",
+    "Klip2": "-",
+    "klip3": "-",
+    "klip4": "-"
+  }
+}

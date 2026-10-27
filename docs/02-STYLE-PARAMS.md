@@ -339,6 +339,8 @@ itu) DIHAPUS di T-303: optical flow ditolak berdasarkan data (docs/04 "Hasil T-3
 
 `stabilize.temporal.boil_preserve` 0,3 dikonfirmasi T-304 (papan buta, penilaian Rio; default tetap, docs/04 "Hasil T-304").
 
+**Penutupan T-305 induk (2026-10-27):** definisi milestone "flicker terkendali" = penilaian Rio pada output akhir (`out/`, normal + lambat 0,5×) untuk test, Klip2, klip3, klip4: semua A (garis tidak berkedip, atau terlihat tetapi tidak mengganggu) → lolos. Yang dihitung flicker hanya garis yang muncul-hilang dari frame ke frame; garis oklusi yang tetap selama sendi terlipat bukan flicker. Metrik deskriptif (pergantian `track_id`, pop energy) bukan kriteria. Default tetap: semua parameter di blok YAML di atas tidak diubah, termasuk `stabilize.temporal.cut_diff` 0,06 (docs/04 "Hasil penutupan T-305 induk"). Fallback pose `[2b]` SKIP (T-501 / T-502; docs/04 "Revisi D-010 Q3 + D-002 (2026-10-27)").
+
 ### Validasi style (saat load)
 
 | parameter | range / aturan |
