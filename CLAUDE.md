@@ -40,6 +40,7 @@ Crop (T-607; alat CLI, BUKAN stage, CPU): `python -m rotoscope crop <video> [--a
 (tanpa aksi = status; `--start` / `--end` ditolak: kotak per SUMBER). Sesudah keputusan, folder klip yang sudah ada perlu
 `run <video> [--start S --end E] --restart-from ingest --yes` (MENJALANKAN GPU; [2] / [2c] menolak identitas baru). Perintah yang dicetak
 untuk ditempel memakai `stage_common.cli_cmd` / `crop.crop_cmd` (video + flag trim + `--config` non-default). Kontrak: docs/01 "`crop.py`".
+Batch (T-603; subperintah, BUKAN stage; docs/01 "`batch.py`"): `python -m rotoscope batch <video|folder> ... [--list BERKAS] [--yes] [--skip-pending]` — tanpa `--yes` = RENCANA CPU (ingest + status crop / target / identitas / GPU, tanpa GPU dan tanpa penghapusan); `--yes` = JALAN (satu `run --yes` per klip; klip perlu tindakan → exit 4 sebelum GPU kecuali `--skip-pending`). Flag `--restart-from --preview --from --adopt --qc-only --limit` dilarang (exit 1). Exit rencana 0/4/1; jalan 0/1/4/130. `--list`: `<path> [--start S --end E]` per baris, path berspasi dalam kutip ganda.
 Pilih target (T-604; alat CLI, BUKAN stage — dibaca stage [1b] isolate, T-605): `python -m rotoscope pick <video> [--frame N] [--start S --end E] [--dry-run]`
 → `work/clips/<klip>/target/points.json` (`rotoscope-target-points/1`: koordinat frame kerja, per frame `frame_pixel_sha256` = sha256
 PIKSEL RGB + ukuran, bukan byte PNG; frame berubah = basi → pick ulang; isi lama → `points.prev.json`; `--dry-run` → `target/pick_dryrun/`).

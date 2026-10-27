@@ -63,8 +63,9 @@ from rotoscope import stabilize as stb
 from rotoscope.config import ConfigError, PipelineConfig, ensure_dir, load_pipeline
 from rotoscope.ingest import FRAME_PATTERN, FRAMES_DIRNAME
 from rotoscope.stage_common import (
-    CLIP_KEY, COMMIT_HASH_RE, DOWNLOAD_REVISION_FALLBACK, EXIT_OK, EXIT_OOM, EXIT_PRECONDITION, MIB, REPLACE_DELAY_S,
-    REPLACE_RETRIES, BackendOOM, StageError, StageOOMError, add_work_dir_arg, cached_file, cli_cmd, clip_identity,
+    CLIP_KEY, COMMIT_HASH_RE, DOWNLOAD_REVISION_FALLBACK, EXIT_INTERRUPTED, EXIT_OK, EXIT_OOM, EXIT_PRECONDITION, MIB,
+    REPLACE_DELAY_S, REPLACE_RETRIES, BackendOOM, StageError, StageInterrupted, StageOOMError, add_work_dir_arg,
+    close_quietly, interrupted_line, cached_file, cli_cmd, clip_identity,
     ensure_cached, hf_offline_active, is_oom, load_frame_list, read_rgb, reconfigure_stdio, require_frames, set_message_config,
     set_offline, utc_now, vram_state, work_dir_overrides, write_bytes_atomic, write_json_atomic,
 )
@@ -1003,10 +1004,12 @@ def compute(cfg: PipelineConfig, clip: Clip, key: dict, identity: dict, cuts: li
                     labels[i] = compose_labels(parts, size)
                     write_label(label_path(partial, i), labels[i])
                 _rmtree(partial / TMP_DIRNAME)
+        except KeyboardInterrupt:                  # T-603: posisi untuk satu baris; isolate/ lama tetap utuh (hasil ditulis di akhir)
+            raise StageInterrupted(f"[1b] frame {n_done}/{n_total}") from None
         finally:
             run_info["vram"] = {**{k: v for k, v in (run_info.get("open") or {}).items()
                                    if k in ("vram_free_before_load_mib", "vram_total_mib")}, **backend.stats()}
-            backend.close()
+            close_quietly(backend)
         run_info["ram"]["peak_process_mib"] = process_peak_ram_mib()
     statuses = {i: frame_status(labels.get(i)) for i in clip.indices}
     shots_of = {i: shot_of(i, shots) for i in clip.indices}
@@ -1095,9 +1098,11 @@ def main(argv: list[str] | None = None, backend_factory: BackendFactory | None =
     except (StageError, ConfigError) as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return EXIT_PRECONDITION
-    except KeyboardInterrupt:
-        print("ERROR: [1b] dihentikan (Ctrl+C) — isolate/ lama utuh; jalankan ulang (seluruh klip dihitung ulang)",
-              file=sys.stderr)
+    except StageInterrupted as e:                  # T-603: satu baris, tanpa traceback; isolate/ lama utuh
+        print(interrupted_line(f"{e}; isolate/ lama utuh (seluruh klip dihitung ulang)"), file=sys.stderr, flush=True)
+        return EXIT_INTERRUPTED
+    except KeyboardInterrupt:                      # di luar loop SAM (mis. memuat model)
+        print(interrupted_line("[1b] isolate; isolate/ lama utuh (seluruh klip dihitung ulang)"), file=sys.stderr, flush=True)
         return EXIT_INTERRUPTED
     return EXIT_OK
 

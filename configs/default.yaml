@@ -149,3 +149,9 @@ export:
                              # Audio meme biasanya milik pihak ketiga → default tanpa audio; tambahkan audio
                              # berlisensi di editor platform (TikTok/CapCut)
   filename: "{source}.mp4"   # di paths.out_dir; {source} = nama video sumber (disanitasi). Hasil klip lain tidak ditimpa
+
+# ── BATCH (subperintah `batch`, T-603; bukan stage) ──
+batch:
+  video_exts: [".avi", ".mkv", ".mov", ".mp4", ".webm"]   # folder: hanya file dengan ekstensi ini (huruf kecil)
+  disk_mib_per_mpx: 8.5      # MiB per megapiksel kerja per frame (W × H meta.json); maks terukur 8,08 (klip5)
+  disk_reserve_gib: 5        # ruang bebas minimum di drive work_dir di luar estimasi (GiB)

@@ -134,6 +134,7 @@ internal yang dipanggil cli, bukan cara pakai utama.
 | `download [--config P] [--seg-model 0.8b\|0.4b]` | unduh checkpoint (online, sekali jalan): Sapiens2-seg (default **0.8b**; `--seg-model 0.4b` = fallback), Depth Anything V2 Small, **dan** SAM 2.1 hiera tiny ([1b], T-605; 6 berkas jalur `transformers`) + model card. Subprocess mewarisi environment; **tidak** memaksa `HF_HUB_OFFLINE=1` (run biasa offline) |
 | `pick <video> [--frame N] [--config P] [--start S --end E] [--dry-run]` | **T-604:** jendela klik target (BUKAN stage, tidak masuk urutan `run`) → `target/points.json`. `meta.json` belum ada → [1] ingest dulu (CPU, argumen sama dengan `run`); sudah ada → `frames/` tidak disentuh. Lihat "`pick.py`" di bawah |
 | `crop <video> [--accept \| --box X Y W H \| --none \| --clear] [--config P]` | **T-607 (D-013):** keputusan kotak crop per SUMBER video (BUKAN stage, CPU) → `<paths.work_dir>/crop/<nama>/kotak.json`; tanpa aksi = status. `--start` / `--end` ditolak (exit 2: kotak berlaku untuk semua folder `<nama>@…`). Lihat "`crop.py`" di bawah |
+| `batch <video\|folder> ... [--list BERKAS] [--yes] [--skip-pending] [--config P] [--style P] [--seg-model 0.8b\|0.4b]` | **T-603 (BUKAN stage):** banyak klip → proses `run <video> … --yes` berurutan (satu proses per klip). Tanpa `--yes` = RENCANA: CPU saja, ingest + status crop / target / identitas / stage GPU + estimasi GPU dan disk; tidak memanggil stage GPU dan tidak menghapus apa pun. Dengan `--yes` = JALAN. Flag `--restart-from --preview --from --adopt --qc-only --limit` DILARANG (exit 1). Lihat "`batch.py`" di bawah |
 
 - **Folder kerja per klip:** `<paths.work_dir>/clips/<stem>/`; `stem` = nama video disanitasi dengan fungsi yang sama
   dengan `{source}` di `export.filename` (`export.sanitize_source_name`). Layout `clips/` memisahkan data klip dari
@@ -1348,6 +1349,49 @@ dengan aturan tetap)*:
   byte-identik.
 - **Batas yang diketahui:** lihat [1] (satu kotak per sumber; R2 bisa salah → konfirmasi wajib; validasi buta K2' klip11 tidak lagi buta);
   UI tarik kotak (seperti `pick`) = backlog docs/05.
+
+### `batch.py` — banyak klip (T-603; subperintah `batch`, BUKAN stage)
+- **Peran:** menjalankan `run` untuk tiap klip secara berurutan (satu proses per klip; RAM bersih; tanpa paralel, tanpa model tetap).
+  Modul `src/rotoscope/batch.py`; dispatch di `cli.main` SEBELUM argparse cli (flag terlarang → exit 1, bukan exit 2).
+- **Masukan:** argumen video atau folder (folder: tidak rekursif, urut nama, hanya ekstensi `batch.video_exts`), dan/atau
+  `--list BERKAS`. Format daftar: satu klip per baris `<path> [--start S --end E]`; baris kosong dan `#` = komentar; path
+  berspasi WAJIB kutip ganda: `"D:\Meme Lucu\video 1.mp4" --start 0 --end 2`. Parsing: `shlex.split(posix=False)` (backslash
+  Windows tetap); kutip ganda luar yang berpasangan dilepas; kutip tidak berpasangan / path tanpa kutip yang berisi spasi → exit 1
+  dengan nomor baris. Trim hanya di daftar (tidak di YAML).
+- **Dua klip dengan folder kerja sama** (stem sama dari folder berbeda, atau baris dobel) → exit 1 sebelum apa pun.
+- **Rencana (tanpa `--yes`):** ingest (sama dengan `run`; opsi A T-108) + status: crop (`tanpa pita` / `diputuskan` / `BELUM
+  diputuskan`), target (`tidak ada` / `ada` / `ada (up-to-date)` / `BASI`), identitas [2]/[2c] (`ok` / `BASI`), frame GPU per
+  stage, perkiraan GPU (`GPU_SECONDS_PER_FRAME`), disk baru. Tindakan siap tempel (`crop …`, `pick …`, `run … --restart-from
+  ingest --yes`) dicetak; batch TIDAK menjalankannya. Dalam rencana `isolate.run_isolate(dry_run=True)` hanya dipanggil bila
+  `target/points.json` ada; tanpa titik tidak ada pemanggilan (jalur hapus `skip_without_points(dry_run=False)` tidak tersentuh).
+  Rencana tidak menulis di `seg/ depth/ isolate/ stable/ contours/ strokes/ out/` (diuji: snapshot sama).
+- **Jalan (`--yes`):** rencana dicek ulang → klip `perlu tindakan` berhenti SEBELUM GPU (exit 4) kecuali `--skip-pending` (klip itu
+  `dilewati`) → cek disk (kurang → exit 1 sebelum GPU) → VRAM sekali (`nvidia-smi` memory.free ≥ `segment.vram_min_free_mib[model]`,
+  memakai `segment.check_vram`; `nvidia-smi` tidak ada → peringatan, lanjut) → tiap klip `python -m rotoscope run <video> [--start
+  --end] [--config] [--style] [--seg-model] --yes`. Perintah anak selalu memuat `--yes`.
+- **Exit rencana:** 0 siap · 4 ada klip perlu tindakan · 1 gagal (pre-flight, duplikat, ingest, disk kurang, flag dilarang).
+- **Exit jalan:** 0 semua selesai · 1 ada klip gagal (klip lain tetap jalan) · 4 ada klip dilewati tanpa gagal, atau berhenti sebelum
+  GPU karena perlu tindakan · 130 Ctrl+C. Gagal + dilewati sekaligus → 1. Ctrl+C: proses anak dihentikan (`_stop`), klip sisa
+  berstatus `belum`, batch berhenti.
+- **Ringkasan JSON** (mode jalan; juga saat Ctrl+C dan exit 4): `<paths.work_dir>/batch/ringkasan_<UTC>.json`, format
+  `rotoscope-batch/1`: `started_utc`, `exit_code`, `counts`, `klip[]` (nama, video, trim, status, exit_code, detik, work_dir, out_mp4).
+  Catatan saja: waktu tidak dipakai untuk keputusan.
+- **Ringkasan akhir di layar** (T-603 keputusan Rio no. 1, mode jalan; juga saat Ctrl+C dan exit 4): tabel per klip (#, klip, status
+  `selesai` / `gagal` / `dilewati` / `dihentikan` / `belum dijalankan`, exit, waktu mnt, output MP4), baris `Exit N = <arti>`
+  (0 semua selesai · 1 ada gagal · 4 ada dilewati tanpa gagal · 130 Ctrl+C), klip dilewati dengan alasan + perintah tindakan, path JSON.
+  Mode `--yes` tidak mencetak `Keluar` / `Untuk menjalankan`; sebagai gantinya `Mulai: N klip dijalankan, M dilewati` (tambahan
+  ` (--skip-pending)` hanya bila M > 0).
+  Kolom GPU dan disk = `—` untuk klip `dilewati` / `perlu tindakan` / `gagal`.
+- **Ctrl+C di stage GPU** (keputusan Rio no. 3): satu baris `dihentikan (Ctrl+C) di frame k/N (frame_xxxxx.png); jalankan ulang untuk
+  melanjutkan`, exit 130, tanpa traceback (segment, depth; isolate: posisi `[1b] frame k/N`). Cleanup backend yang kena Ctrl+C kedua
+  dibuang (`stage_common.close_quietly`). Stage CPU via `run`: satu baris `dihentikan (Ctrl+C) di stage [x]`, exit 130.
+- **Estimasi disk** (T-603 Tahap 2–3, keputusan E): `batch.disk_mib_per_mpx` × (W × H dari `meta.json`, juta piksel) × frame yang
+  belum ada (klip dengan GPU baru atau hilir belum lengkap = semua frame; klip lengkap = 0). Ruang bebas minimum
+  `batch.disk_reserve_gib`. Maks terukur 8,08 MiB/MP (klip5, T-603 Tahap 1).
+- **Koreksi (T-603 Tahap 1):** angka "±21–33 s" di prompt hanya segment + depth. Overhead `run` klip selesai terukur 30–58 s per klip
+  (dominan [2] describe + QC seluruh klip yang dihitung ulang setiap run); di luar lingkup T-603.
+- **VRAM:** `nvidia-smi` berjalan di mesin Rio dengan VRAM bebas ±2965 MiB saat Tahap 1 (< ambang segment 0,8b 3300 MiB) → `--yes`
+  gagal sampai aplikasi GPU ditutup (pesan exit 1 menyebut browser / aplikasi berat).
 
 ### Anggaran disk per klip (360 frame, *est.*)
 

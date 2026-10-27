@@ -113,7 +113,7 @@ _SUGGEST_CUTOFF = 0.6
 # Key yang pindah file / section (D-010) → pesan khusus, bukan sekadar "tidak dikenal".
 _STYLE_SECTIONS = ("shape", "stroke", "jitter", "multipass", "paper", "render")
 _PIPELINE_SECTIONS = ("paths", "ingest", "isolate", "segment", "depth", "qc", "groups", "target_mask", "stabilize", "vectorize",
-                      "export")
+                      "export", "batch")
 _MOVED_IN_PIPELINE = {
     s: "ini parameter style — taruh di configs/styles/*.yaml" for s in _STYLE_SECTIONS
 }
@@ -319,6 +319,14 @@ class ExportConfig:
 
 
 @dataclass(frozen=True)
+class BatchConfig:
+    """Subperintah `batch` (T-603; bukan stage). Angka disk dan ruang bebas ada di sini (tanpa magic number di batch.py)."""
+    video_exts: tuple[str, ...] = (".avi", ".mkv", ".mov", ".mp4", ".webm")   # folder: hanya ekstensi ini (huruf kecil dibandingkan)
+    disk_mib_per_mpx: float = 8.5      # MiB per megapiksel kerja per frame (W × H dari meta.json); maks terukur 8,08 (klip5, T-603)
+    disk_reserve_gib: float = 5.0      # ruang bebas minimum di drive work_dir di luar estimasi
+
+
+@dataclass(frozen=True)
 class PipelineConfig:
     paths: PathsConfig = field(default_factory=PathsConfig)
     style: str = DEFAULT_STYLE_NAME      # T-406: nama preset atau path YAML style (kalah dari flag --style); dicari lewat resolve_style
@@ -332,6 +340,7 @@ class PipelineConfig:
     stabilize: StabilizeConfig = field(default_factory=StabilizeConfig)
     vectorize: VectorizeConfig = field(default_factory=VectorizeConfig)
     export: ExportConfig = field(default_factory=ExportConfig)
+    batch: BatchConfig = field(default_factory=BatchConfig)
 
 
 # ── Style: configs/styles/*.yaml ───────────────────
@@ -915,6 +924,13 @@ def _validate_pipeline(c: PipelineConfig) -> None:
         raise ConfigError(f"export.foreground_color ({_fmt(e.foreground_color)}) harus ≠ export.background_color "
                           f"— siluet tidak akan terlihat")
     _export_filename("export.filename", e.filename)
+
+    b = c.batch
+    for ext in b.video_exts:
+        if not ext.startswith(".") or len(ext) < 2 or ext != ext.lower():
+            _fail("batch.video_exts", ext, "harus berawalan '.' dan huruf kecil, mis. \".mp4\"")
+    _at_least("batch.disk_mib_per_mpx", b.disk_mib_per_mpx, 0, strict=True)
+    _at_least("batch.disk_reserve_gib", b.disk_reserve_gib, 0)
 
 
 def _export_filename(key: str, v: str) -> None:

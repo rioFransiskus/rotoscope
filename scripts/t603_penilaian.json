@@ -1,0 +1,39 @@
+{
+  "sumber": "Penilaian Rio atas uji GPU K5 (2026-10-26); disusun dari log Rio, disetujui Rio; disimpan verbatim",
+  "penilaian": {
+    "1_rencana_jelas": "ya — status per klip, alasan, dan perintah crop mudah dibaca. Tidak jelas: di mode --yes muncul \"Keluar: exit 0\" dan \"Untuk menjalankan: …\" padahal batch langsung jalan.",
+    "2_progres_jelas": "ya — [klip i/N] dan sisa menit GPU terlihat; perkiraan 25,3 mnt, nyata ±28 mnt.",
+    "3_ringkasan_jelas": "tidak — di akhir hanya path JSON; tidak ada daftar status per klip, alasan exit 4 tidak tertulis.",
+    "4_ctrl_c_berhenti_rapi": "ya — exit 130, 0 proses Python; tetapi traceback panjang terlihat seperti crash.",
+    "5_jalan_ulang_melanjutkan": "ya — test_short 5 frame dilewati, 19 diproses; k5_diff False hanya karena seg/frames.jsonl.",
+    "6_komentar": "Ctrl+C di klip 1, bukan klip 2; langkah 2 tidak saya jalankan; simbol tampil benar."
+  },
+  "fakta_k5": {
+    "vram_bebas_mib": 3428,
+    "L1_rencana_exit": 4,
+    "L2": "tidak dijalankan Rio (bukti = run Claude Code, k5_langkah2.txt)",
+    "L3_ctrl_c": "klip 1 test_short@0-1 sesudah [5/24]; exit 130; 0 proses Python; traceback KeyboardInterrupt ganda (segment._process, lalu backend.close())",
+    "L4_snap4": "149 berkas; seg/depth 12",
+    "L5_resume": "test_short 5 valid dilewati, 19 diproses; tiga klip exit 0 (356,9 / 873,6 / 435,0 s); exit akhir 4; perkiraan 25,3 mnt, nyata ±27,8 mnt",
+    "L6_snap6": "1047 berkas; k5_diff 12 berkas, berbeda 1 (seg/frames.jsonl test_short) → identik = False",
+    "simbol": "≈ — → · tampil benar di PowerShell"
+  },
+  "penilaian_sesudah_K5_2026-10-26": {
+    "mekanik": "semua mekanik benar"
+  },
+  "penilaian_tampilan_baru_dan_cek_ctrl_c_nyata_2026-10-26": {
+    "tampilan": "semua jelas",
+    "sumber": "tampilan baru (ringkasan akhir, baris \"Mulai:\", pesan Ctrl+C) + cek Ctrl+C nyata (2026-10-26)",
+    "cek_ctrl_c_nyata": {
+      "perintah": "python -m rotoscope batch samples\\test_short.mp4 --config work\\t603_scratch\\k5\\config.yaml --yes",
+      "vram_bebas_mib": 3587,
+      "rencana": "1 klip siap (119 f, 33,1 mnt)",
+      "mulai": "Mulai: 1 klip dijalankan, 0 dilewati (--skip-pending)",
+      "segment": "[1/119] 24,85 s; [2/119] 16,15 s; Ctrl+C",
+      "pesan": "dihentikan (Ctrl+C) di frame 3/119 (frame_00002.png); jalankan ulang untuk melanjutkan (satu baris, tanpa traceback, tanpa baris induk ganda)",
+      "ringkasan": "status dihentikan, waktu 1,1 mnt, Exit 130 = dihentikan (Ctrl+C); ringkasan_20261026T080821Z.json",
+      "exit_code_powershell": 130,
+      "proses_python_setelah": 0
+    }
+  }
+}

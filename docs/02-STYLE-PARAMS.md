@@ -163,6 +163,12 @@ export:
                              # Audio meme biasanya milik pihak ketiga → default tanpa audio; tambahkan audio
                              # berlisensi di editor platform (TikTok/CapCut)
   filename: "{source}.mp4"   # di paths.out_dir; {source} = nama video sumber (disanitasi); {style} = nama preset / stem berkas style (T-406). Hasil klip lain tidak ditimpa
+
+# ── BATCH (subperintah `batch`, T-603; bukan stage) ──
+batch:
+  video_exts: [".avi", ".mkv", ".mov", ".mp4", ".webm"]   # folder: hanya file dengan ekstensi ini (huruf kecil)
+  disk_mib_per_mpx: 8.5      # MiB per megapiksel kerja per frame (W × H meta.json); maks terukur 8,08 (klip5)
+  disk_reserve_gib: 5        # ruang bebas minimum di drive work_dir di luar estimasi (GiB)
 ```
 
 ### Validasi `default.yaml` (saat load, error jelas kalau gagal)
@@ -253,6 +259,11 @@ sensitivitas: docs/01 [2] "Definisi `big_blobs` `transient`"; docs/04 "Keputusan
 5. Hash definisi grup dicatat di `stable/manifest.json`; berubah → output [3]/[4] basi, [2] tidak
 
 ---
+
+**Parameter `batch.*` (T-603, subperintah `batch`, bukan stage):**
+- `batch.video_exts`: daftar ekstensi video untuk isi folder (huruf kecil, berawalan `.`; selain itu = error pada config). Folder dibaca tidak rekursif, urut nama.
+- `batch.disk_mib_per_mpx` (> 0): estimasi disk per frame = nilai × megapiksel kerja (W × H dari `meta.json`) × jumlah frame yang belum ada. Maks terukur 8,08 (klip5); mengubahnya tidak mengubah hasil, hanya estimasi rencana.
+- `batch.disk_reserve_gib` (≥ 0): ruang bebas minimum di drive `paths.work_dir` di luar estimasi; kurang → rencana / jalan berhenti sebelum GPU.
 
 ## `configs/styles/rough-sketch.yaml` — style
 

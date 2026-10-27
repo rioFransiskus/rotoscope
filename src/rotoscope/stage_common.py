@@ -36,6 +36,7 @@ EXIT_OK = 0
 EXIT_PRECONDITION = 1
 EXIT_OOM = 3
 EXIT_CROP_DECISION = 4          # T-607: `run` berhenti sesudah [1] — saran crop belum diputuskan (crop --accept / --box / --none)
+EXIT_INTERRUPTED = 130          # Ctrl+C (T-603 keputusan Rio no. 3): satu baris "dihentikan (Ctrl+C) di …", tanpa traceback
 
 MIB = 2**20
 
@@ -52,6 +53,23 @@ class StageError(RuntimeError):
 
 class StageOOMError(StageError):
     """GPU kehabisan memori di tengah run (exit 3). Tidak ada ganti model otomatis."""
+
+
+class StageInterrupted(Exception):
+    """Ctrl+C di tengah loop stage GPU; `str(e)` = posisi (mis. "frame 6/24 (frame_00005.png)") untuk satu baris keluaran."""
+
+
+def interrupted_line(position: str) -> str:
+    return f"dihentikan (Ctrl+C) di {position}; jalankan ulang untuk melanjutkan"
+
+
+def close_quietly(backend) -> None:
+    """backend.close() di `finally`: Ctrl+C kedua saat membebaskan GPU dibuang (proses keluar membebaskannya), agar tidak ada
+    traceback kedua (T-603 K5 L3: KeyboardInterrupt di torch.cuda.empty_cache)."""
+    try:
+        backend.close()
+    except KeyboardInterrupt:
+        pass
 
 
 class BackendOOM(RuntimeError):

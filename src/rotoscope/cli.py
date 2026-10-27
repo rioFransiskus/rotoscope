@@ -7,6 +7,7 @@
     python -m rotoscope download [--config PATH] [--seg-model 0.8b|0.4b]
     python -m rotoscope pick <video> [--frame N] [--config PATH] [--dry-run]
     python -m rotoscope crop <video> [--accept | --box X Y W H | --none | --clear] [--config PATH]
+    python -m rotoscope batch <video|folder> ... [--list BERKAS] [--yes] [--skip-pending]   (T-603; batch.py; dispatch di main)
 
 Satu video = satu folder kerja `<paths.work_dir>/clips/<nama video disanitasi>/` (nama disanitasi dengan fungsi
 yang sama dengan `{source}` di export.filename); `paths.out_dir` tidak berubah. Folder itu diteruskan ke tiap stage
@@ -63,8 +64,8 @@ from rotoscope.export import (
 from rotoscope.ingest import DEFAULT_TARGET_FPS, DEFAULT_WORKING_WIDTH, META_FILENAME, IngestError, make_trim
 from rotoscope.segment import QC_REPORT_FILENAME
 from rotoscope.stage_common import (
-    EXIT_CROP_DECISION, EXIT_OK, EXIT_OOM, EXIT_PRECONDITION, TRIM_SEP, StageError, cli_cmd, config_flag, quote_arg,
-    reconfigure_stdio, seconds_label, set_message_config, trim_label,
+    EXIT_CROP_DECISION, EXIT_OK, EXIT_OOM, EXIT_PRECONDITION, TRIM_SEP, StageError,
+    cli_cmd, config_flag, interrupted_line, quote_arg, reconfigure_stdio, seconds_label, set_message_config, trim_label,
 )
 
 EXIT_USAGE = 2
@@ -339,8 +340,18 @@ def run_gpu_stage(stage: str, args: Sequence[str], env: dict | None = None) -> i
     proc = _popen([sys.executable, "-m", MODULES[stage], *args], env=env)
     try:
         return proc.wait()
-    except BaseException:
-        _stop(proc)
+    except BaseException as exc:
+        if isinstance(exc, KeyboardInterrupt):
+            # T-603: Ctrl+C juga mengenai anak (konsol sama): beri waktu selesai sendiri (mencetak posisi, exit 130) sebelum dimatikan.
+            try:
+                proc.wait(timeout=TERMINATE_TIMEOUT_S)
+            except subprocess.TimeoutExpired:
+                _stop(proc)
+        else:
+            _stop(proc)
+        # Anak yang dimatikan paksa tidak mencetak posisinya → induk yang mencetak satu baris.
+        if isinstance(exc, KeyboardInterrupt) and proc.returncode != EXIT_INTERRUPTED:
+            print(interrupted_line(f"stage {LABELS[stage]}"), file=sys.stderr, flush=True)
         raise
 
 
@@ -633,6 +644,8 @@ def cmd_run(a: argparse.Namespace) -> int:
                 print(f"[1b] --limit {ctx.limit} tidak berlaku untuk [1b]: masker selalu seluruh klip", flush=True)
             rc = run_stage(stage, stage_args(stage, ctx), ctx)
             timings.append((stage, time.perf_counter() - t0))
+            if rc == EXIT_INTERRUPTED:                       # stage sudah mencetak "dihentikan (Ctrl+C) …" (T-603)
+                return rc
             if rc != EXIT_OK:
                 hint = (" Lihat pesan [1b] di atas (mis. butuh --yes untuk GPU, atau titik basi → pick ulang)."
                         if stage == "isolate" else "")
@@ -652,8 +665,8 @@ def cmd_run(a: argparse.Namespace) -> int:
             if stage == "segment" and (w := qc_warning(ctx.work_dir)):
                 print(w, file=sys.stderr, flush=True)
     except KeyboardInterrupt:
-        print(f"\nERROR: dihentikan (Ctrl+C) di stage {LABELS[ctx.state.get('stage', 'ingest')]}; "
-              f"{_resume_hint(a.restart_from)}", file=sys.stderr)
+        if ctx.state.get("stage") not in GPU_STAGES:      # stage GPU: run_gpu_stage sudah mencetak satu baris (T-603)
+            print(interrupted_line(f"stage {LABELS[ctx.state.get('stage', 'ingest')]}"), file=sys.stderr, flush=True)
         return EXIT_INTERRUPTED
     except Exception as e:  # noqa: BLE001 — anak sudah di-terminate di run_gpu_stage
         traceback.print_exc()
@@ -845,6 +858,8 @@ def build_parser() -> argparse.ArgumentParser:
     d.add_argument("--seg-model", choices=("0.8b", "0.4b"), default=None)
     d.set_defaults(func=cmd_download)
 
+    sub.add_parser("batch", add_help=False, help="T-603: banyak klip → run berurutan; tanpa --yes = rencana CPU "
+                                                  "(`batch -h` untuk flag; dispatch di main, bukan argparse ini)")
     k = sub.add_parser("pick", help="T-604: jendela klik target (bukan stage) → <klip>/target/points.json",
                        description="Jendela klik target untuk satu frame (T-604; BUKAN stage, tidak masuk urutan run): "
                                    "klik kiri = target, klik kanan = bukan target, tarik = kotak, N / U / R, Enter / S = "
@@ -885,6 +900,10 @@ def _add_trim_args(parser: argparse.ArgumentParser) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     reconfigure_stdio()
+    raw = list(sys.argv[1:] if argv is None else argv)
+    if raw[:1] == ["batch"]:                            # T-603: parser sendiri (flag terlarang → exit 1, bukan argparse exit 2)
+        from rotoscope import batch as batch_mod        # malas: batch meng-import cli
+        return batch_mod.main(raw[1:])
     args = build_parser().parse_args(argv)
     set_message_config(getattr(args, "config", None))   # T-607: --config non-default ikut di perintah siap tempel
     try:

@@ -1,0 +1,77 @@
+{
+  "_info": "T-603 data terukur (penutupan). Sumber: work/t603/ (ter-ignore, dipertahankan sebagai arsip) dan work/t603_scratch/k5/ (DIHAPUS di Tahap 4 — isi penting sudah disalin ke sini). Data ini tidak dibutuhkan skrip; hanya untuk audit.",
+  "overhead_run_klip_selesai_tahap1": {
+    "keterangan": "run ulang klip selesai, GPU disembunyikan (CUDA_VISIBLE_DEVICES=-1); total = seluruh run",
+    "test_short_119f": {"total_s": 30.5, "ingest_s": 0.6, "segment_s": 19.2, "depth_s": 7.1, "stabilize_s": 1.0, "vectorize_s": 0.6, "stylize_s": 0.4, "export_s": 0.5},
+    "klip4_217f": {"total_s": 53.1, "ingest_s": 1.2, "segment_s": 35.8, "depth_s": 7.7, "stabilize_s": 4.0, "vectorize_s": 1.8, "stylize_s": 0.9, "export_s": 0.7},
+    "klip3_182f_target": {"total_s": 57.5, "ingest_s": 1.7, "isolate_s": 4.4, "segment_s": 30.6, "depth_s": 7.3, "stabilize_s": 8.2, "vectorize_s": 2.4, "stylize_s": 1.1, "export_s": 0.8},
+    "impor_torch_s": 2.0,
+    "impor_transformers_s": 1.1,
+    "segment_describe_s": 6.2,
+    "segment_qc_only_klip4_proses_s": 15.7,
+    "catatan": "Dugaan prompt ±21–33 s (segment+depth) SALAH; overhead klip selesai 30–58 s (dominan segment: describe + QC seluruh klip tiap run)."
+  },
+  "disk_per_mp_tahap1": {
+    "keterangan": "MiB per megapiksel kerja per frame, semua folder klip + out/ (svg + mp4); W x H dari meta.json",
+    "Klip2": {"w": 412, "h": 720, "mib_per_mp": 7.07},
+    "klip3": {"w": 720, "h": 1280, "mib_per_mp": 6.18},
+    "klip4": {"w": 720, "h": 1280, "mib_per_mp": 5.20},
+    "klip5": {"w": 720, "h": 668, "mib_per_mp": 8.08},
+    "test": {"w": 480, "h": 854, "mib_per_mp": 5.81},
+    "test_short": {"w": 480, "h": 854, "mib_per_mp": 5.76},
+    "konfigurasi": {"batch.disk_mib_per_mpx": 8.5, "batch.disk_reserve_gib": 5}
+  },
+  "ingest_crop_tahap1_scratch_s": {
+    "keterangan": "ingest tanpa crop / ingest+deteksi cold / ingest warm (deteksi.json cocok)",
+    "Klip2": [0.35, 1.68, 0.40],
+    "klip3": [1.65, 6.34, 1.69],
+    "klip4": [1.11, 6.71, 1.15],
+    "klip5": [0.70, 4.76, 0.77],
+    "test": [0.76, 4.12, 0.82],
+    "test_short": [0.40, 2.19, 0.45]
+  },
+  "k5_gpu_nyata": {
+    "perkiraan_plan_mnt": 26.7,
+    "perkiraan_penilaian_rio_mnt": 25.3,
+    "nyata_penilaian_rio_mnt": 27.8,
+    "run_pertama_43611": {"test_short_frames_diproses": 19, "ctrlc_detik": 124.6, "catatan": "Ctrl+C di [5/24] (sebelum kode baru)"},
+    "run_resume_43921": {
+      "test_short": {"frames_total": 24, "frames_valid_awal": 5, "frames_diproses": 19, "detik": 356.9},
+      "klip4": {"frames_total": 48, "frames_valid_awal": 0, "frames_diproses": 48, "detik": 873.6},
+      "test": {"frames_total": 24, "frames_valid_awal": 0, "frames_diproses": 24, "detik": 435.0}
+    },
+    "overhead_detik": {
+      "test_short": 39.8,
+      "klip4": 72.5,
+      "test": 34.4,
+      "rumus": "detik − frames_diproses × 16,69 s (GPU per frame: seg 16,5 + depth 0,19)"
+    },
+    "ctrlc_nyata_80821": {"ringkasan": "ringkasan_20261026T080821Z.json", "status": "dihentikan", "detik": 66.1, "exit": 130, "pesan": "dihentikan (Ctrl+C) di frame 3/119 (frame_00002.png); jalankan ulang untuk melanjutkan", "vram_bebas_mib": 3587, "segment_per_frame_s": [24.85, 16.15]}
+  },
+  "k5_snapshot_dan_diff": {
+    "snap4": {"berkas": 149, "seg_depth": 12, "bukti": "snapshot tanpa ukuran; awalan dibuktikan lewat sha256 per batas baris"},
+    "snap6": {"berkas": 1047},
+    "snap4_vs_snap6": {"bersama": 149, "gagal": 0, "awalan_terbukti": "seg/frames.jsonl test_short: 6 baris, 1888 byte", "identik": true},
+    "snap5pre_vs_snap6": {"bersama": 1047, "gagal": 0, "identik": true, "catatan": "bukti: rencana K5 (0 frame GPU) tidak mengubah berkas"},
+    "snap5pre_vs_snap7": {"bersama": 1047, "gagal": 0, "berkas_baru": 1, "qc_beda_hanya_created_utc": 3, "identik": true},
+    "snap6_vs_snap7_langsung": "qc BERBEDA karena snap6 dibuat sebelum format #norm; terbukti lewat rantai snap6=snap5pre dan snap5pre vs snap7"
+  },
+  "k3_tanpa_gpu_2026-10-26": {
+    "rencana_frame_gpu": 0,
+    "rencana_exit": 4,
+    "jalan_exit": 4,
+    "klip_selesai": {"test_short@0-1": {"exit": 0, "detik": 16.4, "frames_diproses": 0}, "klip4@0-2": {"exit": 0, "detik": 22.4, "frames_diproses": 0}, "test@0-1": {"exit": 0, "detik": 16.1, "frames_diproses": 0}},
+    "klip_dilewati": ["Klip2@0-1 (saran crop belum diputuskan)"]
+  },
+  "f1_produksi": {
+    "before_tahap1": "10719 berkas (klip + work/crop + out)",
+    "setelah_penutupan": "identik (f1_after_penutupan.json)",
+    "qc_report_created_utc": "0 perubahan pada tahap penutupan"
+  },
+  "mutasi": {"batch_dan_interrupt": "34/34 terbunuh; kontrol lolos (154 test)", "berkas": "work/t603/mutations.json"},
+  "k5_konfigurasi": {
+    "config.yaml": "paths:\n  work_dir: \"C:/projects/rotoscope/work/t603_scratch/k5/work\"\n  out_dir: \"C:/projects/rotoscope/work/t603_scratch/k5/out\"\n",
+    "daftar.txt": "samples\\Klip2.mp4 --start 0 --end 1\nsamples\\test_short.mp4 --start 0 --end 1\nsamples\\klip4.mp4 --start 0 --end 2\nsamples\\test.mp4 --start 0 --end 1"
+  },
+  "suite": {"lulus": 1714, "gagal": 0, "skip": 4}
+}

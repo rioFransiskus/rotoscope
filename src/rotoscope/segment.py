@@ -57,8 +57,9 @@ from rotoscope.config import (
 )
 from rotoscope.ingest import FRAMES_DIRNAME
 from rotoscope.stage_common import (  # noqa: F401 — sebagian di-export ulang (seg.MIB, seg.read_jsonl, …)
-    COMMIT_HASH_RE, DOWNLOAD_REVISION_FALLBACK, EXIT_OK, EXIT_OOM, EXIT_PRECONDITION, HF_OFFLINE_ENV, MIB,
-    REPLACE_DELAY_S, REPLACE_RETRIES, TMP_SUFFIX, BackendOOM, StageError, StageOOMError, add_work_dir_arg,
+    COMMIT_HASH_RE, DOWNLOAD_REVISION_FALLBACK, EXIT_INTERRUPTED, EXIT_OK, EXIT_OOM, EXIT_PRECONDITION, HF_OFFLINE_ENV, MIB,
+    REPLACE_DELAY_S, REPLACE_RETRIES, TMP_SUFFIX, BackendOOM, StageError, StageInterrupted, StageOOMError,
+    add_work_dir_arg, close_quietly, interrupted_line,
     adopt_identity, append_jsonl, clean_tmp, cli_cmd, clip_identity, hf_offline_active, last_frame_records,
     load_frame_list, read_jsonl, read_rgb, reconfigure_stdio, require_frames, require_same_clip, set_message_config,
     set_offline, vram_state, work_dir_overrides, write_bytes_atomic, write_json_atomic,
@@ -507,8 +508,10 @@ def _process(clip: Clip, backend: SegBackend, info: ModelInfo, todo: list[tuple[
     run["open"] = opened
     append_jsonl(clip.frames_log, {"event": "run_start", "time_utc": _utc_now(), "model": info.model,
                                    "revision": info.revision, "n_todo": len(todo), **(opened or {})})
+    where = "[2] segment"
     try:
         for k, (index, name) in enumerate(todo, 1):
+            where = f"frame {k}/{len(todo)} ({name})"
             t0 = time.perf_counter()
             rgb = read_rgb(clip.work_dir / FRAMES_DIRNAME / name)
             if rgb.shape[:2] != (clip.height, clip.width):
@@ -544,8 +547,10 @@ def _process(clip: Clip, backend: SegBackend, info: ModelInfo, todo: list[tuple[
             log(f"  [{k}/{len(todo)}] {name} {rec['total_s']:.2f} s, peak reserved "
                 f"{stats.get('peak_reserved_mib', '-')} MiB, beda argmax {mismatch:.4f}%"
                 + ("" if finite else ", NaN/inf!"))
+    except KeyboardInterrupt:
+        raise StageInterrupted(where) from None
     finally:
-        backend.close()
+        close_quietly(backend)
         append_jsonl(clip.frames_log, {"event": "run_end", "time_utc": _utc_now(),
                                        "n_done": run["processed"], "wall_s": round(time.perf_counter() - t_run, 2)})
 
@@ -808,6 +813,12 @@ def main(argv: list[str] | None = None, backend_factory: BackendFactory | None =
                               log=log)
             log(f"selesai: {run['processed']} diproses, {run['skipped']} dilewati "
                   f"({time.perf_counter() - t0:.1f} s)")
+    except StageInterrupted as e:                  # T-603 (Ctrl+C di loop frame): satu baris, tanpa traceback
+        print(interrupted_line(str(e)), file=sys.stderr, flush=True)
+        return EXIT_INTERRUPTED
+    except KeyboardInterrupt:                      # di luar loop frame (mis. memuat model / QC)
+        print(interrupted_line("[2] segment"), file=sys.stderr, flush=True)
+        return EXIT_INTERRUPTED
     except SegmentOOMError as e:
         print(f"ERROR (OOM): {e}", file=sys.stderr)
         return EXIT_OOM

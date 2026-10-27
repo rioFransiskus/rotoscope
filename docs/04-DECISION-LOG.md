@@ -5565,6 +5565,324 @@ Dibaca ulang sebelum mulai: `T304-prompt.md` (aturan hasil no. 6, Tahap 4), "Kep
 
 **9. `docs/02`:** satu catatan prosa di luar blok YAML: "`boil_preserve` 0,3 dikonfirmasi T-304." Blok YAML tidak diubah.
 
+### Keputusan T-603 (batch processing, subperintah `batch`), 2026-10-25 — Tahap 1 berjalan
+Keputusan Rio (`T603-prompt.md` "Keputusan Rio" no. 1–11, dicatat di sini sebelum kode batch):
+1. Subperintah `python -m rotoscope batch ...` (bukan stage). Kontrak dan perilaku `run` satu klip TIDAK berubah.
+2. Input: satu/lebih path video dan/atau folder (tidak rekursif, urut nama) + `--list <berkas.txt>` (satu klip per baris
+   `<path> [--start S --end E]`, `#` = komentar). Trim per klip HANYA di berkas daftar. Folder klip / stem sama dari folder
+   berbeda → ditolak di rencana.
+3. Dua langkah. Tanpa `--yes` = RENCANA (CPU; ingest + saran crop per klip; status crop / target / stage; estimasi waktu GPU
+   + disk; daftar tindakan dengan perintah siap tempel, urutan crop lalu pick; keluar tanpa GPU). Dengan `--yes` = jalan.
+4. Dengan `--yes`: rencana dicek ulang; klip "perlu tindakan" (crop belum diputuskan / target basi) → berhenti SEBELUM GPU
+   (exit 4) + daftar tindakan. `--skip-pending` = klip itu dilewati, sisanya jalan, dicatat di ringkasan.
+5. Berurutan, satu klip sekaligus; tiap klip = proses `run` terpisah. Tanpa paralel, tanpa model tetap.
+6. Klip gagal (exit 1 / 3 / lainnya) → dicatat, lanjut. Ctrl+C → anak dihentikan, batch berhenti (130). Ringkasan per klip
+   (status, waktu, path output) dicetak + JSON di `<work_dir>/batch/` (catatan, bukan sumber keputusan).
+7. Resume = jalankan ulang perintah sama; tanpa berkas state batch. Overhead klip selesai diukur di Tahap 1 (lihat hasil).
+   Perbaikan overhead segment/depth TIDAK masuk task ini.
+8. Progres = teks biasa: `[klip i/N] nama — stage — perkiraan sisa batch` + progres frame yang dicetak stage.
+9. Dilarang (exit 1): `--restart-from`, `--preview`, `--from`, `--adopt`, `--qc-only`, `--limit`. Diteruskan ke tiap klip:
+   `--config`, `--style`, `--seg-model`.
+10. Disk: rencana mengestimasi disk per klip (angka per frame dari klip produksi) vs ruang bebas drive `work_dir`; kurang →
+    berhenti sebelum GPU. Angka / ambang di YAML section `batch`; data per klip tidak di YAML.
+11. Kriteria sukses (tetap, tidak disetel ulang): K1 regresi `run` + produksi byte-identik; K2 rencana tanpa `--yes` tanpa
+    proses GPU dan tanpa perubahan seg/, depth/, isolate/, stable/, contours/, strokes/, out/ (pengecualian: frames/ + meta.json
+    dari ingest, berkas deteksi / saran crop); K3 resume byte-identik + frame valid tidak dihitung ulang, exit 0; K4 satu klip
+    gagal tidak menghentikan klip lain, ringkasan + exit benar; K5 uji GPU nyata Rio di scratch (≤ 45 mnt GPU, termasuk Ctrl+C
+    lalu jalankan ulang) lolos K3, penilaian keterbacaan "jelas" / "tidak jelas + bagian"; tanpa dependency baru, tanpa unduhan.
+- **Urutan (menyimpang dari prompt, dicatat):** `scripts/t603_hash.py` (F1 before) dan `scripts/t603_ukur.py` (alat ukur
+  baca-saja; ingest + deteksi di scratch) ditulis dan dijalankan SEBELUM entri ini. Keduanya tidak mengubah `src/`, `configs/`,
+  `tests/`. Pola sama dengan T-605 (alat ukur sebelum keputusan).
+- Tidak bertentangan dengan keputusan tercatat: ingest selalu ulang (opsi A, T-108) → rencana juga ingest (no. 3);
+  exit 4 (T-607) dipakai ulang; `--yes` untuk penghapusan / GPU (T-605 / T-108) berlaku untuk `run` yang dipanggil batch.
+
+### Hasil T-603 Tahap 1 (2026-10-25) — ukur + rancangan; BERHENTI menunggu persetujuan Rio
+**F1 before:** 10 719 berkas (6 folder klip + `work/crop/` + `out/`). Terhadap F1 penutupan T-607 (`after_4f`): klip + `out/` identik;
+hanya tambahan 18 berkas `work/crop/` (di luar cakupan hash T-607). Hash: `work/t603/before_sha256.txt`.
+
+**Verifikasi dugaan chat — BENAR (dari kode):** `run` tanpa `--yes` menjalankan [2] segment dan [2c] depth di GPU untuk klip
+baru (dan melanjutkan frame yang belum valid). Bukti: `cli.require_yes` hanya dipanggil bila `--restart-from`; `cli.stage_args`
+tidak meneruskan `--yes` ke segment / depth; `segment.run_segment` dan `depth.run_depth` tidak punya gate `--yes`. Gate `--yes`
+hanya ada di [1b] (`isolate.run_isolate`: `jobs and not yes` → StageError) dan di penghapusan (`--restart`). Akibatnya `run` penuh
+untuk klip 10 s (240 frame) menghabiskan ±67 mnt GPU tanpa konfirmasi. Dugaan chat tentang konfirmasi GPU = benar.
+
+**Overhead klip selesai — sebagian SALAH (diukur).** `CUDA_VISIBLE_DEVICES=-1` (GPU disembunyikan); semua stage "dilewati" dan
+berhasil (0 diproses) di ketiga klip — jalur dilewati bekerja.
+| klip (frame) | total `run` | [1] ingest | [2] segment | [2c] depth | [3] stabilize | [4]–[6] |
+|---|---|---|---|---|---|---|
+| test_short (119) | 30,5 s | 0,6 s | 19,2 s | 7,1 s | 1,0 s | 1,5 s |
+| klip4 (217) | 53,1 s | 1,2 s | 35,8 s | 7,7 s | 4,0 s | 3,3 s |
+| klip3 (182, target) | 57,5 s | 1,7 s | 30,6 s | 7,3 s | 8,2 s | 4,3 s (+[1b] 4,4 s) |
+- Dugaan "±21–33 s karena impor torch" = **SALAH**: impor torch 2,0 s + transformers 1,1 s (diukur). Yang dominan: `TorchSegBackend.describe()`
+  6,2 s (diukur) + **[2] QC seluruh klip dihitung ulang setiap run** (`run_segment` → `run_qc`; `qc-only` klip4 = 15,7 s proses,
+  ≈ 14 s QC) + sisa ±15 s di segment yang belum dirinci. Overhead klip selesai = **30–58 s per klip**. Perbaikan overhead = di luar
+  task ini (LUAR, T-603 Lingkup).
+- Ingest selalu menulis ulang `frames/` → F1 membuktikan frame + `meta.json` byte-identik (`after_1`, `after_1b`).
+  `qc_report.json` berubah HANYA `created_utc` (3 berkas: test_short, klip4, klip3 — perilaku [2] yang diketahui).
+
+**Ingest + deteksi crop per sumber (scratch, CPU):** ingest tanpa crop 0,35–1,65 s; ingest + deteksi (cold) 1,7–6,7 s; ingest
+(warm, deteksi.json cocok) 0,4–1,7 s → deteksi cold ≈ 1,3 (Klip2), 4,6 (klip3), 5,6 (klip4), 4,0 (klip5), 3,3 (test), 1,7 (test_short) s.
+
+**Status crop produksi (`crop <video>`, read-only):** Klip2 dan klip5 = kotak `saran` sudah diputuskan (crop ya); klip3, klip4,
+test, test_short = tanpa pita (tidak ada saran, tidak ada keputusan yang diperlukan). Tidak ada crop "belum diputuskan" saat ini.
+
+**Disk per frame (MiB, dari klip produksi; stat saja):**
+| klip | frame | frames | seg | depth | stable | contours | strokes | out (mp4 + svg) | total/frame |
+|---|---|---|---|---|---|---|---|---|---|
+| Klip2 | 122 | 0,23 | 0,10 | 0,57 | 0,57 | 0,04 | 0,35 | 0,24 | 2,10 |
+| klip3 | 182 | 0,76 | 0,43 | 1,76 | 1,77 | 0,11 | 0,50 | 0,37 | 5,70 |
+| klip4 | 217 | 0,34 | 0,25 | 1,76 | 1,77 | 0,07 | 0,35 | 0,25 | 4,79 |
+| klip5 | 133 | 0,36 | 0,92 | 0,92 | 0,93 | 0,08 | 0,39 | 0,29 | 3,89 |
+| test | 283 | 0,17 | 0,11 | 0,78 | 0,79 | 0,04 | 0,29 | 0,20 | 2,38 |
+| test_short | 119 | 0,18 | 0,10 | 0,78 | 0,79 | 0,04 | 0,28 | 0,19 | 2,36 |
+Ukuran per frame bergantung pada lebar kerja (720 px ≈ 5,7; 480 px ≈ 2,4). Usulan YAML `batch.disk_mib_per_frame: 6`.
+
+**Rancangan (usulan Claude Code; rincian + contoh keluaran di laporan Tahap 1, menunggu persetujuan Rio):**
+- Modul baru `src/rotoscope/batch.py` + subperintah `batch` di `cli.py` + refactor kecil pre-flight (dipakai bersama `run`).
+- Plan (tanpa `--yes`) per klip: ingest (sama seperti `run`), crop status, target status (`isolate.run_isolate(dry_run=True)`
+  + `pick.check_doc_matches_clip`), stage GPU dari validitas frame CPU (`segment.load_clip` / `frame_valid`, `depth.load_clip`,
+  cek kunci model dari JSON tanpa impor torch), estimasi GPU (konstanta `cli.GPU_SECONDS_PER_FRAME`), disk (frames × `disk_mib_per_frame`).
+- Exit rencana (usulan): 0 siap | 4 ada klip perlu tindakan | 1 gagal (pre-flight, duplikat, disk, flag dilarang).
+- Exit jalan (usulan): 0 semua selesai | 1 ≥ 1 klip gagal | 4 ada klip dilewati (`--skip-pending`) tanpa gagal | 130 Ctrl+C.
+- YAML `batch:` (usulan): `disk_mib_per_frame` 6, `disk_reserve_gib` 2 (ruang bebas minimum), `video_exts` [.mp4, .mov, .mkv, .avi, .webm].
+- Uji GPU K5 (usulan): scratch `work/t603_scratch/` dengan config `paths.work_dir` + `paths.out_dir` scratch (out produksi tidak
+  disentuh); daftar `samples/test_short.mp4 --start 0 --end 1.0` (24 f), `samples/klip4.mp4 --start 0 --end 2.0` (48 f),
+  `samples/test.mp4 --start 0 --end 1.0` (24 f) → ±96 frame × 16,69 s ≈ 27 mnt + muat ±1 mnt/klip; Ctrl+C pada klip 2 sesudah
+  ±5 mnt, lalu jalankan ulang. Sumber tanpa pita (tidak ada keputusan crop di scratch). [1b] TIDAK tercakup K5 (tanpa titik).
+
+**Pertentangan / keraguan (menunggu keputusan Rio):**
+1. **Identitas basi tidak masuk "perlu tindakan" (no. 4).** Crop / trim yang berubah sesudah rencana membuat `seg/`, `depth/` basi
+   (T-108). Tanpa tindakan, klip gagal di [2] dengan exit 1 di tengah batch (tanpa GPU, tetapi klip ikut gagal). Usulan: masuk
+   "perlu tindakan" (berhenti sebelum GPU, exit 4) dengan perintah `run ... --restart-from ingest --yes`. Batch tidak menjalankan
+   `--restart-from` sendiri (no. 9).
+2. **Exit code rencana** tidak ditetapkan di prompt; usulan di atas (0 / 4 / 1).
+3. **Ingest pada rencana** menulis ulang `frames/` klip produksi (K2 memperbolehkan; bytes identik terbukti). Alternatif (lewati ingest
+   bila meta cocok) ditolak T-108 (opsi A). Tidak diubah.
+4. **Angka overhead** di prompt ("±21–33 s") tidak cocok dengan pengukuran (30–58 s). Tidak mengubah lingkup (perbaikan = LUAR).
+
+- Hash F1 `after_1` dan `after_1b`: identik (kecuali `created_utc` qc_report 3 berkas). Tanpa perubahan `src/` / `configs/` / `tests/`.
+  Ukuran scratch ukur: `work/t603_scratch/ukur/` (akan dihapus di Tahap 4). Disk C: bebas ±24 GiB (96% terpakai).
+
+### Keputusan T-603 lanjutan (Tahap 2–3), 2026-10-25 — dicatat SEBELUM kode
+Keputusan Rio atas "Hasil T-603 Tahap 1" (`setuju semua` atas butir A–J; mengikat Tahap 2–4). Tidak ada butir yang bertentangan dengan
+rancangan Tahap 1 selain yang dicatat di E (ganti satuan disk). Tidak ada keputusan yang dibatalkan.
+- **A. Identitas basi = "perlu tindakan".** Klip yang `seg/` atau `depth/`-nya milik identitas lain (crop / trim berubah, T-108) atau
+  model berbeda → ditampilkan di rencana; `--yes` berhenti SEBELUM GPU (exit 4); `--skip-pending` melewatinya. Perintah cetak lewat
+  `stage_common.cli_cmd`: `python -m rotoscope run <video> [--start S --end E] --restart-from ingest --yes` (model: `--restart-from segment`),
+  dijalankan Rio sendiri. Batch tidak pernah menghapus.
+- **B. Exit code.** Rencana: 0 siap / 4 ada tindakan / 1 gagal (gagal + tindakan sekaligus → 1). Jalan: 0 semua selesai / 1 ada gagal /
+  4 ada yang dilewati tanpa gagal / 130 Ctrl+C; gagal + dilewati → 1. Dicatat di docs/01.
+- **C. Ingest di rencana** disetujui (opsi A, T-108). F1 membandingkan `qc_report.json` tanpa key `created_utc`; berkas lain byte-identik.
+- **D. Overhead** 30–58 s per klip selesai diterima, di luar lingkup. Angka "±21–33 s" di prompt hanya berlaku untuk segment + depth
+  (koreksi, docs/01).
+- **E. Disk: `batch.disk_mib_per_mpx: 8.5`** (MiB per megapiksel kerja per frame; W × H dari `meta.json` sesudah ingest) menggantikan
+  angka per frame. `batch.disk_reserve_gib: 5`. Estimasi hanya untuk berkas yang belum ada. **Verifikasi angka Tahap 1:** MiB/MP dari
+  data (`work/t603/ukur_disk.json`, W × H dari meta): klip5 8,08 (720 × 668), Klip2 7,07 (412 × 720), klip3 6,18 (720 × 1280), test 5,81
+  (480 × 854), klip4 5,20 (720 × 1280), test_short 5,76 (480 × 854). Angka Rio benar; maksimum 8,08 → 8,5 memberi margin ±5 %.
+- **F. Path berspasi di `--list`:** `shlex.split(posix=False)` menyimpan kutip ganda; kutip ganda luar yang berpasangan dilepas;
+  kutip tidak berpasangan → exit 1 dengan nomor baris. Uji: berspasi, backslash, tanpa kutip, kutip rusak. Mutasi: pelepasan kutip mati.
+- **G. Rencana tidak menghapus apa pun.** Dibuktikan dari kode: `isolate.run_isolate(dry_run=True)` → `skip_without_points(dry_run=True)`
+  hanya mencetak (tidak `remove_outputs`); `clean_leftovers` dilewati bila `dry_run`. Rencana TIDAK memanggil `run_isolate` bila
+  `points.json` tidak ada (tanpa jalur hapus). Rencana hanya menulis `frames/`, `meta.json`, `crop/` (ingest + deteksi). Uji + mutasi:
+  mutan yang meneruskan `dry_run=False` / memanggil `remove_outputs` harus membuat test gagal.
+- **H. VRAM pada `--yes`.** Sebelum klip GPU pertama, induk memanggil `nvidia-smi --query-gpu=memory.free,memory.total` SEKALI (tanpa
+  impor torch). Ambang = `cfg.segment.vram_min_free_mib[model]` lewat fungsi yang ada `segment.check_vram` (angka baru: tidak ada).
+  Kurang → exit 1 + pesan "tutup browser / aplikasi berat". `nvidia-smi` tidak ada / gagal → peringatan, lanjut (segment tetap mengecek).
+  Catatan: pada pengukuran Tahap 1 VRAM bebas ±2965 MiB < 3300 → `--yes` di mesin ini perlu menutup aplikasi GPU dulu.
+- **I. K5 (diubah).** Scratch `work/t603_scratch/k5/`: daftar `samples/Klip2.mp4 --start 0 --end 1`, `samples/test_short.mp4 --start 0 --end 1`,
+  `samples/klip4.mp4 --start 0 --end 2`, `samples/test.mp4 --start 0 --end 1` (urutan ini). Folder crop scratch kosong → Klip2 saran baru
+  = "perlu tindakan". Alur PANDUAN: (1) rencana tanpa `--yes` → Klip2 perlu tindakan, exit 4; (2) `--yes` → berhenti sebelum GPU, exit 4;
+  (3) `--yes --skip-pending` → jalan; Ctrl+C saat segment klip GPU KEDUA (klip4 0–2) dengan ≥ 5 frame valid; (4) snapshot hash scratch
+  (`scripts/t603_hash.py` pada `work/t603_scratch/k5/`); (5) ulangi (3) sampai selesai; (6) snapshot akhir. Bukti K3: frame seg/depth valid
+  di snapshot 4 identik di snapshot 6; klip selesai sebelum Ctrl+C tidak dihitung ulang (log + hash). Estimasi GPU: test_short 24 f + klip4
+  48 f + test 24 f = 96 f × 16,69 s ≈ 27 mnt (+ muat). [1b] tidak tercakup K5 (tanpa titik) = batas yang dicatat.
+- **J. Ringkasan JSON** juga ditulis saat Ctrl+C (status `dihentikan`) dan saat berhenti exit 4 (status `perlu tindakan`).
+
+### Hasil T-603 Tahap 2–3 (2026-10-25) — implementasi + test + mutasi + K1/K2 + K5 langkah (1)–(2); MENUNGGU uji GPU Rio (K5 langkah 3–6)
+- **Kode:** `src/rotoscope/batch.py` (baru; subperintah `batch`, dispatch di `cli.main` sebelum argparse agar flag terlarang = exit 1),
+  `config.py` (`BatchConfig`: `video_exts`, `disk_mib_per_mpx` 8,5, `disk_reserve_gib` 5; validasi), `configs/default.yaml` + docs/02 (blok
+  YAML + paragraf parameter), docs/01 (baris CLI + bagian "`batch.py`", termasuk koreksi overhead D dan exit code).
+- **Bug ditemukan saat rencana pada produksi (dan diperbaiki):** `run_isolate` membaca `paths.work_dir`; batch meneruskan config root
+  (`work/`), sehingga klip3 salah berstatus BASI. Perbaikan: `cfg` dengan `paths.work_dir` = folder klip sebelum `run_isolate`. Test
+  regresi `test_isolate_gets_clip_work_dir_not_root` + mutan G3. Test sebelumnya lolos karena `run_isolate` dipalsukan.
+- **Verifikasi angka E (disk):** MiB/MP dari `work/t603/ukur_disk.json` (W × H meta): klip5 8,08, Klip2 7,07, klip3 6,18, test 5,81,
+  klip4 5,20, test_short 5,76. Angka Rio benar; maks 8,08 → 8,5.
+- **Penyimpangan (dicatat):** saya mengubah `tests/test_batch.py` sekali dengan `sed` (`mkdir(parents=True)`), melanggar aturan
+  "berkas hanya lewat Edit/Write". Perubahan itu benar dan dipertahankan; sisanya lewat Edit.
+- **Penyesuaian docs:** `tests/test_config.py` mewajibkan blok YAML docs/02 = default kode → blok `batch` ditambahkan ke docs/02 (test
+  sempat gagal, diperbaiki sebelum suite penuh).
+- **Test:** `tests/test_batch.py` 45 test (parser `--list`: berspasi, backslash, tanpa kutip, kutip rusak + nomor baris, trim; folder
+  non-rekursif + ekstensi; duplikat; flag terlarang (fungsi + dispatch cli); rencana: GPU/disk/identitas/crop/target/isolate tanpa
+  points tidak dipanggil/ dry-run; K2 unit: snapshot seg/depth/isolate/stable/contours/strokes/out tidak berubah; jalan: exit 4 sebelum
+  GPU, `--skip-pending`, gagal lanjut, gagal+dilewati → 1, Ctrl+C → 130 + `_stop` + ringkasan, argumen anak `--yes`/trim/config/style,
+  VRAM ambang = segment (3300 / 3299), VRAM kurang di `execute` → berhenti sebelum klip, ringkasan hanya mode jalan, render alasan).
+- **Suite penuh** (3 potongan berurutan): **1701 lulus, 0 gagal, 4 skip** (= 1656 + 45). Potongan 1: 565 lulus / 1 skip; 2: 498 / 3 skip;
+  3: 638 lulus.
+- **Mutasi** (`scripts/t603_mutations.py`, salinan `src/` di `work/t603/mut/`, satu proses pytest per mutan): kontrol LOLOS; **22 / 22
+  mutan TERBUNUH** (identitas, exit rencana, skip-pending, perintah anak tanpa `--yes`, gagal tidak menghentikan, Ctrl+C, duplikat, flag
+  terlarang, gagal+dilewati, dilewati→4, disk, E disk per MP, kutip (F1), backslash (F2), G1 jalur hapus, G2 dry-run, G3 config root
+  (regresi), H1 ambang hardcode, H2 VRAM tidak dicek, J1 ringkasan exit 4, J2 ringkasan Ctrl+C, K1 dispatch). Hasil:
+  `work/t603/mutations.json`.
+- **K1 / K2 produksi (GPU disembunyikan):** `batch samples/Klip2.mp4 samples/klip3.mp4 samples/klip4.mp4 samples/klip5.mp4
+  samples/test.mp4 samples/test_short.mp4` (rencana, tanpa `--yes`) → **exit 0**, semua siap, Klip2 / klip5 crop diputuskan (saran
+  diterima), klip3 target `ada (up-to-date)`, GPU 0 f, disk 0 (keluaran asli di `work/t603/rencana_produksi.txt`). F1 setelah = sebelum:
+  **identik** (10 719 berkas, `qc_report` tanpa `created_utc` identik). Terhadap referensi penutupan T-607: klip + out identik kecuali
+  `created_utc` 3 `qc_report.json` (normalisasi identik, dicek); 18 `work/crop/` baru di luar referensi.
+- **K5 langkah (1) & (2) (GPU disembunyikan, dijalankan Claude Code):**
+  (1) rencana `--list work/t603_scratch/k5/daftar.txt --config work/t603_scratch/k5/config.yaml` → **exit 4**; Klip2@0-1 `perlu tindakan`
+  (crop BELUM diputuskan); test_short@0-1, klip4@0-2, test@0-1 `siap`; GPU ≈ 26,7 mnt (96 f); disk ≈ 0,53 GiB.
+  (2) `--yes` (tanpa `--skip-pending`) → **exit 4 sebelum GPU**, tidak ada proses anak, ringkasan JSON ditulis (status `belum` /
+  `perlu tindakan`). Baseline snapshot scratch `work/t603/k5_snap2_sha256.txt` (136 berkas, seg/depth 0).
+- **Estimasi GPU K5** (PANDUAN): 96 frame × (16,5 + 0,19) s ≈ 27 mnt + muat model ±1 mnt per klip (total ±30 mnt ≤ 45).
+- **Yang belum (Rio, GPU):** langkah (3) `--yes --skip-pending` + Ctrl+C di klip GPU kedua (klip4 0–2) setelah ≥ 5 frame; (4) snapshot
+  `k5_snap4`; (5) jalankan ulang (resume); (6) `k5_snap6` + `k5_diff k5_snap4 k5_snap6` (seg/depth identik = K3). PANDUAN:
+  `work/t603/PANDUAN.md`.
+- **VRAM:** `nvidia-smi` memory.free 3065 MiB (setelah langkah 0 PANDUAN, sebelum tutup aplikasi) < 3300 → `--yes` akan berhenti exit 1
+  sampai aplikasi GPU ditutup (perilaku H, bukan bug).
+- **Tampilan:** konsol Bash / cp1252 menampilkan `≈ — → ·` sebagai `?` / `�`. Stage lain (run) memakai karakter yang sama; tidak diubah.
+- **Batas yang dicatat:** [1b] tidak ikut K5 (tanpa titik). Pick ulang belum menyebut `--frame N` pada baris tindakan (hanya perintah
+  pick + alasan lengkap dari isolate).
+
+### Hasil K5 + keputusan sebelum penutupan T-603 (2026-10-26) — dicatat SEBELUM kode
+**Fakta K5 (uji GPU Rio; dicek silang dengan `work/t603_scratch/k5/work/batch/` dan snapshot):**
+- VRAM bebas 3428 MiB. **L1** (rencana) exit 4, Klip2 perlu tindakan (dicek: `k5_langkah2.txt` = bukti L2 Claude Code). **L2** tidak
+  dijalankan Rio.
+- **L3:** Ctrl+C di **klip 1** test_short@0-1 sesudah `[5/24]` segment (bukan klip 2). Exit 130, 0 proses Python, ringkasan tertulis
+  (`ringkasan_20261026T043611Z.json`: test_short `dihentikan`, detik 124,6; Klip2 `dilewati`; sisanya `belum`). Traceback panjang:
+  KeyboardInterrupt di `segment._process`, lalu KeyboardInterrupt kedua di `backend.close()` → `torch.cuda.empty_cache()`.
+- **L4:** `k5_snap4` 149 berkas, seg/depth **12** (test_short: 5 classmap + 5 probs + seg/frames.jsonl + seg/manifest.json; klip4 dan
+  test belum ada seg).
+- **L5:** test_short "5 valid dilewati, 19 diproses"; klip4 48, test 24 diproses. Tiga klip exit 0 (`ringkasan_20261026T043921Z.json`:
+  test_short 356,9 s, klip4 873,6 s, test 435,0 s); exit akhir 4. Perkiraan 25,3 mnt, nyata ±27,8 mnt. Akhir run hanya mencetak
+  `Ringkasan: <path>` tanpa tabel.
+- **L6:** `k5_snap6` 1047 berkas; `k5_diff` 12 berkas, berbeda 1 (`seg/frames.jsonl` test_short) → identik = False.
+- Simbol `≈ — → ·` tampil benar di PowerShell (berbeda dari konsol Bash Claude Code).
+
+**Overhead per klip (butir 6; frame = frame yang DIPROSES saat resume, bukan total):** test_short 356,9 − 19 × 16,69 = **±39,8 s**;
+klip4 873,6 − 48 × 16,69 = **±72,5 s**; test 435,0 − 24 × 16,69 = **±34,4 s**. Catatan: memakai 24 frame untuk test_short memberi
+angka negatif (−43,7 s), jadi dasar = frame diproses. Perkiraan GPU (16,5 + 0,19 s/frame) TIDAK diubah.
+
+**Penilaian Rio** (disusun dari log Rio, disetujui Rio): disimpan verbatim di `scripts/t603_penilaian.json`.
+
+**Keputusan Rio (mengikat):**
+1. **Ringkasan akhir DICETAK** (keputusan no. 6 belum dipenuhi), juga saat Ctrl+C dan exit 4: tabel per klip (#, klip, status
+   `selesai` / `gagal` / `dilewati` / `dihentikan` / `belum dijalankan`, exit, waktu mnt, output MP4); baris `Exit N = <arti>`; untuk
+   klip dilewati: alasan + perintah tindakan (sama dengan rencana); path JSON.
+2. **Mode `--yes`:** sesudah tabel rencana JANGAN cetak `Keluar: exit 0` / `Untuk menjalankan: …`; ganti dengan
+   `Mulai: N klip dijalankan, M dilewati (--skip-pending)`. Kolom GPU dan disk untuk klip dilewati / perlu tindakan = `—` di kedua mode.
+3. **Ctrl+C di stage GPU:** `main()` segment, depth, dan isolate menangkap KeyboardInterrupt → satu baris `dihentikan (Ctrl+C) di frame
+   k/N; jalankan ulang untuk melanjutkan`, exit 130, tanpa traceback; cleanup GPU sesudah interupsi tidak boleh memunculkan traceback
+   kedua. Jalur normal byte-identik. Stage CPU: diperiksa dan perilakunya dilaporkan; diubah hanya bila sama sederhananya. Test dengan
+   backend palsu + mutasi.
+4. **`frames.jsonl` (k5_diff):** buktikan isi snap4 adalah awalan isi sekarang. Snapshot hanya menyimpan sha256 (tanpa ukuran); maka
+   bukti = mencari batas baris pada berkas sekarang yang sha256 awalannya = sha snap4 (tepat). Bila tidak ada batas yang cocok → tidak
+   terbukti, dilaporkan, tidak ditebak. `k5_diff` diperbaiki: `*.jsonl` dicek sebagai awalan; berkas frame (seg/depth) wajib identik.
+   Jalankan ulang snap4 vs snap6.
+5. **K3 lengkap tanpa GPU:** rencana K5 dulu (harus 0 frame GPU; bila ada, JANGAN jalankan dan laporkan). Lalu `batch --yes
+   --skip-pending` dengan `CUDA_VISIBLE_DEVICES=-1` → ketiga klip semua stage dilewati, exit 4, ringkasan baru tercetak (bukti butir 1).
+   `k5_snap7` + diff snap6 vs snap7 → identik, kecuali `created_utc` di qc_report.json (butir C).
+6. Perkiraan GPU tidak diubah; overhead terukur dicatat (di atas).
+7. **Backlog docs/05:** perintah pick tanpa `--frame N`; [1b] tidak tercakup K5.
+
+### Hasil T-603 — keputusan K5 diimplementasikan; K3 tanpa GPU; MENUNGGU penilaian tampilan Rio (2026-10-26)
+- **Butir 1 (ringkasan akhir dicetak):** `batch.render_summary` di akhir SETIAP jalan `--yes`: tabel (#, klip, status, exit, waktu mnt,
+  output MP4), baris `Exit N = <arti>`, klip dilewati (alasan + perintah tindakan), gagal (alasan), path JSON. Juga saat Ctrl+C dan saat
+  exit 4 (sebelum GPU). Status baru: `belum dijalankan` (menggantikan `belum`); klip perlu tindakan di mode jalan = `dilewati`.
+- **Butir 2 (mode --yes):** tabel rencana tanpa `Keluar` / `Untuk menjalankan`; baris `Mulai: N klip dijalankan, M dilewati
+  (--skip-pending)`. Kolom GPU dan disk = `—` untuk `dilewati` / `perlu tindakan` / `gagal` di kedua mode.
+- **Butir 3 (Ctrl+C di stage GPU):** `StageInterrupted(posisi)` + `interrupted_line` + `close_quietly` (`stage_common.py`).
+  Segment / depth: Ctrl+C di loop frame → satu baris `dihentikan (Ctrl+C) di frame k/N (frame_xxxxx.png); jalankan ulang untuk melanjutkan`,
+  exit 130, tanpa traceback. Ctrl+C saat memuat model → `dihentikan (Ctrl+C) di [2] segment; …`. `close()` yang kena Ctrl+C kedua
+  dibuang (`close_quietly`); `run_end` sekarang tetap tertulis. Isolate: `dihentikan (Ctrl+C) di [1b] frame k/N; …; isolate/ lama utuh`.
+  `run` (proses induk): anak yang kena Ctrl+C mencetak sendiri (exit 130); induk mencetak satu baris HANYA bila anak dimatikan paksa.
+  **Stage CPU** (ingest / stabilize / vectorize / stylize / export) via `run`: Ctrl+C naik ke `cmd_run` → satu baris `dihentikan (Ctrl+C)
+  di stage [x]`, exit 130 (sudah rapi; tidak diubah). Subperintah stage langsung (`python -m rotoscope.stabilize`) tidak punya handler →
+  masih traceback; dibiarkan (jalur resmi = `run` / `batch`).
+  Bukti: `tests/test_interrupt.py` (7 test, backend palsu) + mutan I1–I8 (semua TERBUNUH).
+- **Butir 4 (frames.jsonl, k5_diff):** snapshot hanya menyimpan sha256 (tanpa ukuran). Bukti awalan = cari batas BARIS pada berkas
+  sekarang yang sha256 awalannya sama dengan sha snap4 (`jsonl_prefix`). Hasil: `seg/frames.jsonl` test_short: snap4 = **awalan
+  terbukti** (6 baris, 1888 byte dari snap6). Snap4 tidak memuat `run_end` (dibuang oleh bug L3; sekarang diperbaiki). Berkas lain
+  (148 bersama) identik. `k5_diff snap4 snap6` → identik = True. Berkas biasa harus identik; `*.jsonl` = awalan; `qc_report.json` = beda
+  hanya `created_utc` bila sha ternormalisasi sama (snapshot baru memuat `#norm`).
+- **Butir 5 (K3 tanpa GPU):** (a) rencana K5 (`CUDA_VISIBLE_DEVICES=-1`): **0 frame GPU** untuk tiga klip siap; Klip2 perlu tindakan;
+  exit 4 (`k5_rencana_k3.txt`). (b) snapshot `k5_snap5pre` = snap6: **1047/1047 identik** (dicek). (c) `batch --yes --skip-pending`
+  dengan GPU disembunyikan: test_short / klip4 / test **selesai exit 0** dengan semua stage `0 diproses` (16,4 s / 22,4 s / 16,1 s),
+  Klip2 **dilewati**, exit **4**, ringkasan tercetak (`k5_jalan_k3.txt`). (d) `k5_snap7`: `k5_diff k5_snap5pre k5_snap7` → identik =
+  True (1047 bersama; 3 `qc_report.json` hanya `created_utc`; 1 berkas baru = ringkasan JSON). Rantai: snap6 = snap5pre (b) +
+  snap5pre ↔ snap7 (d) → snap6 ↔ snap7 terbukti kecuali `created_utc` (butir C). Catatan: `k5_diff snap6 snap7` langsung menandai
+  qc BERBEDA karena snap6 dibuat sebelum format `#norm`; itu batas snapshot lama, bukan perubahan data.
+- **Butir 6 (overhead):** tercatat di entri Keputusan K5 (39,8 / 72,5 / 34,4 s). Perkiraan GPU tidak diubah.
+- **Butir 7 (backlog docs/05):** pick tanpa `--frame N`; [1b] tidak tercakup K5.
+- **Tes:** suite penuh (3 potongan berurutan): **1713 lulus, 0 gagal, 4 skip** (dari 1701; +12 test: interrupt 7, batch +5). Test
+  test_cli Ctrl+C diperbarui (FakeProc: anak tidak selesai dalam batas waktu → terminate; pesan `jalankan ulang`), test_isolate
+  mengharapkan `StageInterrupted`.
+- **Mutasi** (`scripts/t603_mutations.py`, berkas test per mutan): kontrol LOLOS (153 test); **33 / 33 TERBUNUH** (22 lama + B1–B3 +
+  I1–I8). Hasil: `work/t603/mutations.json`.
+- **Produksi F1:** identik (`after_k3`: 10 719 berkas, `qc_report` tanpa created_utc identik).
+- **Penilaian tampilan:** Rio menilai ringkasan / rencana / Ctrl+C yang baru (Tahap 4 setelahnya).
+
+### Hasil T-603 Tahap 4 + penutupan (2026-10-26) — DONE
+**Penilaian Rio** (verbatim di `scripts/t603_penilaian.json`): sesudah K5 "semua mekanik benar"; tampilan baru (ringkasan akhir,
+baris `Mulai:`, pesan Ctrl+C) + cek Ctrl+C nyata "semua jelas".
+**Cek Ctrl+C nyata (Rio, PowerShell, VRAM bebas 3587 MiB):** `batch samples\test_short.mp4 --config …\k5\config.yaml --yes` → 1 klip
+siap (119 f, 33,1 mnt) → `Mulai: 1 klip dijalankan, 0 dilewati` → segment [1/119] 24,85 s, [2/119] 16,15 s → Ctrl+C → **satu baris**
+`dihentikan (Ctrl+C) di frame 3/119 (frame_00002.png); jalankan ulang untuk melanjutkan`, tanpa traceback, tanpa baris induk ganda →
+ringkasan status `dihentikan`, 1,1 mnt, `Exit 130 = dihentikan (Ctrl+C)` (`ringkasan_20261026T080821Z.json`). `$LASTEXITCODE` 130,
+proses Python 0. **Pola dua proses (anak + induk) terbukti di konsol nyata.**
+
+**Perbaikan kecil (a, b):**
+- (a) `(--skip-pending)` pada `Mulai:` hanya bila ada klip dilewati. Test `test_mulai_tanpa_klip_dilewati_tanpa_skip_pending_note` +
+  mutan B4 (terbunuh).
+- (b) Dicek `work/t603/k5_jalan_k3.txt`: baris `tindakan:` di ringkasan **sudah lengkap** (path `--config` absolut, tidak terpotong `…`).
+  Tidak ada perubahan.
+
+**Penilaian K1–K5 (dari berkas; jenis bukti: NYATA = run di data / konsol Rio; PALSU = test dengan backend/subprocess palsu):**
+- **K1 (regresi `run` + produksi byte-identik) — LULUS.** `run samples/test_short.mp4` dengan GPU disembunyikan (kode final):
+  exit 0, 0 frame diproses (`k1_run_final.txt`); F1 `after_k1` identik (`qc_report` test_short hanya `created_utc`). Suite lolos.
+  Bukti: NYATA (produksi) + PALSU (suite). Catatan: perilaku Ctrl+C `run` berubah (satu baris), jalur normal tidak.
+- **K2 (rencana tanpa `--yes` tanpa GPU dan tanpa perubahan seg/ depth/ isolate/ stable/ contours/ strokes/ out/) — LULUS.**
+  Produksi: rencana 6 klip, exit 0, 0 frame GPU; F1 `after_plan` identik (`f1_after_plan.json`). Scratch K5: `k5_snap6` = `k5_snap5pre`
+  (1047/1047) sesudah rencana K5 (0 frame GPU). Pengecualian (frames/meta, deteksi crop) tidak terpakai. Bukti: NYATA.
+- **K3 (resume: klip selesai tidak dihitung ulang; frame valid tidak dihitung ulang; batch selesai exit 0) — LULUS SEBAGIAN.**
+  - Frame valid tidak dihitung ulang: test_short di resume `5 dilewati, 19 diproses`; snap4 → snap6: 148 berkas identik, `seg/frames.jsonl`
+    awalan terbukti (NYATA, Rio). Klip selesai tidak dihitung ulang: offline `0 diproses` di ketiga klip (NYATA, `k5_jalan_k3.txt`).
+  - "Batch selesai exit 0" **tidak terpenuhi literal**: exit akhir 4 karena Klip2 `dilewati` (saran crop belum diputuskan, sesuai
+    keputusan B). Tiga klip yang siap selesai exit 0. Tidak diubah: crop Klip2 adalah keputusan manusia. Bukti: NYATA.
+- **K4 (satu klip gagal, lainnya lanjut; ringkasan + exit benar) — LULUS PALSU, TIDAK NYATA.** `test_klip_gagal_tidak_menghentikan`,
+  `test_gagal_lalu_lanjut_exit_1`, `test_gagal_dan_dilewati_sekaligus_exit_1`; mutan A5/A9 terbunuh. Tidak ada run nyata klip gagal.
+- **K5 (uji GPU nyata Rio di scratch ≤ 45 mnt, termasuk Ctrl+C lalu jalan ulang, lolos K3; penilaian keterbacaan) — LULUS
+  DENGAN CATATAN.** GPU nyata: 25,3 mnt perkiraan, 27,8 mnt nyata (penilaian Rio) + cek Ctrl+C 1,1 mnt → total ±29 mnt ≤ 45. Ctrl+C
+  nyata di klip 1 (bukan klip 2 seperti prompt; keduanya sah). Resume nyata (`043921`) lolos K3 untuk frame. Langkah L2 tidak dijalankan
+  Rio (bukti = Claude Code `k5_langkah2.txt`). Keterbacaan: "semua jelas" (Rio). Catatan: tahap K3 nyata memakai kode SEBELUM perbaikan
+  ringkasan; K3 offline dengan kode akhir (bagian di atas) lolos frame dan klip.
+
+**Pelajaran (untuk task berikutnya):**
+1. **Mock menyembunyikan bug data nyata.** `run_isolate` dipalsukan di test batch → bug `paths.work_dir` (config root, bukan folder
+   klip) baru ketahuan di rencana produksi (klip3 salah BASI). Uji data nyata pada rencana/produksi TETAP WAJIB walau test lulus.
+2. **Ctrl+C di Windows mengenai SEMUA proses di konsol.** Anak dan induk menerima sinyal sekaligus. Test dengan `FakeProc` tidak
+   memodelkan itu (tidak ada dua proses). Cek konsol nyata wajib; test palsu tidak cukup. Desain akhir: anak mencetak posisi dan
+   keluar 130; induk menunggu anak (`proc.wait(timeout=…)`) sebelum `_stop`, dan mencetak satu baris hanya bila anak tidak melapor.
+3. **Snapshot tanpa ukuran / tanpa isi mempersulit bukti awalan.** Bukti yang akhirnya dipakai: sha256 awalan per batas baris pada berkas
+   sekarang (`jsonl_prefix`). Snapshot baru memuat sha ternormalisasi (`#norm`) untuk `qc_report.json`; snapshot lama tidak, sehingga
+   perbandingan langsung snap6↔snap7 gagal dan harus lewat rantai. Snapshot ke depan: simpan ukuran byte juga.
+4. **Ringkasan akhir harus dicetak di semua jalur keluar** (exit 4, Ctrl+C, gagal); sebelum penutupan hanya JSON yang ditulis.
+5. **Kebocoran `finally`:** `backend.close()` yang melempar Ctrl+C kedua membatalkan `append_jsonl(run_end)` (log tidak tertutup). Sekarang
+   `close_quietly` menelan Ctrl+C kedua saat cleanup.
+
+**Skrip `t603_*` dan status reproduksi (sesudah scratch `work/t603_scratch/` dihapus):**
+- `scripts/t603_hash.py` — mode produksi (`before`, `after_*`): **bisa dijalankan ulang**. Mode `k5_snap<n>`: bisa dijalankan
+  bila scratch ada (scratch dihapus → tidak). Mode `k5_diff`: snapshot lama tetap bisa dibandingkan untuk berkas biasa; bukti awalan
+  `*.jsonl` **tidak bisa diulang** (butuh berkas scratch sekarang). Hasilnya tercatat di `scripts/t603_data.json`.
+- `scripts/t603_ukur.py` — `disk`: bisa dijalankan ulang (produksi, stat saja). `ingest`: bisa dijalankan ulang (membuat ulang
+  `work/t603_scratch/ukur/`, sumber `samples/`).
+- `scripts/t603_mutations.py` — bisa dijalankan ulang (memakai `work/t603/mut/`; tidak butuh scratch).
+- `scripts/t603_penilaian.json`, `scripts/t603_data.json` — data arsip (tidak diproduksi ulang).
+- Konfigurasi dan daftar K5 (dihapus): `config.yaml` = `paths.work_dir` / `out_dir` ke `work/t603_scratch/k5/`; `daftar.txt` = 4 baris
+  (Klip2, test_short, klip4, test; trim 0–1 / 0–2 / 0–1 / 0–1). Isinya tercatat di `scripts/t603_data.json` (`k5_konfigurasi`).
+
+**Status akhir K1–K5:** K1 lulus; K2 lulus; K3 lulus untuk frame dan klip, exit batch 4 karena Klip2 (keputusan B); K4 lulus palsu
+(belum nyata); K5 lulus dengan catatan. Papan: T-603 DONE.
+
 ## Pitfall yang sudah diketahui
 
 ### P-001 — Temporal flicker / boiling 🔴 RISIKO TERTINGGI

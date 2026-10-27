@@ -460,7 +460,7 @@ def test_19_interrupted_keeps_old_and_cleans_partial(tmp_path):
     run(work)
     before = tree(work / "isolate")
     write_points(work, {1: [(1, [(20, 20, 1)], None)]})
-    for exc, err in ((KeyboardInterrupt(), KeyboardInterrupt), (BackendOOM({"free_mib": 1.0}), StageOOMError)):
+    for exc, err in ((KeyboardInterrupt(), iso.StageInterrupted), (BackendOOM({"free_mib": 1.0}), StageOOMError)):
         fac = factory(fail=(1, 4, exc))
         with pytest.raises(err):
             run(work, fac)

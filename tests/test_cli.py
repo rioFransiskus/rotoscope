@@ -41,9 +41,12 @@ class FakeProc:
     def wait(self, timeout=None):
         if timeout is None and self.interrupt:
             raise KeyboardInterrupt
+        if timeout is not None and self.interrupt and self.alive:      # T-603: anak Ctrl+C belum selesai dalam batas waktu
+            raise subprocess.TimeoutExpired("fake", timeout)
         if timeout is None and self.boom:
             raise RuntimeError("boom")
         self.alive = False
+        self.returncode = self.rc
         self.rec.waited.append(self.stage)
         return self.rc
 
@@ -52,6 +55,7 @@ class FakeProc:
 
     def terminate(self):
         self.rec.terminated.append(self.stage)
+        self.alive, self.returncode = False, 1                       # Windows TerminateProcess → exit 1
 
 
 class Rec:
@@ -213,7 +217,8 @@ def test_interrupt_terminates_child_and_waits(rec, tmp_path, capsys):
     assert run_cli("run", str(make_video(tmp_path))) == cli.EXIT_INTERRUPTED
     assert rec.terminated == ["segment"] and rec.waited == ["segment"]
     err = capsys.readouterr().err
-    assert "dihentikan" in err and "resume" in err and rec.stages == ["ingest", "segment"]
+    assert "dihentikan (Ctrl+C)" in err and "jalankan ulang" in err and rec.stages == ["ingest", "segment"]
+    assert err.count("dihentikan") == 1 and "Traceback" not in err          # satu baris; anak tidak mencetak (fake)
 
 
 def test_exception_terminates_child(rec, tmp_path, capsys):
