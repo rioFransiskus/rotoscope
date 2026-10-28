@@ -2062,7 +2062,7 @@ T-604, T-605, T-606 (dibuka dari penutupan T-602) dipindah ke Phase 7 "Cakupan l
   - [2026-10-19] **Dibuka + Tahap 1a dimulai** (keputusan Rio dicatat di docs/04 "Keputusan T-607" + D-013 sebelum skrip). `TODO` → `WIP`.
     Papan: total 49 → 50, Phase 7 = 4/5, selesai 38/50.
 
-### T-608 · Restorasi input klip5 (denoise / deblock / SR hanya untuk masukan model) · `WIP` (Tahap 1, 2026-10-27)
+### T-608 · Restorasi input klip5 (denoise / deblock / SR hanya untuk masukan model) · `DONE` (2026-10-28; ditutup TANPA lolos kriteria — batas yang diketahui)
 - **Kerjakan (keputusan Rio 2026-10-27, docs/04 "Keputusan T-608 (restorasi input klip5)"):** restorasi frame hanya untuk MASUKAN MODEL
   ([1b] / [2] / [2c]); target tetap dari `pick`; FOTO, `cut_diff` [3], export tetap dari `frames/`. Kandidat R0 (OpenCV temporal NLM,
   CLAHE opsional), R1 (Swin2SR compressed-SR ×4 lewat `transformers`), R2 (Real-ESRGAN `realesr-general-x4v3`, arsitektur di repo tanpa
@@ -2077,13 +2077,37 @@ T-604, T-605, T-606 (dibuka dari penutupan T-602) dipindah ke Phase 7 "Cakupan l
 - **Catatan:** dari backlog "Pengolahan khusus klip5" + "Studi peningkatan kualitas video". Sumber `samples/klip5.mp4` (sha256 `67677307…`)
   tetap dipakai. `samples/kilp5_new.mp4` = berkas BERBEDA (Clipchamp, 30 fps, 2,03 s); tidak di-ingest (docs/04, catatan pemeriksaan
   sumber).
+- **Hasil (2026-10-28, docs/04 "Penutupan T-608"):** DONE tanpa lolos kriteria no. 4 (34 / 54 < 49) / no. 7 (nilai 3, kerusakan baru).
+  Perbaikan parsial dipakai di produksi: isolate percobaan kedua (titik iso2) + trim f0–53. Data ter-track: `scripts/t608_data.json`,
+  `scripts/t608_penilaian.json`, `scripts/t608_penilaian_1b2.json`, `scripts/t608_penilaian_4b.json`.
+- **Catatan produksi klip5 (WAJIB dibaca sebelum run / batch klip5):**
+  - produksi = `work/clips/klip5@0-2.25/` → `out/klip5@0-2.25.mp4` + `out/svg/klip5@0-2.25/` (titik iso2 di `target/points.json`);
+  - run klip5 WAJIB `--end 2.25`: `python -m rotoscope run samples\klip5.mp4 --end 2.25 [--yes]`; batch klip5 lewat `--list` dengan
+    baris `samples\klip5.mp4 --end 2.25`;
+  - `work/clips/klip5/`, `out/klip5.mp4` dan `out/svg/klip5/` dipertahankan sebagai output LAMA (bukan produksi); run / batch klip5
+    TANPA `--end 2.25` memakai folder lama itu (dan menghasilkan output lama);
+  - jangan hapus atau ganti nama `samples/klip5.mp4` (folder klip + crop + identitas sumber terikat pada berkas ini).
 - **Update log:**
+  - [2026-10-28] **DONE (ditutup tanpa lolos kriteria); Tahap 4b bagian 2** (docs/04 "Penilaian Rio 4b", "Penutupan T-608"). Penilaian
+    4b: "penilaian saya x sama saja dengan y" = tidak terlihat beda → produksi trim diterima (X = scratch, Y = trim). docs/01 [2b] →
+    SKIP (4 tempat); P-002 catatan pelurusan. Data → `scripts/t608_data.json`; F4: `T608-prompt.md` + `work/t608_scratch/` dihapus,
+    `work/t608/` dipertahankan. Backlog baru "Trim mengubah statistik per klip". Papan: Phase 7 5/6 → 6/6, total 42/51 → 43/51.
+  - [2026-10-28] **Run produksi `klip5@0-2.25` selesai (Rio, exit 0); Tahap 4b bagian 1: output ≠ versi yang dinilai → penilaian buta
+    X / Y; BERHENTI menunggu "penilaian 4b selesai"** (docs/04 "Hasil run produksi klip5@0-2.25"). B1 lolos (mp4 54 frame, 54 SVG, masker
+    [3] target 54; produksi lama identik). B2: [1b] / [2] / [2c] 54 / 54 identik scratch; beda dari ambang [4] per klip (54 vs 133
+    frame; oklusi 49 frame, uji kontrafaktual) + [3] f45–49 (QC f47 `area_vs_median`) / f52–53 (tepi klip); strokes identik 4 / 54.
+    B3: oklusi −26% jumlah / −27% panjang; batas grup sama. Aturan hasil dikunci sebelum bahan `work/t608/nilai_4b/`. F1
+    `f1_sesudah_4b1`: lama identik, tambahan hanya tulisan run. `work/t608_scratch/` tetap ada.
   - [2026-10-28] **Keputusan akhir: T-608 ditutup sebagai batas yang diketahui (DONE tanpa lolos kriteria); R1 tidak dijalankan; produksi
     klip5 memakai isolate iso2 + trim f0–53** (docs/04 "Keputusan akhir T-608"). Backlog baru dicatat (pick klik kanan > 10, kerusakan
     interior klip5 adegan B, bentuk kecil pagar kaca f0–21, label cut Rio, angka Tahap 1 di "Studi peningkatan kualitas video").
     **Tahap 4a:** (a) ingest `--end 2.25` di scratch = 54 / 54 frame identik produksi f0–53; (b) arsip produksi klip5 (137 berkas);
     (c) titik iso2 cocok dengan frame produksi DAN frame trim, tetapi **belum disalin**: run ber-trim memakai folder `klip5@0-2.25`, bukan
     `klip5` → BERHENTI menunggu keputusan Rio soal folder. Papan direkonsiliasi di Tahap 4b.
+    **Keputusan folder (Rio): opsi A** — produksi klip5 = `work/clips/klip5@0-2.25/` → `out/klip5@0-2.25.mp4` + `out/svg/klip5@0-2.25/`;
+    folder lama `klip5` dipertahankan tanpa perubahan. A1 ingest CPU produksi (54 / 54 frame identik), A2 titik iso2 disalin + dry-run ok,
+    A3 perintah final `run samples\klip5.mp4 --end 2.25 --yes` (tanpa `--restart-from`; dicek tanpa `--yes`), A4 F1 lama identik (+56
+    berkas hanya di folder trim). BERHENTI menunggu run GPU Rio (`work/t608/PANDUAN_RUN_PRODUKSI.md`).
   - [2026-10-28] **Penilaian Rio 1b-2: no. 4 GAGAL (34 / 54; salah f2–f21), no. 7 GAGAL (nilai 3, kerusakan baru 20 frame) — BERHENTI
     menunggu keputusan Rio: R1 atau tutup T-608** (docs/04 "Penilaian Rio T-608 1b-2 percobaan kedua"; verbatim
     `scripts/t608_penilaian_1b2.json`). Tahap 4 tidak dijalankan.
@@ -2143,7 +2167,8 @@ Backlog kecil lain tetap tercatat di task asalnya.
   Dominan [2] segment: `describe()` 6,2 s + QC seluruh klip dihitung ulang setiap run (≈ 14 s untuk 217 frame); sisa ±15 s belum dipecah. Impor torch hanya 2,0 s. Perbaikan (lewati QC bila `qc_report.json` cocok) = task terpisah; DILUAR T-603.
 - **Peninjauan `cut_diff`** (dicatat T-305 induk, 2026-10-27; `cut_diff` 0,06 TETAP sekarang): cut klip5 sesudah crop T-607 = 32 terdeteksi (sebelum crop 10). Label Rio f92–104 (cut sungguhan) = 13 terdeteksi sesudah crop, skor 0,1013–0,2115 (sebelum crop 0,0711–0,1089). **19 cut lain BELUM BERLABEL** (22, 60–68, 72–74, 88–91, 106, 108; skor 0,0622–0,1124) — belum tahu cut / positif palsu / gerakan; jangan disebut positif palsu. **Label Rio (T-608 Tahap 1, 2026-10-28; docs/04 "Penilaian Rio T-608 Tahap 1"; data `scripts/t608_penilaian.json` → `banding_cut_diff`):** ke-19 dilabel — **10 cut sungguhan** (f60–68, f72) dan **9 positif palsu** (f22, f73, f74, f88–91, f106, f108). Cut yang tidak terdeteksi `cut_diff` 0,06 tidak dilabel. Akibat di T-608: positif palsu f22 memecah kerumunan menjadi dua adegan [1b] (f0–21, f22–59), jadi kedua adegan butuh klik. Skor non-cut tertinggi klip5 sesudah crop 0,0594. Jendela pemisah 0,0652–0,071 (docs/04 "Kalibrasi cut_diff (2026-10-10)") hanya berlaku untuk data sebelum crop. Dugaan (BELUM dibuktikan): pita hitam sebelum crop mengencerkan skor cut. Data: `scripts/t305tutup_data.json` → `cut_klip5`.
 - **Pengolahan khusus klip5** (kerumunan + kualitas video rendah; Rio: konten seperti ini "sering") — **bagian restorasi input dikerjakan
-  di T-608 (2026-10-27, Phase 7)**; bagian lain (kerumunan, zoom, cut) tetap di backlog ini. Dijadwalkan SETELAH semua task. Tambahan T-305 induk (2026-10-27): klip5 QC gagal 18 frame sesudah crop (6 sebelum crop); cut 32 sesudah crop, lihat "Peninjauan `cut_diff`" di atas. Bahan: docs/04 "Keputusan akhir T-602" (masker SAM klip5 rusak di f0; luas masker melompat di f64) dan "Hasil Tahap 1b (diagnosis klip5)". (2026-10-15, penutupan T-602)
+  di T-608 (2026-10-27, Phase 7; DONE 2026-10-28 tanpa lolos kriteria; produksi klip5 = `klip5@0-2.25`, lihat "Catatan produksi klip5"
+  di T-608)**; bagian lain (kerumunan, zoom, cut) tetap di backlog ini. Dijadwalkan SETELAH semua task. Tambahan T-305 induk (2026-10-27): klip5 QC gagal 18 frame sesudah crop (6 sebelum crop); cut 32 sesudah crop, lihat "Peninjauan `cut_diff`" di atas. Bahan: docs/04 "Keputusan akhir T-602" (masker SAM klip5 rusak di f0; luas masker melompat di f64) dan "Hasil Tahap 1b (diagnosis klip5)". (2026-10-15, penutupan T-602)
   - **Diagnosis T-605** (docs/04 "Keputusan akhir T-605"; data `scripts/t605_data.json`): [1b] salah di semua frame klip5 (penilaian Rio).
     - f3–f62: target hilang (masker kosong, skor objek < 0);
     - f63–f77: zoom — orang memenuhi layar; masker seluruh gambar + kotak f64 (= seluruh area video aktif) BENAR;
@@ -2175,6 +2200,13 @@ Backlog kecil lain tetap tercatat di task asalnya.
       `realesr-general-x4v3` **tidak dinyatakan** (README tanpa teks lisensi bobot; sha256 rilis tidak dipublikasikan). R1 pin usulan
       (Apache-2.0): `caidas/swin2SR-compressed-sr-x4-48` commit `1079c3c5…`, `model.safetensors` sha256 `3fc6baf8…43b4`.
     - R0 (OpenCV NLM temporal, CPU 1,84 s / frame) hampir tanpa efek pada derau yang sudah dekat lantai kuantisasi.
+- **Trim mengubah statistik per klip ([4] ambang persentil, [2] QC median jendela W 49)** (penutupan T-608, 2026-10-28; docs/04
+  "Hasil run produksi klip5@0-2.25" + "Penutupan T-608"; data `scripts/t608_data.json` → `b2`, `b3`): klip ber-trim (`--start` /
+  `--end`) menghitung statistik per klip dari frame trim saja, jadi frame yang sama TIDAK dijamin identik dengan klip penuh.
+  - [4] `clip_stats.json` T_high / T_low klip5 54 vs 133 frame: 0,024896 / 0,010552 vs 0,017852 / 0,007468 → oklusi −26% jumlah;
+  - [2] `area_vs_median` (W = `qc.area_median_window` 49, "selalu W sampel"): f47 gagal di 133 frame, lolos di 54 → [3] f45–49 berubah;
+  - [3] jendela kernel dipotong di tepi trim (f52–53).
+  - Di klip5 tidak terlihat beda (penilaian Rio 4b). Tanpa tindakan sekarang. (2026-10-28, T-608)
 - **UI tarik kotak crop** (jendela seperti `pick`: tarik kotak di frame kerja → kotak crop per klip). TIDAK dikerjakan di T-607; di T-607
   kotak diterima dari saran R2 atau diketik manual (docs/04 "Keputusan T-607 sesudah K2 gagal" no. 5). (2026-10-20, T-607)
 - **Kerusakan klip5 di semua varian (penilaian Rio T-304, 2026-10-25):** papan cek klip5 "SEMUA RUSAK JELAS" (4 varian b 0–1,0) dan B-sehat "SAYA AKAN MEMBERESKAN KERUSAKAN INI NANTI" → bukan dari b; masuk pengolahan khusus klip5 di atas. (2026-10-25, T-304)
@@ -2195,9 +2227,10 @@ Backlog kecil lain tetap tercatat di task asalnya.
 | 4 Style | T-401 … T-406 (T-404 → a/b) — T-401 ✅ DONE (tebal variabel + taper + resample, contract "T-401"), T-402 ✅ DONE (jitter koheren, contract "T-402", default MATI), T-403 ✅ DONE (multipass 2 pass offset 5,5 falloff 0,35 opacity 0,92, contract "T-403"), T-404a ✅ DONE (kertas bertekstur disusun di export, Opsi B; [5] tidak berubah); T-404b SKIP (tekstur garis ditolak Rio berdasarkan data / penilaian visual, docs/04 "Hasil T-404b"; alat ukur dipertahankan); T-404 tuntas; T-405 ✅ DONE (SVG diverifikasi di Krita, 2026-10-08, tanpa perubahan kode); T-406 ✅ DONE (4 preset + `--style` nama / path + `{style}`, 2026-10-08) — 🎯 **Milestone Phase 4 tercapai** | 6/7 |
 | 5 Fallback | T-501 … T-502 (SKIP 2026-10-27, D-010 Q3 ditinjau; milestone Phase 5 gugur; SKIP tidak dihitung selesai) | 0/2 |
 | 6 Opsional | T-601 … T-603 (T-601 SKIP; T-602 ✅ DONE — studi pra-proses SAM 2.1 tiny dihentikan Rio sebelum 1b-2, hasil = lanjut ke produksi (docs/04 "Keputusan akhir T-602"); T-603 ✅ DONE (2026-10-26; batch: rencana CPU + jalan GPU, docs/04 "Hasil T-603 Tahap 4 + penutupan"); T-604 / T-605 / T-606 dipindah ke Phase 7, 2026-10-15) | 2/3 |
-| 7 Cakupan lanjutan | T-701, T-604 … T-606 — T-701 ✅ DONE (hasil I0: tanpa integrasi; lengan baju menempel badan = batas yang diketahui; I2 diparkir; T-702–T-706 tidak dibuat); T-604 ✅ DONE (CLI `pick`; uji Rio lolos 2026-10-17; zoom tidak diperlukan; titik klip5 f0 + f64, klip3 f85 tersimpan); T-605 ✅ DONE ([1b] isolasi SAM 2.1 tiny, 2026-10-17; lolos berdasarkan klip3 41 / 41 frame; klip5 dikecualikan → backlog); T-606 ✅ DONE (masker target di [3], M2-H d 4, D-012, 2026-10-19; produksi klip3 dinilai Rio 4) — 🎯 **rangkaian fitur pick (T-604 → T-605 → T-606) selesai**; T-607 ✅ DONE (saran + konfirmasi crop + trim di [1], D-013, 2026-10-23; Klip2 + klip5 asli dipotong, K6 dinilai Rio "lebih baik"); T-608 WIP (restorasi input klip5, Tahap 1, 2026-10-27) | 5/6 |
+| 7 Cakupan lanjutan | T-701, T-604 … T-606 — T-701 ✅ DONE (hasil I0: tanpa integrasi; lengan baju menempel badan = batas yang diketahui; I2 diparkir; T-702–T-706 tidak dibuat); T-604 ✅ DONE (CLI `pick`; uji Rio lolos 2026-10-17; zoom tidak diperlukan; titik klip5 f0 + f64, klip3 f85 tersimpan); T-605 ✅ DONE ([1b] isolasi SAM 2.1 tiny, 2026-10-17; lolos berdasarkan klip3 41 / 41 frame; klip5 dikecualikan → backlog); T-606 ✅ DONE (masker target di [3], M2-H d 4, D-012, 2026-10-19; produksi klip3 dinilai Rio 4) — 🎯 **rangkaian fitur pick (T-604 → T-605 → T-606) selesai**; T-607 ✅ DONE (saran + konfirmasi crop + trim di [1], D-013, 2026-10-23; Klip2 + klip5 asli dipotong, K6 dinilai Rio "lebih baik"); T-608 ✅ DONE (2026-10-28; ditutup TANPA lolos kriteria no. 4 / no. 7 = batas yang diketahui; produksi klip5 = `klip5@0-2.25` (isolate iso2 + trim f0–53, perbaikan parsial); docs/04 "Penutupan T-608") | 6/6 |
 
-**Total: 51 task** (5 + 11 + 6 + 11 + 7 + 2 + 3 + 6) · Selesai: 42/51 (5 + 11 + 6 + 7 + 6 + 0 + 2 + 5; SKIP — T-301, T-303, T-305a, T-404b, T-501, T-502, T-601 — tidak dihitung selesai).
+**Total: 51 task** (5 + 11 + 6 + 11 + 7 + 2 + 3 + 6) · Selesai: 43/51 (5 + 11 + 6 + 7 + 6 + 0 + 2 + 6; SKIP — T-301, T-303, T-305a, T-404b, T-501, T-502, T-601 — tidak dihitung selesai).
+Rekonsiliasi 2026-10-28 (T-608 `WIP` → `DONE`, ditutup tanpa lolos kriteria): Phase 7 = 6/6 (T-701, T-604, T-605, T-606, T-607, T-608 selesai), total 43/51 (5 + 11 + 6 + 7 + 6 + 0 + 2 + 6 = 43; 5 + 11 + 6 + 11 + 7 + 2 + 3 + 6 = 51; jumlah per Phase = total). Per Phase: 0 5/5, 1 11/11, 2 6/6, 3 7/11, 4 6/7, 5 0/2, 6 2/3, 7 6/6. Dihitung ulang dari judul `### T-` per `# PHASE` (`scripts/t305tutup.py papan`, baca-saja; T-404 induk tidak dihitung) sebelum (42/51, Phase 7 5/6) dan sesudah judul T-608 diubah: sama dengan instruksi. Belum selesai: T-305e `TODO`; SKIP 7.
 Rekonsiliasi 2026-10-27 (T-608 dibuka di Phase 7, `WIP` Tahap 1; dari backlog "Pengolahan khusus klip5" + "Studi peningkatan kualitas video"): Phase 7 = 5/6 (T-701, T-604, T-605, T-606, T-607 selesai; T-608 WIP), total 42/51 (5 + 11 + 6 + 7 + 6 + 0 + 2 + 5 = 42; 5 + 11 + 6 + 11 + 7 + 2 + 3 + 6 = 51; jumlah per Phase = total). Per Phase: 0 5/5, 1 11/11, 2 6/6, 3 7/11, 4 6/7, 5 0/2, 6 2/3, 7 5/6. Dihitung ulang dari judul `### T-` per `# PHASE` (`scripts/t305tutup.py papan`, baca-saja; T-404 induk tidak dihitung): sama dengan instruksi.
 Rekonsiliasi 2026-10-27 (penutupan T-305 induk: T-305 `WIP` → `DONE`; T-501 / T-502 `BLOCKED` → `SKIP`): Phase 3 = 7/11 (6/11 → 7/11), Phase 5 = 0/2, total 42/50 (41/50 → 42/50). Dihitung ulang dari judul `### T-` per `# PHASE` (`scripts/t305tutup.py papan`; T-404 induk tidak dihitung). Baris "Selesai" sebelumnya tertulis 39/50 (Phase 3 = 5, Phase 6 = 1) dan tidak cocok dengan judul task maupun baris tabel Phase 3 (6/11) dan Phase 6 (2/3); dikoreksi ke angka dari judul.
 Rekonsiliasi 2026-10-26 (T-603 DONE; Phase 6 = 2/3 — T-602, T-603 selesai; T-601 SKIP tidak dihitung): Phase 6 = 2/3, total **41/50** (sebelumnya 40/50 setelah T-304; DONE 41, SKIP 5, WIP / TODO / BLOCKED 4; T-404 induk tidak dihitung).

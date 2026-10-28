@@ -9,7 +9,16 @@
     python scripts/t608_tahap4.py arsip     # (b) out/klip5.mp4 (+ manifest export), out/svg/klip5/, work/clips/klip5/meta.json
                                             #     -> work/t608/arsip_produksi_sebelum/ (sha256 salinan = sumber)
 
-Produksi hanya DIBACA (arsip = salinan). Semua subprocess CLI dengan CUDA_VISIBLE_DEVICES=-1. Hasil -> work/t608/t4a_*.json.
+Sesudah "Keputusan folder produksi klip5 (2026-10-28)" (izin A1; config produksi, TANPA --config scratch):
+    python scripts/t608_tahap4.py a1        # `ingest samples\\klip5.mp4 --end 2.25` -> work/clips/klip5@0-2.25/; 54 frame = produksi klip5
+                                            # f0–53 = scratch trim4a (sha256 + piksel); crop lama dipakai; meta beda hanya frame_count + trim
+    python scripts/t608_tahap4.py a2        # SALIN titik iso2 -> work/clips/klip5@0-2.25/target/; sha256, sidik f0/f22/f40,
+                                            # check_doc_matches_clip, `isolate … --end 2.25 --dry-run`
+    python scripts/t608_tahap4.py a3        # `run samples\\klip5.mp4 --end 2.25` TANPA --yes (terbukti berhenti di [1b] sebelum GPU, 4a (d));
+                                            # sesudahnya isolate/ / seg/ / depth/ / out tidak ada, titik sama, frame 54 / 54 sama
+
+Produksi hanya DIBACA (arsip = salinan), kecuali a1 / a2 / a3 yang menulis HANYA di work/clips/klip5@0-2.25/. Semua subprocess CLI dengan
+CUDA_VISIBLE_DEVICES=-1. Hasil -> work/t608/t4a_*.json, work/t608/t4a2_*.json.
 """
 
 from __future__ import annotations
@@ -66,19 +75,19 @@ def scratch_cfg():
     return cfg, info
 
 
-def frame_rows(wd: Path) -> list[dict]:
+def frame_rows(wd: Path, ref: Path = t.PROD_CLIP) -> list[dict]:
     rows = []
     for i in range(N_EXPECT):
         n = FRAME_PATTERN % i
-        p, s = t.PROD_CLIP / "frames" / n, wd / "frames" / n
+        p, s = ref / "frames" / n, wd / "frames" / n
         ok = s.is_file()
         rows.append({"frame": i, "ada": ok, "bytes_sama": ok and t.file_sha(p) == t.file_sha(s),
                      "piksel_sama": ok and pick.frame_pixel_sha256(p) == pick.frame_pixel_sha256(s)})
     return rows
 
 
-def frame_summary(wd: Path) -> dict:
-    rows = frame_rows(wd)
+def frame_summary(wd: Path, ref: Path = t.PROD_CLIP) -> dict:
+    rows = frame_rows(wd, ref)
     names = {FRAME_PATTERN % i for i in range(N_EXPECT)}
     present = sorted(p.name for p in (wd / "frames").glob("*.png"))
     return {"n_scratch": len(present), "tambahan": [x for x in present if x not in names],
@@ -216,10 +225,150 @@ def cmd_arsip() -> None:
     print(f"  -> {rel(ARSIP / 'arsip.json')}")
 
 
+# ── A1–A3 di produksi (keputusan folder produksi klip5) ─
+def prod_trim_dir() -> Path:
+    wd = trim_dir(load_pipeline(t.DEFAULT_CFG))
+    if wd.resolve() != (ROOT / "work" / "clips" / "klip5@0-2.25").resolve():
+        raise SystemExit(f"folder trim produksi tak terduga: {wd} — berhenti")
+    return wd
+
+
+def both_refs(wd: Path) -> dict:
+    """Frame folder trim produksi vs produksi klip5 f0–53 DAN vs scratch trim4a."""
+    return {"vs_produksi_klip5": frame_summary(wd), "vs_scratch_trim4a": frame_summary(wd, trim_dir(load_pipeline(CFG)))}
+
+
+def frames_ok(fs: dict) -> bool:
+    return all(v["n_scratch"] == N_EXPECT and v["bytes_sama"] == N_EXPECT and v["piksel_sama"] == N_EXPECT and not v["tambahan"]
+               for v in fs.values())
+
+
+def print_frames(fs: dict) -> None:
+    for k, v in fs.items():
+        print(f"  {k}: {v['n_scratch']} frame; bytes sama {v['bytes_sama']}/{N_EXPECT}; piksel sama {v['piksel_sama']}/{N_EXPECT}; "
+              f"beda {v['beda']}; tambahan {v['tambahan']}")
+
+
+def gpu_outputs(wd: Path) -> dict:
+    """Berkas hasil stage [1b]–[6] yang TIDAK boleh ada sebelum run GPU Rio."""
+    out = ROOT / "out"
+    paths = {**{n: wd / n for n in ("isolate", "isolate.partial", "isolate.old", "seg", "qc_report.json", "depth", "stable",
+                                     "contours", "strokes")},
+             "out_mp4": out / f"{wd.name}.mp4", "out_svg": out / "svg" / wd.name}
+    return {k: p.exists() for k, p in paths.items()}
+
+
+def cmd_a1() -> None:
+    wd = prod_trim_dir()
+    if wd.exists():
+        raise SystemExit(f"{rel(wd)} sudah ada — A1 tidak diulang")
+    crop_before = {rel(p): t.file_sha(p) for p in sorted(t.PROD_CROP.rglob("*")) if p.is_file()}
+    r = t.run_cli(["ingest", t.VIDEO, *TRIM])
+    print(f"== {r['cmd']} -> rc {r['rc']}\n{r['stdout']}{r['stderr']}")
+    res: dict = {"folder": rel(wd), "ingest": r}
+    crop_after = {rel(p): t.file_sha(p) for p in sorted(t.PROD_CROP.rglob("*")) if p.is_file()}
+    res["crop_berkas_sama"] = crop_before == crop_after
+    if r["rc"] != 0:
+        t.jsave(t.OUT / "t4a2_a1.json", res)
+        raise SystemExit(f"A1: ingest rc {r['rc']}" + (" (exit 4 = saran crop)" if r["rc"] == 4 else "") + " — BERHENTI")
+    res["frame"] = both_refs(wd)
+    meta_old = json.loads((t.PROD_CLIP / "meta.json").read_text(encoding="utf-8"))
+    meta_new = json.loads((wd / "meta.json").read_text(encoding="utf-8"))
+    beda = sorted(k for k in set(meta_old) | set(meta_new) if meta_old.get(k) != meta_new.get(k))
+    res["meta"] = {"key_beda": beda, "frame_count": [meta_old.get("frame_count"), meta_new.get("frame_count")],
+                   "trim_baru": meta_new.get("trim"), "crop_sama": meta_old.get("crop") == meta_new.get("crop"),
+                   "crop_mode": (meta_new.get("crop") or {}).get("mode"), "meta_sha256": t.file_sha(wd / "meta.json")}
+    print_frames(res["frame"])
+    print(f"meta key beda: {beda}; frame_count {res['meta']['frame_count']}; crop sama {res['meta']['crop_sama']} "
+          f"(mode {res['meta']['crop_mode']}); berkas crop tidak berubah: {res['crop_berkas_sama']}")
+    res["lolos"] = (frames_ok(res["frame"]) and beda == ["frame_count", "trim"] and res["meta"]["crop_sama"]
+                    and res["crop_berkas_sama"])
+    print(f"A1 lolos: {res['lolos']}")
+    t.jsave(t.OUT / "t4a2_a1.json", res)
+    if not res["lolos"]:
+        raise SystemExit("A1 GAGAL — BERHENTI")
+
+
+def cmd_a2() -> None:
+    wd = prod_trim_dir()
+    a1 = json.loads((t.OUT / "t4a2_a1.json").read_text(encoding="utf-8"))
+    if not a1.get("lolos"):
+        raise SystemExit("A1 belum lolos — A2 tidak dijalankan")
+    psha = t.file_sha(POINTS_ISO2)
+    if not psha.startswith(POINTS_ISO2_SHA):
+        raise SystemExit(f"{rel(POINTS_ISO2)} sha256 {psha[:12]} ≠ {POINTS_ISO2_SHA} — berhenti")
+    dst = wd / pick.TARGET_DIRNAME / pick.POINTS_FILENAME
+    if dst.exists():
+        raise SystemExit(f"{rel(dst)} sudah ada — tidak ditimpa")
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(POINTS_ISO2, dst)
+    res: dict = {"sumber": rel(POINTS_ISO2), "salinan": rel(dst), "sha256_sumber": psha, "sha256_salinan": t.file_sha(dst),
+                 "bytes": dst.stat().st_size, "sumber_masih_ada": POINTS_ISO2.is_file(),
+                 "bukan_hard_link": os.stat(dst).st_nlink == 1 and not os.path.samefile(POINTS_ISO2, dst)}
+    doc = pick.load_points(dst)
+    res["sidik"] = [{"frame": e["frame_index"],
+                     "sama_frame_produksi_baru": pick.frame_pixel_sha256(wd / "frames" / e["frame_file"]) == e["frame_pixel_sha256"]}
+                    for e in doc["frames"]]
+    m = json.loads((wd / "meta.json").read_text(encoding="utf-8"))
+    try:
+        pick.check_doc_matches_clip(doc, clip_identity(wd), m["working_width"], m["working_height"], dst)
+        res["check_doc_matches_clip"] = "ok"
+    except pick.PickError as e:
+        res["check_doc_matches_clip"] = str(e)
+    r = t.run_cli(["isolate", t.VIDEO, *TRIM, "--dry-run"])
+    res["dry_run"] = r
+    out = r["stdout"] + r["stderr"]
+    res["dry_run_cek"] = {"rc0": r["rc"] == 0, "2_adegan_cut_22": "adegan: 2 (cut di frame 22)" in out,
+                          "f0_21_klik_f0": "adegan f0–f21 (22 frame): klik di f0;" in out,
+                          "f22_53_klik_f22_f40": "adegan f22–f53 (32 frame): klik di f22, f40;" in out,
+                          "tanpa_prompt_0": "tanpa_prompt: 0 frame" in out}
+    res["sesudah"] = gpu_outputs(wd)
+    print(f"salin {res['salinan']}: sha256 sama {res['sha256_sumber'] == res['sha256_salinan']} ({psha[:12]}); bukan hard link "
+          f"{res['bukan_hard_link']}; sumber masih ada {res['sumber_masih_ada']}")
+    print(f"sidik: {res['sidik']}; check_doc_matches_clip: {res['check_doc_matches_clip']}")
+    print(f"== {r['cmd']} -> rc {r['rc']}\n{out}")
+    print(f"cek dry-run: {res['dry_run_cek']}; hasil GPU ada: {[k for k, v in res['sesudah'].items() if v]}")
+    res["lolos"] = (res["sha256_sumber"] == res["sha256_salinan"] and res["bukan_hard_link"] and res["sumber_masih_ada"]
+                    and all(s["sama_frame_produksi_baru"] for s in res["sidik"]) and res["check_doc_matches_clip"] == "ok"
+                    and all(res["dry_run_cek"].values()) and not any(res["sesudah"].values()))
+    print(f"A2 lolos: {res['lolos']}")
+    t.jsave(t.OUT / "t4a2_a2.json", res)
+    if not res["lolos"]:
+        raise SystemExit("A2 GAGAL — BERHENTI")
+
+
+def cmd_a3() -> None:
+    wd = prod_trim_dir()
+    a2 = json.loads((t.OUT / "t4a2_a2.json").read_text(encoding="utf-8"))
+    if not a2.get("lolos") or not a2["dry_run_cek"]["rc0"] or "GPU: dibutuhkan (--yes wajib)" not in a2["dry_run"]["stdout"]:
+        raise SystemExit("A2 belum lolos / dry-run tidak menyatakan --yes wajib — A3 tidak dijalankan")
+    dst = wd / pick.TARGET_DIRNAME / pick.POINTS_FILENAME
+    psha = t.file_sha(dst)
+    r = t.run_cli(["run", t.VIDEO, *TRIM])                 # TANPA --yes: [1b] menolak sebelum GPU (4a (d))
+    out = r["stdout"] + r["stderr"]
+    folder_line = next((ln for ln in out.splitlines() if "folder kerja" in ln), "")
+    res: dict = {"run": r, "cek": {"rc1": r["rc"] == 1,
+                                   "folder_trim": Path(folder_line.split("folder kerja ", 1)[-1].split(", output", 1)[0]).resolve()
+                                   == wd.resolve() if folder_line else False,
+                                   "trim_0_53": "frame 0–53 (54 frame)" in out, "berhenti_di_1b": "=== [1b] isolate ===" in out
+                                   and "[1b] isolate butuh GPU (belum ada hasil)" in out,
+                                   "tidak_sampai_2": "=== [2] segment ===" not in out and "=== [2c] depth ===" not in out}}
+    res["sesudah"] = {"hasil_gpu_ada": [k for k, v in gpu_outputs(wd).items() if v], "titik_sama": t.file_sha(dst) == psha,
+                      "frame": both_refs(wd)}
+    print(f"== {r['cmd']} -> rc {r['rc']}\n{out}")
+    print(f"cek: {res['cek']}; hasil GPU ada sesudah: {res['sesudah']['hasil_gpu_ada']}; titik sama {res['sesudah']['titik_sama']}")
+    print_frames(res["sesudah"]["frame"])
+    res["lolos"] = (all(res["cek"].values()) and not res["sesudah"]["hasil_gpu_ada"] and res["sesudah"]["titik_sama"]
+                    and frames_ok(res["sesudah"]["frame"]))
+    print(f"A3 lolos: {res['lolos']}")
+    t.jsave(t.OUT / "t4a2_a3.json", res)
+
+
 def main(argv: list[str]) -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    cmds = {"siapkan": cmd_siapkan, "ingest": cmd_ingest, "banding": cmd_banding, "arsip": cmd_arsip}
+    cmds = {"siapkan": cmd_siapkan, "ingest": cmd_ingest, "banding": cmd_banding, "arsip": cmd_arsip, "a1": cmd_a1, "a2": cmd_a2,
+            "a3": cmd_a3}
     if len(argv) != 1 or argv[0] not in cmds:
         print(__doc__)
         return 2

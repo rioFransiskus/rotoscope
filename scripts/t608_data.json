@@ -1,0 +1,1119 @@
+{
+ "format": "t608-data/1",
+ "dibuat": "python scripts/t608_tahap4b.py data -> work/t608/t608_data.json; scripts/t608_data.json = salinan Write, byte-identik (cek: python scripts/t608_tahap4b.py cek_data, sebelum work/t608_scratch/ dihapus)",
+ "docs04": [
+  "Hasil + rancangan T-608 Tahap 1", "Hasil T-608 1b-2 langkah 1", "Hasil T-608 1b-2 percobaan kedua",
+  "Keputusan akhir T-608 (2026-10-28)", "Hasil run produksi klip5@0-2.25 (2026-10-28)", "Penutupan T-608"
+ ],
+ "tahap1": {
+  "definisi": "scripts/t608_tahap1.py (docstring); statistik per klip = [median, p90] (n / mean / min / max di work/t608/ringkas.json)",
+  "kualitas": {
+   "test": {
+    "area": {"box": [0, 0, 480, 854], "w": 480, "h": 854, "porsi_kanvas": 1.0},
+    "kerja": [480, 854],
+    "skala": 1.0,
+    "bitrate": 496656,
+    "bpp": 0.0404,
+    "profile": "Main",
+    "fps_sumber": 30.0,
+    "sigma_full": [0.9202, 0.9747],
+    "sigma_flat": [0.2269, 0.2607],
+    "block8": [1.0657, 1.1],
+    "block16": [1.1212, 1.1859],
+    "vol": [1438.6738, 1485.2582],
+    "vol_norm": [0.3774, 0.4272],
+    "psnr_rt2": [27.6466, 27.9159]
+   },
+   "Klip2": {
+    "area": {"box": [434, 0, 412, 720], "w": 412, "h": 720, "porsi_kanvas": 0.3219},
+    "kerja": [412, 720],
+    "skala": 1.0,
+    "bitrate": 4828738,
+    "bpp": 0.1747,
+    "profile": "Main",
+    "fps_sumber": 30.0,
+    "sigma_full": [1.3264, 1.3892],
+    "sigma_flat": [0.7225, 0.7714],
+    "block8": [0.9264, 0.9511],
+    "block16": [0.8946, 0.9174],
+    "vol": [1104.0253, 1118.5277],
+    "vol_norm": [0.3035, 0.3089],
+    "psnr_rt2": [28.779, 28.8636]
+   },
+   "klip3": {
+    "area": {"box": [0, 0, 720, 1280], "w": 720, "h": 1280, "porsi_kanvas": 1.0},
+    "kerja": [720, 1280],
+    "skala": 1.0,
+    "bitrate": 972934,
+    "bpp": 0.0352,
+    "profile": "Main",
+    "fps_sumber": 29.97,
+    "sigma_full": [0.7602, 0.8257],
+    "sigma_flat": [0.5693, 0.617],
+    "block8": [1.0723, 1.195],
+    "block16": [1.0905, 1.2311],
+    "vol": [181.78, 220.9745],
+    "vol_norm": [0.0628, 0.0727],
+    "psnr_rt2": [36.9891, 41.5444]
+   },
+   "klip4": {
+    "area": {"box": [0, 0, 720, 1280], "w": 720, "h": 1280, "porsi_kanvas": 1.0},
+    "kerja": [720, 1280],
+    "skala": 1.0,
+    "bitrate": 1547292,
+    "bpp": 0.056,
+    "profile": "Main",
+    "fps_sumber": 30.0,
+    "sigma_full": [0.2394, 0.2694],
+    "sigma_flat": [0.145, 0.1655],
+    "block8": [1.3107, 1.3862],
+    "block16": [1.4208, 1.5272],
+    "vol": [36.0748, 47.717],
+    "vol_norm": [0.0195, 0.0283],
+    "psnr_rt2": [44.3511, 45.5553]
+   },
+   "klip5": {
+    "area": {"box": [0, 344, 720, 668], "w": 720, "h": 668, "porsi_kanvas": 0.5219},
+    "kerja": [720, 668],
+    "skala": 1.0,
+    "bitrate": 2828818,
+    "bpp": 0.0512,
+    "profile": "Main",
+    "fps_sumber": 60.0,
+    "sigma_full": [1.3028, 2.3865],
+    "sigma_flat": [0.6085, 1.1561],
+    "block8": [1.1185, 1.175],
+    "block16": [1.1819, 1.2843],
+    "vol": [1667.9929, 3091.094],
+    "vol_norm": [0.5599, 0.8845],
+    "psnr_rt2": [27.0975, 32.6127]
+   }
+  },
+  "ambigu": {
+   "test": {
+    "amb_arm_frac": [0.0024, 0.0036],
+    "amb_person_frac": [0.014, 0.0248],
+    "amb_arm_of_zone": [0.0191, 0.0259],
+    "ent_band": [0.3303, 0.4097],
+    "qc_fail": 0,
+    "n": 283
+   },
+   "Klip2": {
+    "amb_arm_frac": [0.0005, 0.0011],
+    "amb_person_frac": [0.0134, 0.0146],
+    "amb_arm_of_zone": [0.0081, 0.0182],
+    "ent_band": [0.2919, 0.3127],
+    "qc_fail": 0,
+    "n": 122
+   },
+   "klip3": {
+    "amb_arm_frac": [0.002, 0.0048],
+    "amb_person_frac": [0.0184, 0.0237],
+    "amb_arm_of_zone": [0.0283, 0.0685],
+    "ent_band": [0.5892, 0.6971],
+    "qc_fail": 1,
+    "n": 182
+   },
+   "klip4": {
+    "amb_arm_frac": [0.002, 0.0035],
+    "amb_person_frac": [0.0089, 0.0111],
+    "amb_arm_of_zone": [0.0121, 0.0206],
+    "ent_band": [0.4684, 0.5179],
+    "qc_fail": 0,
+    "n": 217
+   },
+   "klip5": {
+    "amb_arm_frac": [0.0003, 0.0116],
+    "amb_person_frac": [0.0287, 0.2215],
+    "amb_arm_of_zone": [0.0068, 0.0918],
+    "ent_band": [0.8049, 1.4692],
+    "qc_fail": 18,
+    "n": 133
+   }
+  },
+  "tepi": {
+   "test": {
+    "edge_grad": [288.3938, 355.2517],
+    "edge_ratio": [4.8207, 6.718],
+    "fg_frac": [0.1773, 0.1985],
+    "edge_ratio_p10": 4.2515
+   },
+   "Klip2": {
+    "edge_grad": [322.0266, 336.141],
+    "edge_ratio": [2.5045, 2.6235],
+    "fg_frac": [0.1771, 0.1873],
+    "edge_ratio_p10": 2.3298
+   },
+   "klip3": {
+    "edge_grad": [99.9948, 106.9206],
+    "edge_ratio": [1.1722, 1.4223],
+    "fg_frac": [0.3777, 0.4132],
+    "edge_ratio_p10": 1.1096
+   },
+   "klip4": {
+    "edge_grad": [84.5456, 115.2648],
+    "edge_ratio": [2.575, 4.0367],
+    "fg_frac": [0.2823, 0.3342],
+    "edge_ratio_p10": 1.9197
+   },
+   "klip5": {
+    "edge_grad": [163.0015, 369.8112],
+    "edge_ratio": [1.0168, 2.5335],
+    "fg_frac": [0.4835, 0.6327],
+    "edge_ratio_p10": 0.6451
+   }
+  },
+  "korelasi_klip5": {
+   "sigma_flat~amb_arm_frac": -0.655,
+   "sigma_flat~amb_person_frac": -0.79,
+   "sigma_flat~ent_band": -0.696,
+   "block8~amb_arm_frac": -0.054,
+   "block8~amb_person_frac": 0.185,
+   "block8~ent_band": 0.402,
+   "vol_norm~amb_arm_frac": -0.78,
+   "vol_norm~amb_person_frac": -0.8,
+   "vol_norm~ent_band": -0.739,
+   "psnr_rt2~amb_arm_frac": 0.691,
+   "psnr_rt2~amb_person_frac": 0.86,
+   "psnr_rt2~ent_band": 0.796,
+   "edge_grad~amb_arm_frac": -0.834,
+   "edge_grad~amb_person_frac": -0.78,
+   "edge_grad~ent_band": -0.744,
+   "edge_ratio~amb_arm_frac": -0.68,
+   "edge_ratio~amb_person_frac": -0.558,
+   "edge_ratio~ent_band": -0.608,
+   "fg_frac~amb_arm_frac": 0.006,
+   "fg_frac~amb_person_frac": -0.253,
+   "fg_frac~ent_band": 0.066
+  },
+  "korelasi_klip5_f0_62": {
+   "sigma_flat~amb_person_frac": -0.124,
+   "sigma_flat~ent_band": 0.447,
+   "vol_norm~amb_person_frac": -0.243,
+   "vol_norm~ent_band": 0.407,
+   "psnr_rt2~amb_person_frac": 0.219,
+   "psnr_rt2~ent_band": -0.463,
+   "block8~amb_person_frac": -0.198,
+   "block8~ent_band": 0.247,
+   "edge_ratio~amb_person_frac": -0.097,
+   "edge_ratio~ent_band": -0.616,
+   "fg_frac~amb_person_frac": -0.555,
+   "fg_frac~ent_band": 0.609
+  },
+  "klip5_per_segmen": {
+   "f0-62 kerumunan": {
+    "kualitas": {
+     "sigma_full": [0.6348, 0.8912],
+     "sigma_flat": [0.3524, 0.5883],
+     "block8": [1.1185, 1.1722],
+     "block16": [1.1984, 1.288],
+     "vol": [472.5186, 530.7864],
+     "vol_norm": [0.1503, 0.2025],
+     "psnr_rt2": [32.3668, 32.84]
+    },
+    "ambigu": {
+     "amb_arm_frac": [0.007, 0.0136],
+     "amb_person_frac": [0.1724, 0.2493],
+     "amb_arm_of_zone": [0.0609, 0.1105],
+     "ent_band": [1.2564, 1.5315]
+    },
+    "tepi": {"edge_grad": [66.9856, 101.2362], "edge_ratio": [0.817, 1.2199], "fg_frac": [0.4558, 0.6487]}
+   },
+   "f63-77 zoom": {
+    "kualitas": {
+     "sigma_full": [1.8343, 1.9672],
+     "sigma_flat": [0.7963, 0.8604],
+     "block8": [1.1561, 1.1724],
+     "block16": [1.1974, 1.2333],
+     "vol": [2172.5042, 2507.7516],
+     "vol_norm": [0.8852, 0.9701],
+     "psnr_rt2": [25.9263, 27.2713]
+    },
+    "ambigu": {
+     "amb_arm_frac": [0.0, 0.0001],
+     "amb_person_frac": [0.0136, 0.0323],
+     "amb_arm_of_zone": [0.0, 0.0014],
+     "ent_band": [0.573, 1.1755]
+    },
+    "tepi": {"edge_grad": [323.7737, 392.9943], "edge_ratio": [1.8841, 2.3935], "fg_frac": [0.5661, 0.6579]}
+   },
+   "f78-91": {
+    "kualitas": {
+     "sigma_full": [1.7122, 1.9209],
+     "sigma_flat": [0.5916, 0.7176],
+     "block8": [1.1241, 1.1348],
+     "block16": [1.1721, 1.2384],
+     "vol": [2095.7627, 2480.7443],
+     "vol_norm": [0.8251, 0.986],
+     "psnr_rt2": [26.2447, 26.7664]
+    },
+    "ambigu": {
+     "amb_arm_frac": [0.0, 0.0002],
+     "amb_person_frac": [0.0111, 0.0132],
+     "amb_arm_of_zone": [0.0003, 0.0074],
+     "ent_band": [0.4875, 0.5937]
+    },
+    "tepi": {"edge_grad": [372.4235, 381.1672], "edge_ratio": [3.081, 3.5851], "fg_frac": [0.3215, 0.4107]}
+   },
+   "f92-104 cut": {
+    "kualitas": {
+     "sigma_full": [1.3037, 1.7403],
+     "sigma_flat": [0.6925, 0.7748],
+     "block8": [1.1925, 1.2843],
+     "block16": [1.2643, 1.3997],
+     "vol": [2194.2893, 2341.5143],
+     "vol_norm": [0.5617, 0.6295],
+     "psnr_rt2": [25.5218, 26.3897]
+    },
+    "ambigu": {
+     "amb_arm_frac": [0.0001, 0.0004],
+     "amb_person_frac": [0.0106, 0.0349],
+     "amb_arm_of_zone": [0.0029, 0.0129],
+     "ent_band": [0.6257, 0.6907]
+    },
+    "tepi": {"edge_grad": [349.089, 397.7677], "edge_ratio": [1.6209, 2.2647], "fg_frac": [0.3931, 0.5983]}
+   },
+   "f105-132 objek lain": {
+    "kualitas": {
+     "sigma_full": [2.3857, 2.4043],
+     "sigma_flat": [1.1561, 1.1728],
+     "block8": [1.0404, 1.0798],
+     "block16": [1.0795, 1.1082],
+     "vol": [3089.4678, 3144.997],
+     "vol_norm": [0.8649, 0.8799],
+     "psnr_rt2": [24.4431, 25.0547]
+    },
+    "ambigu": {
+     "amb_arm_frac": [0.0002, 0.0002],
+     "amb_person_frac": [0.0077, 0.0098],
+     "amb_arm_of_zone": [0.0045, 0.0061],
+     "ent_band": [0.3619, 0.438]
+    },
+    "tepi": {"edge_grad": [244.577, 250.8825], "edge_ratio": [1.0171, 1.0582], "fg_frac": [0.5689, 0.5891]}
+   }
+  },
+  "klip5_per_jendela24": {
+   "f0-23": {
+    "kualitas": {
+     "sigma_full": [0.6526, 0.6768],
+     "sigma_flat": [0.3597, 0.3721],
+     "block8": [1.1124, 1.1758],
+     "block16": [1.1712, 1.2666],
+     "vol": [511.5762, 520.9777],
+     "vol_norm": [0.1478, 0.1515],
+     "psnr_rt2": [32.0485, 32.2259]
+    },
+    "ambigu": {
+     "amb_arm_frac": [0.0071, 0.0117],
+     "amb_person_frac": [0.1832, 0.2163],
+     "amb_arm_of_zone": [0.0763, 0.1252],
+     "ent_band": [1.2504, 1.4506]
+    }
+   },
+   "f24-47": {
+    "kualitas": {
+     "sigma_full": [0.573, 0.6122],
+     "sigma_flat": [0.2986, 0.3219],
+     "block8": [1.1127, 1.1549],
+     "block16": [1.2141, 1.2898],
+     "vol": [444.146, 460.5602],
+     "vol_norm": [0.1532, 0.16],
+     "psnr_rt2": [32.6096, 32.9019]
+    },
+    "ambigu": {
+     "amb_arm_frac": [0.0081, 0.0147],
+     "amb_person_frac": [0.1611, 0.2442],
+     "amb_arm_of_zone": [0.0674, 0.11],
+     "ent_band": [1.1792, 1.3346]
+    }
+   },
+   "f48-71": {
+    "kualitas": {
+     "sigma_full": [1.2668, 1.8054],
+     "sigma_flat": [0.7496, 0.8417],
+     "block8": [1.1565, 1.1743],
+     "block16": [1.1969, 1.252],
+     "vol": [968.5009, 2106.069],
+     "vol_norm": [0.4134, 0.8825],
+     "psnr_rt2": [29.3761, 32.5529]
+    },
+    "ambigu": {
+     "amb_arm_frac": [0.0011, 0.0089],
+     "amb_person_frac": [0.0573, 0.2487],
+     "amb_arm_of_zone": [0.0073, 0.0679],
+     "ent_band": [1.4482, 2.1399]
+    }
+   },
+   "f72-95": {
+    "kualitas": {
+     "sigma_full": [1.761, 1.9586],
+     "sigma_flat": [0.6782, 0.7958],
+     "block8": [1.1263, 1.1693],
+     "block16": [1.1815, 1.2535],
+     "vol": [2258.0109, 2510.7159],
+     "vol_norm": [0.8405, 0.9955],
+     "psnr_rt2": [25.8062, 26.6706]
+    },
+    "ambigu": {
+     "amb_arm_frac": [0.0, 0.0001],
+     "amb_person_frac": [0.0112, 0.0141],
+     "amb_arm_of_zone": [0.0003, 0.0072],
+     "ent_band": [0.5069, 0.6264]
+    }
+   },
+   "f96-119": {
+    "kualitas": {
+     "sigma_full": [2.1818, 2.3907],
+     "sigma_flat": [1.0115, 1.1561],
+     "block8": [1.0812, 1.2154],
+     "block16": [1.1084, 1.3546],
+     "vol": [2694.6451, 3104.879],
+     "vol_norm": [0.76, 0.8668],
+     "psnr_rt2": [24.9719, 25.7438]
+    },
+    "ambigu": {
+     "amb_arm_frac": [0.0002, 0.0003],
+     "amb_person_frac": [0.0081, 0.0311],
+     "amb_arm_of_zone": [0.0044, 0.0108],
+     "ent_band": [0.4373, 0.6815]
+    }
+   },
+   "f120-132": {
+    "kualitas": {
+     "sigma_full": [2.3924, 2.4128],
+     "sigma_flat": [1.1671, 1.1776],
+     "block8": [1.0271, 1.0404],
+     "block16": [1.0677, 1.0881],
+     "vol": [3100.6807, 3149.8178],
+     "vol_norm": [0.8713, 0.8837],
+     "psnr_rt2": [24.4181, 24.4544]
+    },
+    "ambigu": {
+     "amb_arm_frac": [0.0002, 0.0002],
+     "amb_person_frac": [0.0076, 0.0079],
+     "amb_arm_of_zone": [0.0045, 0.0052],
+     "ent_band": [0.3548, 0.3626]
+    }
+   }
+  },
+  "r0": {
+   "param": {
+    "h": 0.6,
+    "hColor": 0.6,
+    "h_dari": "median sigma_flat klip5 0.6085",
+    "temporalWindowSize": 5,
+    "templateWindowSize": 7,
+    "searchWindowSize": 21,
+    "clahe": {"clipLimit": 2.0, "tile": 8, "kanal": "L (Lab), sesudah NLM multi"}
+   },
+   "cpu": {"os_cpu_count": 12, "cv2_threads": 12, "cv2": "5.0.0"},
+   "frame_ukuran": [720, 668],
+   "rata2": {"t_multi_s": 1.836, "t_single_s": 0.574, "t_clahe_s": 0.004},
+   "catatan": "angka saja; gambar hasil TIDAK disimpan"
+  },
+  "cut_klip5": {
+   "cut_diff": 0.06,
+   "n_frames": 133,
+   "detected": [
+    22, 60, 61, 62, 63, 64, 65, 66, 67, 68, 72, 73, 74, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104,
+    106, 108
+   ],
+   "n_detected": 32,
+   "label_rio": [92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104],
+   "unlabeled": [22, 60, 61, 62, 63, 64, 65, 66, 67, 68, 72, 73, 74, 88, 89, 90, 91, 106, 108],
+   "unlabeled_scores": {
+    "22": 0.0667,
+    "60": 0.0864,
+    "61": 0.0622,
+    "62": 0.0862,
+    "63": 0.0672,
+    "64": 0.1124,
+    "65": 0.0752,
+    "66": 0.0653,
+    "67": 0.0652,
+    "68": 0.0799,
+    "72": 0.0718,
+    "73": 0.0658,
+    "74": 0.0639,
+    "88": 0.0764,
+    "89": 0.0644,
+    "90": 0.0707,
+    "91": 0.1008,
+    "106": 0.0847,
+    "108": 0.0647
+   },
+   "unlabeled_matches_docs05": true,
+   "definisi": "cut di frame k = skor(k−1 → k) > cut_diff; papan: kiri f(k−1) SEBELUM, kanan f(k) SESUDAH"
+  }
+ },
+ "diagnosis_klik_iso1": {
+  "device": "cpu",
+  "mask_threshold": 0.0,
+  "varian_kolom": ["n_kiri", "n_kanan", "kotak", "skor_objek", "luas_px", "porsi_di_dalam_kotak"],
+  "frame": {
+   "0": {
+    "klik_kiri": 14,
+    "klik_kanan": 67,
+    "kanan_di_dalam_kotak": 37,
+    "kotak": [122.0, 58.0, 516.0, 508.0],
+    "skor_gpu_run_rio": -3.911,
+    "varian": {
+     "rio": [14, 67, true, -3.911, 0, null],
+     "pos_kotak": [14, 0, true, 23.043, 89776, 0.9989],
+     "pos": [14, 0, false, 22.322, 87336, null],
+     "kotak": [0, 0, true, 18.114, 89968, 0.999],
+     "pos_kotak_neg10": [14, 10, true, 17.425, 89447, 0.9966],
+     "pos_kotak_neg30": [14, 30, true, 2.701, 31708, 0.7737],
+     "pos_neg_semua": [14, 67, false, -4.354, 0, null]
+    }
+   },
+   "22": {
+    "klik_kiri": 20,
+    "klik_kanan": 47,
+    "kanan_di_dalam_kotak": 47,
+    "kotak": [110.0, 91.0, 554.0, 486.0],
+    "skor_gpu_run_rio": -0.908,
+    "varian": {
+     "rio": [20, 47, true, -0.908, 0, null],
+     "pos_kotak": [20, 0, true, 22.601, 87622, 0.9607],
+     "pos": [20, 0, false, 22.365, 87324, null],
+     "kotak": [0, 0, true, 18.348, 80336, 1.0],
+     "pos_kotak_neg10": [20, 10, true, 16.844, 86778, 0.9526],
+     "pos_kotak_neg30": [20, 30, true, 4.163, 74701, 0.9113],
+     "pos_neg_semua": [20, 47, false, -1.798, 0, null]
+    }
+   },
+   "40": {
+    "klik_kiri": 19,
+    "klik_kanan": 47,
+    "kanan_di_dalam_kotak": 47,
+    "kotak": [166.0, 101.0, 586.0, 489.0],
+    "skor_gpu_run_rio": -0.637,
+    "varian": {
+     "rio": [19, 47, true, -0.637, 0, null],
+     "pos_kotak": [19, 0, true, 22.312, 86286, 0.9827],
+     "pos": [19, 0, false, 22.082, 85786, null],
+     "kotak": [0, 0, true, 18.355, 76394, 1.0],
+     "pos_kotak_neg10": [19, 10, true, 16.873, 87528, 0.9671],
+     "pos_kotak_neg30": [19, 30, true, 4.319, 67982, 0.917],
+     "pos_neg_semua": [19, 47, false, -1.727, 0, null]
+    }
+   }
+  }
+ },
+ "isolate": {
+  "iso1": {
+   "manifest_sha256": "846a92a6e802c16a15dcffb7536d766551bc212b56fd3d2487e892cf44a67904",
+   "key_sha256": "7474ea156ed21b6c3a999f91a26b584d563dd189a69f8479395c83ff4565ab86",
+   "points_sha256": "87f2d78d18100493e5254c0160a1e7b4bbeb6ad540ad85be0d95cc8ed80d6cd6",
+   "frames_pixel_sha256": "dbd9aa8f172bb8ae5472ca7f0be366ff14ca79092df881381e101f2d4c56ee19",
+   "model": {
+    "model_id": "facebook/sam2.1-hiera-tiny",
+    "revision": "de431c4043854a71d8101e17995dfe596bf101a5",
+    "license": "apache-2.0",
+    "precision": "fp32"
+   },
+   "frame_count": 133,
+   "frames": {"target": 0, "kosong": 60, "tanpa_prompt": 73, "kosong_ranges": [[0, 59]], "tanpa_prompt_ranges": [[60, 132]]},
+   "jobs": [
+    {
+     "shot": [0, 21],
+     "prompt_frames": [0],
+     "prompts": [{"frame": 0, "n_pos": 14, "n_neg": 67, "box": [122.0, 58.0, 516.0, 508.0]}],
+     "n_infer": 22,
+     "infer_s": 22.84
+    },
+    {
+     "shot": [22, 59],
+     "prompt_frames": [22, 40],
+     "prompts": [
+      {"frame": 22, "n_pos": 20, "n_neg": 47, "box": [110.0, 91.0, 554.0, 486.0]},
+      {"frame": 40, "n_pos": 19, "n_neg": 47, "box": [166.0, 101.0, 586.0, 489.0]}
+     ],
+     "n_infer": 38,
+     "infer_s": 25.22
+    }
+   ],
+   "run": {
+    "started_utc": "2026-10-28T07:04:33+00:00",
+    "key_s": 1.43,
+    "scenes_s": 1.05,
+    "ram": {"free_before_mib": 5719.2, "peak_process_mib": 3536.8},
+    "open": {
+     "device": "cuda",
+     "vram_free_before_load_mib": 3313.7,
+     "vram_total_mib": 4095.7,
+     "gpu": "NVIDIA GeForce GTX 1650 Ti",
+     "load_s": 0.71
+    },
+    "vram": {"vram_free_before_load_mib": 3313.7, "vram_total_mib": 4095.7, "max_reserved_mib": 856.0, "max_allocated_mib": 562.1},
+    "finished_utc": "2026-10-28T07:05:33+00:00",
+    "wall_s": 60.07,
+    "infer_s": {"n": 60, "p50": 0.666, "max": 9.57, "total": 47.53},
+    "nonfinite_frames": []
+   },
+   "per_frame": {
+    "frame": "f0–59",
+    "score_logit": [
+     -3.911, -2.63, -2.27, -1.202, -1.373, -1.586, -1.077, -1.263, -1.264, -1.012, -1.164, -0.905, -0.809, -0.916, -0.567, -0.607,
+     -0.638, -0.67, -0.586, -0.702, -0.716, -0.815, -0.908, -2.582, -1.886, -1.36, -1.476, -1.148, -1.291, -1.383, -1.501, -1.262,
+     -1.224, -1.109, -0.942, -1.055, -1.03, -1.068, -1.18, -1.403, -0.637, -1.251, -1.358, -0.866, -0.768, -0.881, -0.927, -1.033,
+     -1.027, -1.143, -1.221, -0.975, -1.017, -1.121, -0.898, -0.852, -0.895, -1.223, -0.993, -0.954
+    ],
+    "area_px": [
+     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    ]
+   }
+  },
+  "iso2_scratch": {
+   "manifest_sha256": "97b193cbc8e1d632b3033e9a54da2939a53bb0f8aad107e23e215b40436f6016",
+   "key_sha256": "6c62b6a12434a4a6f101e11b755f873d083abf4e090928969ef9efd54ab72c39",
+   "points_sha256": "9380ba657681d6df60bd632c918ce2fc6bfe242ca5ff6f5401d9228c8c47bc67",
+   "frames_pixel_sha256": "dbd9aa8f172bb8ae5472ca7f0be366ff14ca79092df881381e101f2d4c56ee19",
+   "model": {
+    "model_id": "facebook/sam2.1-hiera-tiny",
+    "revision": "de431c4043854a71d8101e17995dfe596bf101a5",
+    "license": "apache-2.0",
+    "precision": "fp32"
+   },
+   "frame_count": 133,
+   "frames": {"target": 60, "kosong": 0, "tanpa_prompt": 73, "kosong_ranges": [], "tanpa_prompt_ranges": [[60, 132]]},
+   "jobs": [
+    {
+     "shot": [0, 21],
+     "prompt_frames": [0],
+     "prompts": [{"frame": 0, "n_pos": 8, "n_neg": 10, "box": [130.0, 61.0, 517.0, 483.0]}],
+     "n_infer": 22,
+     "infer_s": 21.07
+    },
+    {
+     "shot": [22, 59],
+     "prompt_frames": [22, 40],
+     "prompts": [
+      {"frame": 22, "n_pos": 8, "n_neg": 10, "box": [99.0, 96.0, 550.0, 461.0]},
+      {"frame": 40, "n_pos": 8, "n_neg": 10, "box": [168.0, 106.0, 583.0, 454.0]}
+     ],
+     "n_infer": 38,
+     "infer_s": 25.11
+    }
+   ],
+   "run": {
+    "started_utc": "2026-10-28T07:58:04+00:00",
+    "key_s": 1.5,
+    "scenes_s": 1.13,
+    "ram": {"free_before_mib": 5972.4, "peak_process_mib": 3536.9},
+    "open": {
+     "device": "cuda",
+     "vram_free_before_load_mib": 3313.7,
+     "vram_total_mib": 4095.7,
+     "gpu": "NVIDIA GeForce GTX 1650 Ti",
+     "load_s": 0.49
+    },
+    "vram": {"vram_free_before_load_mib": 3313.7, "vram_total_mib": 4095.7, "max_reserved_mib": 856.0, "max_allocated_mib": 562.0},
+    "finished_utc": "2026-10-28T07:58:57+00:00",
+    "wall_s": 53.76,
+    "infer_s": {"n": 60, "p50": 0.662, "max": 7.943, "total": 45.66},
+    "nonfinite_frames": []
+   },
+   "per_frame": {
+    "frame": "f0–59",
+    "score_logit": [
+     18.397, 6.037, 5.563, 5.452, 5.184, 5.003, 4.713, 4.282, 4.399, 4.734, 4.742, 4.652, 4.593, 4.465, 5.051, 4.914, 4.901, 5.056,
+     5.294, 5.339, 5.45, 5.449, 18.169, 9.728, 8.524, 8.206, 8.265, 7.729, 6.662, 7.041, 7.057, 7.037, 6.909, 7.869, 7.643, 7.533,
+     7.225, 6.965, 7.191, 7.035, 17.079, 7.206, 7.281, 7.792, 7.726, 7.758, 6.782, 6.653, 6.364, 6.366, 6.324, 6.278, 6.361, 6.272,
+     5.908, 5.458, 5.039, 5.497, 5.079, 5.709
+    ],
+    "area_px": [
+     84783, 88246, 88161, 86903, 86313, 86513, 77427, 77206, 89230, 89534, 89301, 90638, 91111, 91387, 89995, 89825, 89361, 89003,
+     91355, 91467, 92275, 92988, 79520, 79590, 80981, 82955, 82889, 83336, 78896, 78305, 78191, 73595, 76291, 77809, 77025, 74813,
+     73593, 73367, 82067, 84111, 78587, 73249, 73078, 72368, 72206, 71876, 71451, 65591, 64711, 64686, 68966, 69517, 67006, 66890,
+     61239, 63247, 67347, 75564, 69518, 76566
+    ]
+   }
+  },
+  "produksi_trim": {
+   "manifest_sha256": "9823a54d184669d34dd80039722a4abd11b6585fe2a5c551ff59654de8d9e263",
+   "key_sha256": "0b3ebc20c2ea4aadfe9a4e2192ee191f7e5e18e0d1b60076102872ded646b9b1",
+   "points_sha256": "9380ba657681d6df60bd632c918ce2fc6bfe242ca5ff6f5401d9228c8c47bc67",
+   "frames_pixel_sha256": "f26a224b610c45b65c9e1843e734db57d93d942d601bdfa6cc35093ed945ae4f",
+   "model": {
+    "model_id": "facebook/sam2.1-hiera-tiny",
+    "revision": "de431c4043854a71d8101e17995dfe596bf101a5",
+    "license": "apache-2.0",
+    "precision": "fp32"
+   },
+   "frame_count": 54,
+   "frames": {"target": 54, "kosong": 0, "tanpa_prompt": 0, "kosong_ranges": [], "tanpa_prompt_ranges": []},
+   "jobs": [
+    {
+     "shot": [0, 21],
+     "prompt_frames": [0],
+     "prompts": [{"frame": 0, "n_pos": 8, "n_neg": 10, "box": [130.0, 61.0, 517.0, 483.0]}],
+     "n_infer": 22,
+     "infer_s": 21.9
+    },
+    {
+     "shot": [22, 53],
+     "prompt_frames": [22, 40],
+     "prompts": [
+      {"frame": 22, "n_pos": 8, "n_neg": 10, "box": [99.0, 96.0, 550.0, 461.0]},
+      {"frame": 40, "n_pos": 8, "n_neg": 10, "box": [168.0, 106.0, 583.0, 454.0]}
+     ],
+     "n_infer": 32,
+     "infer_s": 20.89
+    }
+   ],
+   "run": {
+    "started_utc": "2026-10-28T15:18:29+00:00",
+    "key_s": 0.57,
+    "scenes_s": 0.41,
+    "ram": {"free_before_mib": 6823.4, "peak_process_mib": 3424.7},
+    "open": {
+     "device": "cuda",
+     "vram_free_before_load_mib": 3313.7,
+     "vram_total_mib": 4095.7,
+     "gpu": "NVIDIA GeForce GTX 1650 Ti",
+     "load_s": 0.73
+    },
+    "vram": {"vram_free_before_load_mib": 3313.7, "vram_total_mib": 4095.7, "max_reserved_mib": 856.0, "max_allocated_mib": 559.0},
+    "finished_utc": "2026-10-28T15:19:24+00:00",
+    "wall_s": 55.65,
+    "infer_s": {"n": 54, "p50": 0.66, "max": 8.706, "total": 42.29},
+    "nonfinite_frames": []
+   },
+   "per_frame": "= iso2_scratch per_frame f0–53 (dicek sama)"
+  }
+ },
+ "titik_iso2": {
+  "berkas": "work/clips/klip5@0-2.25/target/points.json",
+  "sha256": "9380ba657681d6df60bd632c918ce2fc6bfe242ca5ff6f5401d9228c8c47bc67",
+  "bytes": 8302,
+  "catatan": "isi = JSON yang di-parse (bukan byte asli); salinan asli = work/clips/klip5@0-2.25/target/points.json",
+  "frame_klik": [
+   {
+    "frame": 0,
+    "frame_pixel_sha256_di_titik": "f84a7d12d67a026d1df6d46ae10337628257dc73139154122c33b143ed5b97ed",
+    "frame_sha256_berkas": "6e96d5626ab6278b0a3d14ccec6f829a8e13fef8ebb0c708306259ebe7c309a2"
+   },
+   {
+    "frame": 22,
+    "frame_pixel_sha256_di_titik": "85f69fb429b768238f82c9e94bd0bb54a9176d7d3b3c238f36d16e29647636d4",
+    "frame_sha256_berkas": "9703d3916af3c367c427e7808d2dbb5f9794eff7625afbb6cdaa4b201d5b8701"
+   },
+   {
+    "frame": 40,
+    "frame_pixel_sha256_di_titik": "9d098961d39e352a5ae74c35a3643da58d0000891e5b67fd7437175d6ceef52a",
+    "frame_sha256_berkas": "28f8fbc870fc6205e6288e6b87e8c572950f94e7a91cfc0cb39568b9a4f2e501"
+   }
+  ],
+  "isi": {
+   "format": "rotoscope-target-points/1",
+   "clip": {
+    "meta_sha256": "314535d2c3de804903d42bc82d18833f309c1c0c6cd6d9a2d00a517ab79d5106",
+    "source_path": "C:\\projects\\rotoscope\\samples\\klip5.mp4"
+   },
+   "frame_size": {"width": 720, "height": 668},
+   "coords": "piksel frame kerja frames/ (x ke kanan, y ke bawah; pusat piksel kiri-atas = 0, 0); label 1 = target, 0 = bukan target (konvensi SAM); box = [x0, y0, x1, y1] dengan x0 < x1, y0 < y1",
+   "frame_hash": "frame_pixel_sha256 = sha256(b'rgb8 <W>x<H>\\n' + piksel RGB uint8 hasil decode, baris demi baris) - sidik piksel, bukan byte PNG",
+   "frames": [
+    {
+     "frame_index": 0,
+     "frame_file": "frame_00000.png",
+     "frame_pixel_sha256": "f84a7d12d67a026d1df6d46ae10337628257dc73139154122c33b143ed5b97ed",
+     "updated_utc": "2026-10-28T07:35:25+00:00",
+     "display": {"scale": 1.0, "screen_wh": [1920, 1080], "work_area_wh": [1920, 1020], "dpi_aware": true},
+     "targets": [
+      {
+       "id": 1,
+       "points": [
+        {"x": 342.0, "y": 75.0, "label": 1},
+        {"x": 339.0, "y": 198.0, "label": 1},
+        {"x": 252.0, "y": 199.0, "label": 1},
+        {"x": 167.0, "y": 286.0, "label": 1},
+        {"x": 207.0, "y": 325.0, "label": 1},
+        {"x": 458.0, "y": 288.0, "label": 1},
+        {"x": 477.0, "y": 436.0, "label": 1},
+        {"x": 334.0, "y": 445.0, "label": 1},
+        {"x": 155.0, "y": 75.0, "label": 0},
+        {"x": 237.0, "y": 118.0, "label": 0},
+        {"x": 196.0, "y": 187.0, "label": 0},
+        {"x": 402.0, "y": 86.0, "label": 0},
+        {"x": 475.0, "y": 85.0, "label": 0},
+        {"x": 475.0, "y": 186.0, "label": 0},
+        {"x": 430.0, "y": 179.0, "label": 0},
+        {"x": 504.0, "y": 217.0, "label": 0},
+        {"x": 489.0, "y": 278.0, "label": 0},
+        {"x": 500.0, "y": 348.0, "label": 0}
+       ],
+       "box": [130.0, 61.0, 517.0, 483.0]
+      }
+     ]
+    },
+    {
+     "frame_index": 22,
+     "frame_file": "frame_00022.png",
+     "frame_pixel_sha256": "85f69fb429b768238f82c9e94bd0bb54a9176d7d3b3c238f36d16e29647636d4",
+     "updated_utc": "2026-10-28T07:36:47+00:00",
+     "display": {"scale": 1.0, "screen_wh": [1920, 1080], "work_area_wh": [1920, 1020], "dpi_aware": true},
+     "targets": [
+      {
+       "id": 1,
+       "points": [
+        {"x": 354.0, "y": 118.0, "label": 1},
+        {"x": 276.0, "y": 219.0, "label": 1},
+        {"x": 415.0, "y": 232.0, "label": 1},
+        {"x": 519.0, "y": 352.0, "label": 1},
+        {"x": 485.0, "y": 276.0, "label": 1},
+        {"x": 154.0, "y": 256.0, "label": 1},
+        {"x": 208.0, "y": 191.0, "label": 1},
+        {"x": 334.0, "y": 450.0, "label": 1},
+        {"x": 263.0, "y": 185.0, "label": 0},
+        {"x": 222.0, "y": 154.0, "label": 0},
+        {"x": 154.0, "y": 118.0, "label": 0},
+        {"x": 140.0, "y": 172.0, "label": 0},
+        {"x": 434.0, "y": 196.0, "label": 0},
+        {"x": 486.0, "y": 218.0, "label": 0},
+        {"x": 500.0, "y": 118.0, "label": 0},
+        {"x": 418.0, "y": 120.0, "label": 0},
+        {"x": 136.0, "y": 315.0, "label": 0},
+        {"x": 231.0, "y": 379.0, "label": 0}
+       ],
+       "box": [99.0, 96.0, 550.0, 461.0]
+      }
+     ]
+    },
+    {
+     "frame_index": 40,
+     "frame_file": "frame_00040.png",
+     "frame_pixel_sha256": "9d098961d39e352a5ae74c35a3643da58d0000891e5b67fd7437175d6ceef52a",
+     "updated_utc": "2026-10-28T07:44:43+00:00",
+     "display": {"scale": 1.0, "screen_wh": [1920, 1080], "work_area_wh": [1920, 1020], "dpi_aware": true},
+     "targets": [
+      {
+       "id": 1,
+       "points": [
+        {"x": 357.0, "y": 124.0, "label": 1},
+        {"x": 277.0, "y": 269.0, "label": 1},
+        {"x": 206.0, "y": 221.0, "label": 1},
+        {"x": 241.0, "y": 133.0, "label": 1},
+        {"x": 494.0, "y": 276.0, "label": 1},
+        {"x": 545.0, "y": 349.0, "label": 1},
+        {"x": 284.0, "y": 439.0, "label": 1},
+        {"x": 496.0, "y": 445.0, "label": 1},
+        {"x": 394.0, "y": 126.0, "label": 0},
+        {"x": 411.0, "y": 148.0, "label": 0},
+        {"x": 289.0, "y": 124.0, "label": 0},
+        {"x": 291.0, "y": 183.0, "label": 0},
+        {"x": 180.0, "y": 150.0, "label": 0},
+        {"x": 252.0, "y": 324.0, "label": 0},
+        {"x": 262.0, "y": 422.0, "label": 0},
+        {"x": 431.0, "y": 198.0, "label": 0},
+        {"x": 474.0, "y": 153.0, "label": 0},
+        {"x": 562.0, "y": 415.0, "label": 0}
+       ],
+       "box": [168.0, 106.0, 583.0, 454.0]
+      }
+     ]
+    }
+   ],
+   "tool": "python -m rotoscope pick"
+  }
+ },
+ "r1_pin_usulan": {
+  "model": "caidas/swin2SR-compressed-sr-x4-48",
+  "commit": "1079c3c5fcea8a2c047b270ac8f4c6c18adb27c9",
+  "berkas": {
+   "model.safetensors": {"bytes": 49073568, "sha256": "3fc6baf86cda09a42e5f8167ca4b29fc043137f3c05b8d362717dd1bfef143b4"},
+   "config.json": {"bytes": 776},
+   "preprocessor_config.json": {"bytes": 152}
+  },
+  "lisensi": "kode transformers Apache-2.0; repo mv-lab/swin2sr Apache-2.0 (commit 6f25d768); model card apache-2.0",
+  "status": "tidak dijalankan, tidak diunduh (keputusan akhir T-608 no. 2)"
+ },
+ "run_produksi": {
+  "perintah": "python -m rotoscope run samples\\klip5.mp4 --end 2.25 --yes",
+  "exit_code": 0,
+  "tempelan_rio": [
+   "run selesai. Exit code 0. Baris terakhir keluaran:",
+   "Waktu per stage: [1] ingest 0.5 s, [1b] isolate 58.0 s, [2] segment 913.8 s, [2c] depth 18.0 s, [3] stabilize 12.2 s, [4] vectorize 5.5 s, [5] stylize 6.3 s, [6] export 2.8 s",
+   "Angka lain dari keluaran run (catat apa adanya): sebelum run nvidia-smi memory.free 3488 MiB, RAM bebas 6973 MiB; [1b] target 54, kosong 0, tanpa_prompt 0, SAM 55.6 s, skor f0 18.40; [2] 16.24–16.65 s/frame (frame pertama 22.20 s), peak reserved 3276.0 MiB; QC 8/54 gagal big_blobs (indeks 0, 6, 7, 9, 10, 14, 15, 16); [4] pass 1 T_high 0.024896337650716277, T_low 0.010551941022276882; [6] ffprobe 54 frame, 24 fps, 1080x1002, 2.250 s, 730.4 KiB; SVG 54 berkas."
+  ]
+ },
+ "b1": {
+  "mp4": {
+   "berkas": "out/klip5@0-2.25.mp4",
+   "sha256": "c8f51d8b9822326e98ffc309169eb29d8a3fd5f09bf85a0dc11c4c22a62bf41f",
+   "codec_name": "h264",
+   "width": 1080,
+   "height": 1002,
+   "pix_fmt": "yuv420p",
+   "avg_frame_rate": "24/1",
+   "nb_read_frames": "54",
+   "duration": "2.250000",
+   "size": "747925"
+  },
+  "svg": {"folder": "out/svg/klip5@0-2.25", "n": 54, "nama_sesuai_f0_53": true, "berkas_lain": [".rotoscope-clip.json"]},
+  "masker_3": {
+   "manifest_key_isolate_ada": true,
+   "frames": {"target": 54, "kosong": 0, "tanpa_prompt": 0},
+   "shots": [[0, 21], [22, 53]],
+   "key_sha256_sama_isolate_manifest": true,
+   "target_mask": {
+    "enabled": true,
+    "r_keep": 0.9,
+    "r_drop": 0.1,
+    "dilate_px": 4,
+    "hole_fill_max_px": 0,
+    "piece_min_px": 30,
+    "no_prompt": "keep"
+   },
+   "isolate_frames_jsonl_status": {"target": 54},
+   "stable_frames_jsonl_n": 54,
+   "stable_frame_dengan_key_isolate": 54
+  },
+  "produksi_lama": {
+   "pembanding": "work/t608/f1_sesudah_4a2.txt",
+   "n_ref": 1346,
+   "per_awalan": {"out/klip5.mp4": 1, "out/klip5.export.json": 1, "out/svg/klip5/": 134, "work/clips/klip5/": 1210},
+   "identik": true
+  },
+  "lolos": true
+ },
+ "b2": {
+  "definisi": "f0–53 produksi trim vs scratch iso2; sidik isi = array decode PNG / npy / npz; contours = strok tanpa track_id, urutan / arah titik + urutan groups diabaikan",
+  "per_stage": {
+   "isolate/labels": {"bytes_sama": 54, "isi_sama": 54, "beda_isi": "-", "beda_bytes_saja": "-"},
+   "seg/classmap": {"bytes_sama": 54, "isi_sama": 54, "beda_isi": "-", "beda_bytes_saja": "-"},
+   "seg/probs": {"bytes_sama": 54, "isi_sama": 54, "beda_isi": "-", "beda_bytes_saja": "-"},
+   "depth/depth": {"bytes_sama": 54, "isi_sama": 54, "beda_isi": "-", "beda_bytes_saja": "-"},
+   "stable/groups": {"bytes_sama": 47, "isi_sama": 47, "beda_isi": "f45–49, f52–53", "beda_bytes_saja": "-"},
+   "stable/depth_smooth": {"bytes_sama": 53, "isi_sama": 53, "beda_isi": "f47", "beda_bytes_saja": "-"},
+   "strokes/png": {"bytes_sama": 4, "isi_sama": 4, "beda_isi": "f0–36, f39–40, f43–53", "beda_bytes_saja": "-"},
+   "isolate/frames.jsonl": {"status_sama": 54, "targets_sama": 54, "beda_targets": "-", "status_baru": {"target": 54}},
+   "qc": {
+    "status_sama": 53,
+    "fail_reasons_sama": 53,
+    "baris_sama_semua_metrik": 31,
+    "n_frame_qc": {"baru": 54, "scratch": 133},
+    "area_median_window": 49,
+    "transient_min_run": 4
+   },
+   "contours": {
+    "bytes_sama": 0,
+    "strok_persis_tanpa_track_id": 4,
+    "isi_sama": 4,
+    "per_tipe_sama": {"silhouette": 47, "silhouette_hole": 54, "group_boundary": 48, "occlusion": 4},
+    "source_sama": 54
+   },
+   "strokes/svg": {
+    "bytes_sama": 4,
+    "per_tipe_sama": {"silhouette": 47, "silhouette_hole": 54, "group_boundary": 48, "occlusion": 4}
+   }
+  },
+  "per_tipe_beda": {
+   "contours": {
+    "silhouette": "f45–49, f52–53",
+    "silhouette_hole": "-",
+    "group_boundary": "f45–49, f53",
+    "occlusion": "f0–36, f39–40, f43–53"
+   },
+   "strokes/svg": {
+    "silhouette": "f45–49, f52–53",
+    "silhouette_hole": "-",
+    "group_boundary": "f45–49, f53",
+    "occlusion": "f0–36, f39–40, f43–53"
+   }
+  },
+  "qc": {
+   "gagal_baru": "f0, f6–7, f9–10, f14–16",
+   "gagal_scratch": "f0, f6–7, f9–10, f14–16, f47",
+   "metrik_beda": "f30–39, f41–53",
+   "f47": {
+    "baru": {"area_px": 132539, "area_median_px": 208402.0, "area_vs_median": 0.6359775817890423, "fail_reasons": []},
+    "scratch": {
+     "area_px": 132539,
+     "area_median_px": 220873.0,
+     "area_vs_median": 0.6000688178274393,
+     "fail_reasons": ["area_vs_median"]
+    },
+    "area_drop_min": 0.63,
+    "area_median_window": 49
+   },
+   "big_blobs_n_sama_f0_53": true
+  },
+  "stable_jendela_beda": {"52": {"baru": [50, 53], "scratch": [50, 54]}, "53": {"baru": [51, 53], "scratch": [51, 55]}},
+  "stable_penyebab": {
+   "45": ["status QC gagal beda di jendela (f47): bobot q (qc_fail_weight) beda"],
+   "46": ["status QC gagal beda di jendela (f47): bobot q (qc_fail_weight) beda"],
+   "47": ["status QC gagal beda di jendela (f47): bobot q (qc_fail_weight) beda"],
+   "48": ["status QC gagal beda di jendela (f47): bobot q (qc_fail_weight) beda"],
+   "49": ["status QC gagal beda di jendela (f47): bobot q (qc_fail_weight) beda"],
+   "52": ["jendela kernel [3] beda (baru [50, 53], scratch [50, 54]): dipotong di tepi klip f53"],
+   "53": ["jendela kernel [3] beda (baru [51, 53], scratch [51, 55]): dipotong di tepi klip f53"]
+  },
+  "stable_groups_beda_piksel": {
+   "45": {"piksel_grup_beda": 29, "piksel_fg_beda": 13, "fg_baru": 77295, "fg_scratch": 77308},
+   "46": {"piksel_grup_beda": 119, "piksel_fg_beda": 88, "fg_baru": 75970, "fg_scratch": 76056},
+   "47": {"piksel_grup_beda": 1565, "piksel_fg_beda": 1228, "fg_baru": 70316, "fg_scratch": 71108},
+   "48": {"piksel_grup_beda": 219, "piksel_fg_beda": 52, "fg_baru": 69609, "fg_scratch": 69571},
+   "49": {"piksel_grup_beda": 35, "piksel_fg_beda": 11, "fg_baru": 69678, "fg_scratch": 69673},
+   "52": {"piksel_grup_beda": 2, "piksel_fg_beda": 1, "fg_baru": 71095, "fg_scratch": 71094},
+   "53": {"piksel_grup_beda": 95, "piksel_fg_beda": 10, "fg_baru": 72370, "fg_scratch": 72362}
+  },
+  "clip_stats": {
+   "n_frames": {"baru": 54, "scratch": 133},
+   "n_values": {"baru": 4442135, "scratch": 21919221},
+   "t_high": {"baru": 0.024896337650716277, "scratch": 0.017852235585451126},
+   "t_low": {"baru": 0.010551941022276882, "scratch": 0.0074675679206848145},
+   "t_high_pct": {"baru": 0.024896337650716277, "scratch": 0.017852235585451126},
+   "hi_pct": {"baru": 95.0, "scratch": 95.0},
+   "lo_pct": {"baru": 90.0, "scratch": 90.0},
+   "masukan_lain_sama": {"blur_sigma": true, "erode_px": true, "hi_floor": true, "sobel_norm": true, "percentile_method": true}
+  },
+  "kontrafaktual_4": {
+   "definisi": "peta grup + depth_smooth PRODUKSI TRIM, vectorize_frame (kode [4]) dengan T_high / T_low scratch; strok mentah dibanding (tanpa track_id, urutan / arah titik diabaikan) dengan contours scratch. Kontrol: ambang trim vs contours produksi trim.",
+   "ambang_scratch_sama_scratch": {"silhouette": 47, "silhouette_hole": 54, "group_boundary": 34, "occlusion": 53},
+   "ambang_scratch_frame_beda": {
+    "silhouette": "f45–49, f52–53",
+    "silhouette_hole": "-",
+    "group_boundary": "f3, f7–10, f12–13, f18–19, f21, f26–28, f37, f45–49, f53",
+    "occlusion": "f47"
+   },
+   "kontrol_ambang_trim_sama_trim": {"silhouette": 54, "silhouette_hole": 54, "group_boundary": 40, "occlusion": 54}
+  },
+  "contours_penyebab": {
+   "occlusion: ambang per klip [4] (kontrafaktual ambang scratch = scratch; kontrol ambang trim = trim) [tipe occlusion]": "f0–36, f39–40, f43–44, f50–51",
+   "silhouette: input [3] beda (stable_penyebab) | group_boundary: input [3] beda (stable_penyebab) | occlusion: ambang per klip [4] (kontrafaktual ambang scratch = scratch; kontrol ambang trim = trim) [tipe silhouette, group_boundary, occlusion]": "f45–46, f48–49, f53",
+   "silhouette: input [3] beda (stable_penyebab) | group_boundary: input [3] beda (stable_penyebab) | occlusion: input [3] beda (stable_penyebab) [tipe silhouette, group_boundary, occlusion]": "f47",
+   "silhouette: input [3] beda (stable_penyebab) | occlusion: ambang per klip [4] (kontrafaktual ambang scratch = scratch; kontrol ambang trim = trim) [tipe silhouette, occlusion]": "f52"
+  },
+  "strokes_penyebab": {
+   "contours beda (tipe occlusion) [tipe occlusion]": "f0–36, f39–40, f43–44, f50–51",
+   "contours beda (tipe silhouette, group_boundary, occlusion) [tipe silhouette, group_boundary, occlusion]": "f45–49, f53",
+   "contours beda (tipe silhouette, occlusion) [tipe silhouette, occlusion]": "f52"
+  },
+  "strokes_png_piksel_beda": [
+   1484, 1752, 958, 1284, 464, 463, 2680, 1761, 1466, 1482, 1808, 1239, 2663, 2660, 2019, 2242, 1699, 1535, 3048, 2522, 2844, 2837,
+   560, 481, 1539, 1244, 1255, 596, 2926, 2880, 1766, 373, 3659, 1646, 899, 3304, 496, 0, 0, 1965, 1521, 0, 0, 966, 1094, 5356,
+   9611, 19239, 11037, 3311, 1515, 1023, 1789, 6028
+  ]
+ },
+ "b3": {
+  "definisi": "sama dengan scripts/t608_1b2.py metrik (masker = isolate/labels scratch iso, +4 px, untuk SEMUA versi); tambahan: panjang per tipe per frame (rata-rata, px)",
+  "median_per_frame_dan_per_tipe": {
+   "f0-53": {
+    "sebelum": {
+     "strok": 40.0,
+     "panjang_px": 8682.5,
+     "porsi_panjang_luar_masker": 0.7768,
+     "komponen": 4.0,
+     "komponen_kecil": 2.5,
+     "fg_porsi": 0.447,
+     "jumlah_per_tipe_per_frame": {"silhouette": 4.26, "silhouette_hole": 2.81, "group_boundary": 23.13, "occlusion": 10.13},
+     "panjang_per_tipe_per_frame": {"silhouette": 6047.8, "silhouette_hole": 626.1, "group_boundary": 1454.4, "occlusion": 899.1}
+    },
+    "sesudah": {
+     "strok": 11.0,
+     "panjang_px": 2567.85,
+     "porsi_panjang_luar_masker": 0.1035,
+     "komponen": 1.0,
+     "komponen_kecil": 0.0,
+     "fg_porsi": 0.1794,
+     "jumlah_per_tipe_per_frame": {"silhouette": 1.41, "silhouette_hole": 0.17, "group_boundary": 7.22, "occlusion": 3.0},
+     "panjang_per_tipe_per_frame": {"silhouette": 1770.3, "silhouette_hole": 19.4, "group_boundary": 687.3, "occlusion": 218.2}
+    },
+    "baru": {
+     "strok": 10.0,
+     "panjang_px": 2545.3,
+     "porsi_panjang_luar_masker": 0.1051,
+     "komponen": 1.0,
+     "komponen_kecil": 0.0,
+     "fg_porsi": 0.1794,
+     "jumlah_per_tipe_per_frame": {"silhouette": 1.41, "silhouette_hole": 0.17, "group_boundary": 7.2, "occlusion": 2.22},
+     "panjang_per_tipe_per_frame": {"silhouette": 1770.7, "silhouette_hole": 19.4, "group_boundary": 688.2, "occlusion": 158.6}
+    }
+   },
+   "adegan A": {
+    "sebelum": {
+     "strok": 44.5,
+     "panjang_px": 10354.0,
+     "porsi_panjang_luar_masker": 0.7876,
+     "komponen": 4.0,
+     "komponen_kecil": 3.0,
+     "fg_porsi": 0.525,
+     "jumlah_per_tipe_per_frame": {"silhouette": 4.45, "silhouette_hole": 4.14, "group_boundary": 30.82, "occlusion": 8.77},
+     "panjang_per_tipe_per_frame": {"silhouette": 7235.7, "silhouette_hole": 1091.7, "group_boundary": 1652.9, "occlusion": 794.4}
+    },
+    "sesudah": {
+     "strok": 11.5,
+     "panjang_px": 3170.0,
+     "porsi_panjang_luar_masker": 0.12,
+     "komponen": 2.0,
+     "komponen_kecil": 1.0,
+     "fg_porsi": 0.1989,
+     "jumlah_per_tipe_per_frame": {"silhouette": 2.0, "silhouette_hole": 0.23, "group_boundary": 7.5, "occlusion": 3.27},
+     "panjang_per_tipe_per_frame": {"silhouette": 2131.1, "silhouette_hole": 26.1, "group_boundary": 770.1, "occlusion": 234.9}
+    },
+    "baru": {
+     "strok": 10.0,
+     "panjang_px": 3043.45,
+     "porsi_panjang_luar_masker": 0.1213,
+     "komponen": 2.0,
+     "komponen_kecil": 1.0,
+     "fg_porsi": 0.1989,
+     "jumlah_per_tipe_per_frame": {"silhouette": 2.0, "silhouette_hole": 0.23, "group_boundary": 7.5, "occlusion": 2.18},
+     "panjang_per_tipe_per_frame": {"silhouette": 2131.1, "silhouette_hole": 26.1, "group_boundary": 770.1, "occlusion": 158.8}
+    }
+   },
+   "adegan B": {
+    "sebelum": {
+     "strok": 35.5,
+     "panjang_px": 7921.35,
+     "porsi_panjang_luar_masker": 0.7601,
+     "komponen": 4.0,
+     "komponen_kecil": 2.0,
+     "fg_porsi": 0.4234,
+     "jumlah_per_tipe_per_frame": {"silhouette": 4.12, "silhouette_hole": 1.91, "group_boundary": 17.84, "occlusion": 11.06},
+     "panjang_per_tipe_per_frame": {"silhouette": 5231.1, "silhouette_hole": 306.0, "group_boundary": 1317.8, "occlusion": 971.1}
+    },
+    "sesudah": {
+     "strok": 11.0,
+     "panjang_px": 2362.45,
+     "porsi_panjang_luar_masker": 0.0932,
+     "komponen": 1.0,
+     "komponen_kecil": 0.0,
+     "fg_porsi": 0.1658,
+     "jumlah_per_tipe_per_frame": {"silhouette": 1.0, "silhouette_hole": 0.12, "group_boundary": 7.03, "occlusion": 2.81},
+     "panjang_per_tipe_per_frame": {"silhouette": 1522.2, "silhouette_hole": 14.8, "group_boundary": 630.4, "occlusion": 206.7}
+    },
+    "baru": {
+     "strok": 10.0,
+     "panjang_px": 2309.0,
+     "porsi_panjang_luar_masker": 0.095,
+     "komponen": 1.0,
+     "komponen_kecil": 0.0,
+     "fg_porsi": 0.1658,
+     "jumlah_per_tipe_per_frame": {"silhouette": 1.0, "silhouette_hole": 0.12, "group_boundary": 7.0, "occlusion": 2.25},
+     "panjang_per_tipe_per_frame": {"silhouette": 1522.9, "silhouette_hole": 14.8, "group_boundary": 631.9, "occlusion": 158.4}
+    }
+   }
+  }
+ },
+ "penilaian": ["scripts/t608_penilaian.json", "scripts/t608_penilaian_1b2.json", "scripts/t608_penilaian_4b.json"],
+ "sumber": {
+  "work/t608/ringkas.json": "eeca914cdf2dbcb9372eaaa4296bc601e2dbe26870e7384487658fce56f5a604",
+  "work/t608_scratch/r0/r0.json": "6d3e53a572a82ca9ad172fd143772bb788cc0aef605f4df01a51be04388da205",
+  "work/t608/cut.json": "7b1dfc82657fa7a1f1a0a58099f81eccc28e54480c93d77628492a8ac41e4498",
+  "work/t608/iso_diag_prompt.json": "b248374a055338c672d12943ab60e44d280460e75ffc764c5fa3ed5ed40a03df",
+  "work/t608/t4b_verifikasi.json": "a75a5003b25ec23813b8871cb415fa295b4660658c5c68651c7f0ce055312f0d",
+  "work/t608/t4b_banding.json": "3fa1cc9858ce4bfd911aac35a064fe7ace54e2a25d33151cca2b12cbe53e8aaa",
+  "work/t608/t4b_metrik.json": "49d88b539fb06bdd720834a5bbfabc2b029d6ccd9516fafef0d0cc57ff3cac8c",
+  "work/clips/klip5@0-2.25/target/points.json": "9380ba657681d6df60bd632c918ce2fc6bfe242ca5ff6f5401d9228c8c47bc67",
+  "work/clips/klip5@0-2.25/qc_report.json": "0065446726df6c58d025e36ab475adebe7ca4051122ae588ddc3cfbbb290def6",
+  "work/t608_scratch/iso/work/clips/klip5/qc_report.json": "5343b98c6d99dd6315e112f215f1b5feec4260fffdd051b0a31671af426e803a",
+  "work/t608/arsip_iso1/isolate/manifest.json": "846a92a6e802c16a15dcffb7536d766551bc212b56fd3d2487e892cf44a67904",
+  "work/t608_scratch/iso/work/clips/klip5/isolate/manifest.json": "97b193cbc8e1d632b3033e9a54da2939a53bb0f8aad107e23e215b40436f6016",
+  "work/clips/klip5@0-2.25/isolate/manifest.json": "9823a54d184669d34dd80039722a4abd11b6585fe2a5c551ff59654de8d9e263"
+ }
+}

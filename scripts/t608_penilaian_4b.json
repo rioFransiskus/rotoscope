@@ -1,0 +1,48 @@
+{
+ "format": "t608-penilaian/1",
+ "sumber": "chat Rio 2026-10-28 (form work/t608/nilai_4b/PENILAIAN_4b.md KOSONG)",
+ "form": {
+  "berkas": "work/t608/nilai_4b/PENILAIAN_4b.md",
+  "sha256": "83e06200140d7e034d99e6c4e98839e91df81140720426a7b0264b660fdefa50",
+  "bytes": 322,
+  "diubah": "2026-10-28T22:51:34+07:00",
+  "isi": "templat tanpa isian ('jawaban:', 'rentang:', 'catatan:' kosong)"
+ },
+ "dibaca": "2026-10-28",
+ "verbatim": "penilaian saya x sama saja dengan y",
+ "interpretasi": "tidak terlihat beda",
+ "interpretasi_oleh": "chat (pesan Rio 'penilaian 4b selesai'), bukan Claude Code",
+ "aturan_hasil": {
+  "dikunci": "docs/04 'Aturan hasil penilaian 4b (dikunci SEBELUM bahan dibuat)'",
+  "tidak_terlihat_beda_atau_trim_lebih_baik": "produksi trim diterima, lanjut Tahap 4b bagian 2",
+  "scratch_lebih_baik": "BERHENTI; produksi tidak diubah; chat menyiapkan opsi",
+  "lain": "tambahan Claude Code: isian campuran / tidak terbaca -> dicatat apa adanya, BERHENTI menunggu keputusan Rio"
+ },
+ "hasil": "tidak terlihat beda -> produksi trim klip5@0-2.25 DITERIMA",
+ "kunci": {
+  "dibuka": "sesudah isian dicatat (form kosong, teks chat dipakai)",
+  "seed": 2775577826,
+  "aturan": "random.Random(seed).random() < 0.5 -> X = scratch_iso2, selain itu X = produksi_trim",
+  "random_dari_seed": 0.47404702090282314,
+  "X": "scratch_iso2",
+  "Y": "produksi_trim",
+  "sumber": {
+   "scratch_iso2": {"berkas": "work/t608_scratch/iso/out/klip5.mp4", "sha256": "43fcc34c870ffc88f8af70b544d4e7350214a721544ec10bc17f293e54d44549", "frame": [0, 53]},
+   "produksi_trim": {"berkas": "out/klip5@0-2.25.mp4", "sha256": "c8f51d8b9822326e98ffc309169eb29d8a3fd5f09bf85a0dc11c4c22a62bf41f", "frame": [0, 53]}
+  }
+ },
+ "bahan": {
+  "folder": "work/t608/nilai_4b/",
+  "video": {"normal": "XY_f0-53.mp4", "lambat": "XY_f0-53_lambat_0.5x.mp4"},
+  "ukuran": [1912, 1046],
+  "fokus_dasar": "piksel beda PNG strokes [5] per frame (simetris), >= persentil 75, gabung frame bersebelahan, maks 6 rentang",
+  "fokus": [
+   {"frame": [20, 21], "detik_bar": "0,83-0,88", "adegan": "A"},
+   {"frame": [28, 29], "detik_bar": "1,17-1,21", "adegan": "B"},
+   {"frame": [32, 32], "detik_bar": "1,33", "adegan": "B"},
+   {"frame": [35, 35], "detik_bar": "1,46", "adegan": "B"},
+   {"frame": [45, 49], "detik_bar": "1,88-2,04", "adegan": "B"},
+   {"frame": [53, 53], "detik_bar": "2,21", "adegan": "B"}
+  ]
+ }
+}

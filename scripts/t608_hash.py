@@ -1,10 +1,11 @@
 """T-608 F1 (alat, F3): sha256 SEMUA berkas di work/clips/*/ + folder crop sumber work/crop/*/ + out/ -> work/t608/.
 
-    python scripts/t608_hash.py sebelum_tahap1 | sesudah_tahap1 | sebelum_<x> | sesudah_<x> [sebelum_<y>]
+    python scripts/t608_hash.py sebelum_tahap1 | sesudah_tahap1 | sebelum_<x> | sesudah_<x> [sebelum_<y> | sesudah_<y>]
 
 Format daftar sama dengan F1 T-304 / T-607 (`<sha256>  <path relatif root, posix>` per baris, urutan `sorted(rglob)`), ditulis ke
 `work/t608/f1_<label>.txt` (+ ringkasan `f1_<label>.json`). Label `sesudah_<x>` dibandingkan dengan `sebelum_<x>` atau dengan label
-pembanding kedua bila diberikan (snapshot baru tanpa menimpa yang lama, mis. `sesudah_iso1b1 sebelum_iso`): harus identik
+pembanding kedua bila diberikan (snapshot baru tanpa menimpa yang lama, mis. `sesudah_iso1b1 sebelum_iso`, atau snapshot `sesudah_`
+lain, mis. `sesudah_4b1 sesudah_4a2`): harus identik
 (`qc_report.json` yang berubah HANYA pada `created_utc` dicatat terpisah). Hanya MEMBACA work/clips/*, work/crop/*, dan out/;
 menulis hanya ke work/t608/ (di-ignore git).
 """
@@ -66,7 +67,7 @@ def main(argv: list[str]) -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     if (len(argv) not in (1, 2) or not all(LABEL_RE.match(a) for a in argv)
-            or (len(argv) == 2 and not (argv[0].startswith("sesudah_") and argv[1].startswith("sebelum_")))):
+            or (len(argv) == 2 and not (argv[0].startswith("sesudah_") and argv[1] != argv[0]))):
         print(__doc__)
         return 2
     which = argv[0]

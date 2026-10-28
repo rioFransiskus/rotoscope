@@ -6822,6 +6822,217 @@ Keputusan Rio, dicatat SEBELUM langkah lain Tahap 4:
   - Sesudah ketiganya: `isolate/` tidak ada, titik sama, frame 54 / 54 sama.
 - **F1:** `f1_sebelum_tahap4a` (sesudah keputusan dicatat) = `f1_sesudah_tahap4a`: 10 719 / 10 719 identik. Produksi tidak berubah.
 
+**Keputusan folder produksi klip5 (2026-10-28)** — keputusan Rio, dicatat SEBELUM langkah lain (A0–A5):
+1. **Opsi A.** Folder trim `work/clips/klip5@0-2.25/` menjadi produksi klip5. Output produksi klip5 = `out/klip5@0-2.25.mp4` +
+   `out/svg/klip5@0-2.25/`.
+   - **Pelurusan keputusan akhir no. 3** (teks lama tidak diubah): titik iso2 ditempatkan di `work/clips/klip5@0-2.25/target/points.json`,
+     BUKAN di `work/clips/klip5/target/`. Folder itu tidak dibaca run ber-trim (temuan Tahap 4a (c)).
+   - Isi keputusan no. 3 (iso2 + trim f0–53) tidak berubah. Alur (c) / (d) di atas ikut diluruskan: (c) = salin ke folder trim; (d) =
+     perintah `run samples\klip5.mp4 --end 2.25 …` untuk folder trim.
+2. **Folder lama DIPERTAHANKAN tanpa perubahan:** `work/clips/klip5/`, `out/klip5.mp4`, `out/svg/klip5/`. `work/clips/klip5/target/` TIDAK
+   dibuat.
+   - Alasan: bisa dibalik; seg / depth 133 frame mahal dihitung ulang (±38–40 menit GPU); output lama sudah diarsip di
+     `work/t608/arsip_produksi_sebelum/`.
+   - Konsekuensi (dicatat di docs/05 pada Tahap 4b): run / batch klip5 tanpa `--end 2.25` memakai folder lama dan menghasilkan output lama;
+     batch klip5 harus lewat `--list` dengan baris `samples\klip5.mp4 --end 2.25`.
+3. **Izin A1:** ingest CPU di folder produksi.
+
+Langkah (CPU, `CUDA_VISIBLE_DEVICES=-1`, tanpa `--config` scratch):
+- A0 F1 `f1_sebelum_4a2`;
+- A1 `ingest samples\klip5.mp4 --end 2.25` di produksi (54 frame = produksi `klip5` f0–53 = scratch `trim4a`, sha256 + piksel; crop lama
+  dipakai; meta beda hanya `frame_count` + `trim`; exit 4 / jumlah ≠ 54 / satu frame beda → BERHENTI);
+- A2 SALIN titik iso2 → folder trim + cek;
+- A3 perintah GPU final + bukti kode `--restart-from`;
+- A4 F1 `f1_sesudah_4a2` (yang lama identik; yang baru hanya `work/clips/klip5@0-2.25/`);
+- A5 PANDUAN Rio → BERHENTI sampai "run selesai".
+
+**Pelaksanaan A0–A5, 2026-10-28** (`scripts/t608_tahap4.py a1 / a2 / a3` → `work/t608/t4a2_a{1,2,3}.json`; CPU, config produksi):
+- **A0:** `f1_sebelum_4a2` (10 719 berkas; daftar = `f1_sesudah_tahap4a`). Sebelum A1 dicek: ingest scratch tidak mengubah berkas crop
+  (7 / 7 sha256 sama dengan `work/crop/klip5/` produksi).
+- **A1 LOLOS:** `ingest samples\klip5.mp4 --end 2.25` rc 0 → `work/clips/klip5@0-2.25/` 54 frame (f0–53).
+  - 54 / 54 sama (sha256 berkas + sidik piksel) dengan produksi `klip5` f0–53 DAN scratch `trim4a`; tidak ada frame tambahan.
+  - Crop lama dipakai (`crop` meta sama, mode `saran`; berkas `work/crop/klip5/` tidak berubah); bukan exit 4.
+  - `meta.json` baru beda dari `work/clips/klip5/meta.json` hanya di `frame_count` (133 → 54) dan `trim`.
+- **A2 LOLOS:** titik iso2 DISALIN (sumber tetap ada, bukan hard link) → `work/clips/klip5@0-2.25/target/points.json`, sha256 `9380ba65…`
+  sama.
+  - Sidik f0, f22, f40 = frame produksi baru; `check_doc_matches_clip` ok.
+  - `isolate samples\klip5.mp4 --end 2.25 --dry-run` rc 0: 2 adegan (cut di f22); f0–21 klik f0; f22–53 klik f22, f40; `tanpa_prompt` 0;
+    SAM 54 frame ≈ 51 s, `--yes` wajib.
+- **A3 (bukti kode `--restart-from`):**
+  - `cli.RESTART_SCOPE["ingest"]` = [1b]–[6] dijalankan dengan `--restart`; ingest sendiri SELALU menulis ulang (`ingest._clear_previous_output`
+    menghapus `meta.json` + `frames/frame_*.png`, lalu menulis ulang) — juga tanpa `--restart-from`.
+  - Yang dihapus `--restart`: [1b] `isolate/` (`isolate.run_isolate`, sesudah `--yes`; `isolate.partial/` / `isolate.old/` = sisa,
+    dihapus di setiap run); [2] `seg/` + `qc_report.json`; [2c] `depth/`; [3] `stable/`; [4] `contours/`; [5] `strokes/`; [6] tidak
+    menghapus folder (salinan SVG ditimpa).
+  - **`target/` TIDAK dihapus** oleh ingest maupun stage mana pun.
+  - Folder trim baru belum punya hasil [1b]–[6], jadi `--restart-from` **tidak dibutuhkan**. Perintah final: **`python -m rotoscope run
+    samples\klip5.mp4 --end 2.25 --yes`** (`--yes` = izin GPU [1b]; [2] / [2c] menghitung yang belum ada).
+  - Bukti CPU (langkah 4a (d)): `run samples\klip5.mp4 --end 2.25` TANPA `--yes` → rc 1. Folder kerja `work\clips\klip5@0-2.25`; ingest
+    jalan; berhenti di [1b] "butuh GPU (belum ada hasil)"; [2] / [2c] tidak dimulai.
+  - Sesudahnya: `isolate/` / `seg/` / `depth/` / `stable/` / `contours/` / `strokes/` / `out/klip5@0-2.25.*` tidak ada; titik sama;
+    frame 54 / 54 sama (vs `klip5` dan `trim4a`).
+- **A4:** `f1_sesudah_4a2` vs `f1_sebelum_4a2`: 10 719 / 10 719 lama identik (0 hilang, 0 berubah). Tambahan 56, semuanya di
+  `work/clips/klip5@0-2.25/` (54 frame + `meta.json` + `target/points.json`). `work/clips/klip5/target/` tidak ada.
+- **A5:** `work/t608/PANDUAN_RUN_PRODUKSI.md`. BERHENTI sampai Rio menulis "run selesai".
+
+**Hasil run produksi klip5@0-2.25 (2026-10-28)** — dicatat SEBELUM langkah lain Tahap 4b bagian 1 (B1–B6):
+- **Run GPU Rio:** `python -m rotoscope run samples\klip5.mp4 --end 2.25 --yes`, exit code 0. Angka dari keluaran run, apa adanya (tempelan
+  Rio):
+  - baris terakhir: `Waktu per stage: [1] ingest 0.5 s, [1b] isolate 58.0 s, [2] segment 913.8 s, [2c] depth 18.0 s, [3] stabilize 12.2 s,
+    [4] vectorize 5.5 s, [5] stylize 6.3 s, [6] export 2.8 s`;
+  - sebelum run: nvidia-smi `memory.free` 3488 MiB, RAM bebas 6973 MiB;
+  - [1b] target 54, kosong 0, tanpa_prompt 0, SAM 55.6 s, skor f0 18.40;
+  - [2] 16.24–16.65 s/frame (frame pertama 22.20 s), peak reserved 3276.0 MiB; QC 8/54 gagal big_blobs (indeks 0, 6, 7, 9, 10, 14, 15,
+    16);
+  - [4] pass 1 T_high 0.024896337650716277, T_low 0.010551941022276882;
+  - [6] ffprobe 54 frame, 24 fps, 1080x1002, 2.250 s, 730.4 KiB; SVG 54 berkas.
+- **Temuan chat:**
+  - Ambang per klip [4] berubah karena trim. Scratch iso2 (yang dinilai Rio) menghitung T_high / T_low dari 133 frame: 0,017852 /
+    0,007468. Produksi trim menghitung dari 54 frame: 0,024896 / 0,010552 (+39% / +41%).
+  - Akibatnya output produksi trim BUKAN output yang dinilai Rio. Dugaan (BELUM dibuktikan): garis interior (batas grup, oklusi)
+    berkurang.
+  - Keputusan akhir no. 3 berlaku untuk hasil yang dinilai, jadi Rio menilai ulang sebelum Tahap 4b dilanjutkan.
+- **Langkah Tahap 4b bagian 1 (CPU saja, `CUDA_VISIBLE_DEVICES=-1`, tanpa run GPU):**
+  - B1 verifikasi output produksi (Tahap 4b (e)): mp4 54 frame (ffprobe) + 54 SVG; manifest [3] = masker dipakai di f0–53 (target 54,
+    kosong 0); `out/klip5.mp4`, `out/svg/klip5/`, `work/clips/klip5/` tidak berubah (banding `f1_sesudah_4a2`);
+  - B2 banding per stage produksi `work/clips/klip5@0-2.25/` vs scratch `work/t608_scratch/iso/`, f0–53 (isolate, seg, QC per frame,
+    depth, stable, contours, strokes): sha256 + sidik isi, identik / 54 per stage, penyebab beda hanya yang terbukti dari kode / manifest
+    (selain itu "belum terbukti");
+  - B3 metrik deskriptif f0–53 (definisi tabel no. 3 "Hasil T-608 1b-2 percobaan kedua") untuk SEBELUM / SESUDAH (scratch iso2) / BARU
+    (produksi trim), per tipe dan per adegan A (f0–21) / B (f22–53);
+  - B4 strokes 54 / 54 byte-identik → tanpa penilaian, BERHENTI; bila tidak → aturan hasil dikunci di docs/04 SEBELUM bahan, lalu papan
+    BUTA `work/t608/nilai_4b/` (X / Y acak, kunci + seed di `kunci.json`);
+  - B5 `work/t608_scratch/` TIDAK dihapus; Tahap 4b (f)–(l) tidak dikerjakan;
+  - B6 F1 `f1_sesudah_4b1`: `f1_sesudah_4a2` identik kecuali tulisan run produksi (`work/clips/klip5@0-2.25/`, `out/klip5@0-2.25.mp4`,
+    `out/svg/klip5@0-2.25/`, manifest export).
+
+**Pelaksanaan B1–B4, 2026-10-28** (`scripts/t608_tahap4b.py verifikasi / banding / metrik` → `work/t608/t4b_{verifikasi,banding,metrik}.json`;
+CPU, `CUDA_VISIBLE_DEVICES=-1`, torch tidak diimpor):
+- **B1 LOLOS (Tahap 4b (e) bagian verifikasi):**
+  - `out/klip5@0-2.25.mp4`: ffprobe 54 frame, 24 fps, 1080 × 1002, 2,25 s, 730,4 KiB, h264 yuv420p (sha256 `c8f51d8b…`);
+  - `out/svg/klip5@0-2.25/`: 54 SVG (`frame_00000`–`frame_00053`) + penanda `.rotoscope-clip.json`;
+  - manifest [3] key `isolate`: `frames` target 54 / kosong 0 / tanpa_prompt 0, adegan [0, 21] + [22, 53], `key_sha256` = manifest
+    [1b] (`0b3ebc20…`); 54 / 54 baris `stable/frames.jsonl` memuat key `isolate` (status `target`);
+  - produksi lama (`out/klip5.mp4`, `out/klip5.export.json`, `out/svg/klip5/` 134, `work/clips/klip5/` 1 210 = 1 346 berkas) =
+    `f1_sesudah_4a2`: 0 berubah / hilang / tambahan.
+- **B2 banding produksi trim vs scratch iso2, f0–53** (identik / 54; sidik isi = array hasil decode PNG / npy / npz; contours = strok
+  tanpa `track_id`, urutan / arah titik + urutan `groups` diabaikan):
+
+| stage | sha256 berkas | sidik isi | frame beda |
+|---|---|---|---|
+| [1b] masker (`isolate/labels`) | 54 | 54 | — (`frames.jsonl` status + skor 54 / 54 sama) |
+| [2] seg `classmap` / `probs` | 54 / 54 | 54 / 54 | — |
+| [2] QC per frame | — | status 53, `fail_reasons` 53, semua metrik 31 | f47 (status); metrik f30–39, f41–53 |
+| [2c] depth | 54 | 54 | — |
+| [3] `groups` / `depth_smooth` | 47 / 53 | 47 / 53 | f45–49, f52–53 / f47 |
+| [4] contours | 0 | 4 (f37, f38, f41, f42) | per tipe: siluet 47, lubang 54, batas grup 48, oklusi 4 |
+| [5] strokes SVG / PNG | 4 / 4 | 4 / 4 | tipe SVG yang beda = tipe contours yang beda (50 / 50 frame) |
+
+  Penyebab yang terbukti:
+  - QC: median luas `area_median_px` memakai jendela W = `qc.area_median_window` 49 yang "selalu W sampel, memuat frame ini"
+    (`segment.area_vs_median`). Di klip 54 frame jendela ujung bergeser, jadi median f30–53 = 208 402 px konstan; scratch (133 frame)
+    memakai jendela lain. **f47:** `area_vs_median` trim 0,636, scratch 0,6001 < `area_drop_min` 0,63 → scratch gagal QC, trim lolos.
+    `big_blobs` (n per frame + 8 frame gagal transient) sama.
+  - [3] f45–49: `q` f47 beda (scratch `qc_fail_weight` 0,1, trim 1,0) di jendela kernel R = 2 (`TemporalPlan.weights`). f52–53: jendela
+    dipotong di tepi klip ([50, 53] / [51, 53] vs scratch [50, 54] / [51, 55]). Beda piksel grup 2–1 565 (fg 1–1 228).
+  - [3] `depth_smooth` f47: `depth_f32` menormalkan kedalaman dengan foreground `groups` frame itu (depth_radius 0); fg f47 beda
+    1 228 px. Frame [3] lain yang beda: `depth_smooth` tetap sama (data).
+  - [4] oklusi di 49 frame (semua frame beda kecuali f47): ambang per klip (`clip_stats.json` 54 vs 133 frame; T_high 0,024896 /
+    0,017852, T_low 0,010552 / 0,007468; masukan lain sama). **Uji kontrafaktual:** `vectorize_frame` (kode [4]) pada `groups` +
+    `depth_smooth` trim dengan ambang scratch = oklusi scratch di 53 / 54 frame (beda hanya f47 = input [3] beda); kontrol ambang
+    trim = oklusi trim 54 / 54. Siluet f45–49, f52–53, batas grup f45–49, f53, dan oklusi f47 = input [3] beda. (Kontrol batas grup
+    hanya 40 / 54 karena normalisasi T-202 mengubah lebih dari urutan / arah, jadi batas grup dibandingkan langsung antar berkas saja.)
+  - [4] byte berkas 0 / 54: `track_id` (penghitung global, oklusi ikut) beda di setiap frame dan rantai `prev_sha256` mengikuti.
+  - [5] strokes beda tepat di frame + tipe contours yang beda; 4 frame dengan contours sama isi → strokes byte-identik.
+- **B3 metrik f0–53** (definisi `scripts/t608_1b2.py metrik`; masker scratch iso + 4 px untuk ketiga versi; median per frame; SEBELUM /
+  SESUDAH dihitung ulang = `iso2_metrik.json`):
+
+| | SEBELUM | SESUDAH (iso2, dinilai) | BARU (produksi trim) |
+|---|---|---|---|
+| strok | 40 | 11 | 10 |
+| panjang strok (px) | 8 682,5 | 2 567,9 | 2 545,3 |
+| porsi panjang di luar masker | 0,777 | 0,104 | 0,105 |
+| komponen ≥ 800 px / kecil | 4 / 2,5 | 1 / 0 | 1 / 0 |
+| foreground peta grup | 0,447 | 0,179 | 0,179 |
+| jumlah per frame batas grup / oklusi / siluet / lubang | 23,13 / 10,13 / 4,26 / 2,81 | 7,22 / 3,00 / 1,41 / 0,17 | 7,20 / 2,22 / 1,41 / 0,17 |
+| panjang per frame (px) batas grup / oklusi / siluet / lubang | 1 454 / 899 / 6 048 / 626 | 687 / 218 / 1 770 / 19 | 688 / 159 / 1 771 / 19 |
+
+  - Adegan A (f0–21): strok 44,5 / 11,5 / 10; oklusi per frame 8,77 / 3,27 / 2,18 (panjang 794 / 235 / 159); batas grup 30,82 / 7,50 /
+    7,50.
+  - Adegan B (f22–53): strok 35,5 / 11 / 10; oklusi 11,06 / 2,81 / 2,25 (panjang 971 / 207 / 158); batas grup 17,84 / 7,03 / 7,00.
+  - Dugaan temuan chat sebagian terbukti: **oklusi berkurang** (jumlah −26%, panjang −27% dari SESUDAH); batas grup praktis sama
+    (7,22 → 7,20).
+- **B4: strokes byte-identik hanya 4 / 54 → penilaian dibutuhkan.**
+
+**Aturan hasil penilaian 4b (dikunci SEBELUM bahan dibuat):**
+- "tidak terlihat beda", atau versi produksi trim lebih baik → produksi trim diterima, lanjut Tahap 4b bagian 2;
+- versi scratch lebih baik → BERHENTI; produksi tidak diubah; chat menyiapkan opsi.
+- Tambahan Claude Code (bukan keputusan Rio): isian lain (campuran per rentang / tidak terbaca) → dicatat apa adanya, BERHENTI menunggu
+  keputusan Rio. Label X / Y dibuka dari `work/t608/nilai_4b/kunci.json` HANYA sesudah isian Rio dicatat verbatim.
+
+**Bahan B4 + F1** (sesudah aturan di atas dikunci; `scripts/t608_tahap4b.py bahan / cek / f1`):
+- `work/t608/nilai_4b/` (dicek `ffprobe`, tidak dibuka): `XY_f0-53.mp4` (1912 × 1046, 54 frame, 24 fps, 2,25 s) + `XY_f0-53_lambat_0.5x.mp4`
+  (108 frame, 4,5 s); panel X | Y 948 × 880 + sela 16 px; bar bawah frame / detik + adegan A / B.
+  - Sumber: f0–53 `work/t608_scratch/iso/out/klip5.mp4` dan `out/klip5@0-2.25.mp4`. Label acak dari seed `secrets.randbits(32)`; kunci +
+    seed HANYA di `kunci.json` (tidak dicetak, tidak di laporan / panduan).
+  - Rentang fokus (piksel beda PNG strokes [5], simetris, ≥ persentil 75, frame bersebelahan digabung, maks 6): f20–21, f28–29, f32, f35,
+    f45–49, f53.
+  - `PANDUAN_PENILAIAN_4b.md` + `PENILAIAN_4b.md` (jawaban: tidak terlihat beda / X lebih baik / Y lebih baik; rentang opsional; catatan).
+- **B5:** `work/t608_scratch/` tidak dihapus; Tahap 4b (f)–(l) tidak dikerjakan.
+- **B6 F1:** `f1_sesudah_4b1` vs `f1_sesudah_4a2` (`t608_hash.py` kini menerima pembanding `sesudah_*`): 10 775 / 10 775 berkas lama
+  identik (0 hilang / berubah; frame + `meta.json` + titik folder trim juga sama). Tambahan 557, semuanya tulisan run: `work/clips/
+  klip5@0-2.25/` 500 (isolate 56, seg 110, `qc_report.json` 1, depth 56, stable 110, contours 57, strokes 110), `out/klip5@0-2.25.mp4`,
+  `out/klip5@0-2.25.export.json`, `out/svg/klip5@0-2.25/` 55. Di luar itu: tidak ada.
+- BERHENTI menunggu Rio menulis "penilaian 4b selesai".
+
+**Penilaian Rio 4b (2026-10-28)** — salinan ter-track: `scripts/t608_penilaian_4b.json`.
+- Form `work/t608/nilai_4b/PENILAIAN_4b.md` **kosong** (templat tanpa isian; 322 B, sha256 `83e06200…`), jadi dipakai teks chat.
+- **Verbatim (chat):** "penilaian saya x sama saja dengan y".
+- **Interpretasi (chat):** "tidak terlihat beda".
+- Kunci dibuka SESUDAH isian dicatat: seed 2775577826 → `random()` 0,474 < 0,5 → X = scratch iso2, Y = produksi trim (sha256 sumber
+  `43fcc34c…` / `c8f51d8b…` = isi kunci).
+- **Akibat** (aturan hasil 4b, dikunci sebelum bahan): "tidak terlihat beda" → **produksi trim `klip5@0-2.25` DITERIMA**; lanjut Tahap 4b
+  bagian 2 ((f)–(l)).
+
+### Penutupan T-608 (2026-10-28) — **DONE (ditutup TANPA lolos kriteria; batas yang diketahui)**
+
+- **Status:** DONE, ditutup **tanpa lolos** kriteria no. 4 (masker benar 34 / 54 < 49) dan no. 7 (nilai 3 < 4; kerusakan baru 20 frame).
+  Tidak ada penyetelan ulang sesudah melihat hasil (keputusan T-608 no. 7). R1 / R2 tidak diuji; R0 hanya diukur (Tahap 1).
+- **Produksi klip5 = `work/clips/klip5@0-2.25/`** → `out/klip5@0-2.25.mp4` + `out/svg/klip5@0-2.25/` (keputusan folder produksi, Opsi A):
+  isolate percobaan kedua (titik iso2 `9380ba65…`; klik f0 / f22, f40) + trim f0–53 (`--end 2.25`). **Perbaikan parsial, BUKAN lolos
+  kriteria:** Rio menilai SESUDAH lebih baik dari produksi lama secara keseluruhan (keputusan akhir no. 3), dan produksi trim "tidak
+  terlihat beda" dengan versi yang dinilai (penilaian 4b).
+- Folder lama `work/clips/klip5/`, `out/klip5.mp4`, `out/svg/klip5/` dipertahankan tanpa perubahan sebagai output lama (BUKAN produksi);
+  arsip `work/t608/arsip_produksi_sebelum/`.
+- **Temuan trim (tanpa tindakan):** trim mengubah statistik per klip.
+  - [4] ambang persentil `clip_stats.json` dihitung dari frame klip ber-trim: T_high / T_low 0,024896 / 0,010552 (54 frame) vs
+    0,017852 / 0,007468 (133 frame) → oklusi −26% jumlah, −27% panjang (B3).
+  - [2] QC median luas jendela W = `qc.area_median_window` 49 "selalu W sampel": median f30–53 bergeser; f47 gagal `area_vs_median` di
+    133 frame (0,6001 < 0,63) dan lolos di 54 frame (0,636) → [3] f45–49 berubah (bobot `qc_fail_weight`).
+  - [3] jendela kernel dipotong di tepi klip ber-trim (f52–53).
+  - Akibatnya frame yang sama di klip ber-trim **tidak dijamin identik** dengan klip penuh. Di klip5 tidak terlihat beda (penilaian 4b).
+    Backlog docs/05 "Trim mengubah statistik per klip".
+- Langkah Tahap 4b bagian 2 ((f)–(l)): lihat "Pelaksanaan Tahap 4b bagian 2" di bawah.
+
+**Pelaksanaan Tahap 4b bagian 2, 2026-10-28** (CPU; `src/` / `configs/` / `tests/` tidak diubah; tanpa commit):
+- **(f) docs:**
+  - docs/05: T-608 `DONE` (judul + "Hasil" + "Catatan produksi klip5" + log); backlog baru "Trim mengubah statistik per klip". Kelima backlog
+    keputusan akhir no. 5 sudah ada (tidak ditambah ulang).
+  - Rekonsiliasi `scripts/t305tutup.py papan` (baca-saja): sebelum 42/51 (Phase 7 5/6), sesudah **43/51 (Phase 7 6/6)** = harapan.
+  - CLAUDE.md memuat status task (baris [1b] "klip5 → olah terpisah dulu (backlog)"), jadi diberi satu sisipan: T-608 DONE + produksi
+    `klip5@0-2.25` + `--end 2.25` wajib.
+- **(g)** docs/01 [2b] `DITUNDA` → `SKIP` di **4 tempat** (diagram, judul "[2b] `fallback_pose.py`" + satu catatan SKIP, komentar stack
+  `mediapipe`, tabel Phase 5). "DITUNDA" lain di docs/01 (baris `--limit`: frame ditunda) bukan [2b], tidak diubah. P-002: catatan pelurusan
+  bertanggal ditambahkan (T-501 / T-502 SKIP sejak 2026-10-27; teks lama tetap).
+- **(h)** `scripts/t608_data.json` (43 465 B, sha256 `d87255f0…`) = keluaran `scripts/t608_tahap4b.py data` (`work/t608/t608_data.json`)
+  = bangun ulang di memori (`cek_data`, sebelum scratch dihapus): byte-identik.
+- **(i) F4:** dihapus `T608-prompt.md` (7 484 B, tidak ter-track) dan `work/t608_scratch/` (1 483 berkas, 528 153 123 B: `iso/` 1 418,
+  `trim4a/` 64, `r0/` 1). R0 `r0.json` hanya ada di scratch → disalin dulu ke `t608_data.json` (`tahap1.r0`). `work/t608/` dipertahankan.
+  Alat `scripts/t608_{1b2,diag,iso,tahap1,tahap4,tahap4b}.py` membaca scratch → tidak bisa dijalankan ulang (F3 sekali pakai).
+- **(j) F1:** `f1_sesudah_4b2` vs `f1_sesudah_4b1`: 11 332 / 11 332 identik (0 hilang / berubah / tambahan): test, test_short, Klip2,
+  klip3, klip4, klip5 lama, `klip5@0-2.25` + `out/` + `work/crop/`.
+- **(k)** `tests/test_config.py`: 193 lolos, 0 skip, 0 gagal.
+
 ## Pitfall yang sudah diketahui
 
 ### P-001 — Temporal flicker / boiling 🔴 RISIKO TERTINGGI
@@ -6839,6 +7050,9 @@ kebetulan pose-nya tenang.
 **Catatan (2026-09-25):** model card MediaPipe SelfieMulticlass juga menyebut kualitas mask turun
 pada gerakan cepat, noise, backlit, dan occluder besar — fallback tetap dibutuhkan apa pun
 backend yang dipilih di D-008.
+**Catatan pelurusan (2026-10-28, T-608 Tahap 4b (g)):** sejak 2026-10-27 T-501 / T-502 **SKIP**, bukan lagi `BLOCKED`. Fallback pose
+tidak dibangun; mitigasi P-002 = bobot QC di [3] saja (docs/04 "Revisi D-010 Q3 + D-002"). Status P-002: risiko tetap terbuka, tanpa
+task aktif. Teks di atas tidak diubah.
 
 ### P-003 — Perubahan topologi kontur
 Saat lengan menyilang badan, jumlah kontur berubah → garis "meletus" antar frame.

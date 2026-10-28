@@ -17,7 +17,7 @@ video.mp4
    │
    ├─[2]  segment ────► seg/classmap/*.png + seg/probs/*.npz       (GPU, proses sendiri)
    │         │           + seg/manifest.json + qc_report.json
-   │         └─[2b] fallback pose — DITUNDA (BLOCKED, D-010); frame gagal QC ditangani di [3]
+   │         └─[2b] fallback pose — SKIP (2026-10-27, revisi D-010 Q3); frame gagal QC ditangani di [3]
    │
    ├─[2c] depth ──────► depth/*.npy + depth/manifest.json          (GPU, proses sendiri)
    │
@@ -490,10 +490,12 @@ frame valid hanya menghitung ulang `qc_report.json`. [3] basi hanya bila **himpu
 (`temporal.qc_fail_frames` di manifest [3]); alasan gagal / `qc_version` tidak dibaca [3].
 Frame gagal QC **tidak** diganti di [2]; [3] memberinya bobot temporal lebih kecil (D-010, Q3).
 
-### [2b] `fallback_pose.py` — DITUNDA (`BLOCKED`, D-010)
+### [2b] `fallback_pose.py` — SKIP (2026-10-27, docs/04 "Revisi D-010 Q3 + D-002")
 Foreground Sapiens2 = 0 frame gagal QC di klip uji. Peran fallback diganti: frame gagal QC diisi dari
 frame tetangga lewat temporal berbobot di [3]. Dibuka lagi (T-501/T-502) kalau klip nyata gagal QC
 dan temporal fill tidak cukup. D-002 (pose hanya fallback, bukan primary) tetap berlaku.
+**SKIP (2026-10-27):** T-501 / T-502 SKIP; fallback pose (juga cadangan D-002) tidak dibangun. Syarat buka ulang sekarang: klip baru
+(bukan klip5) dengan frame gerak cepat yang rusak terlihat, dan bobot `qc_fail_weight` tidak cukup (docs/04 "Revisi D-010 Q3 + D-002").
 
 ### [2c] `depth.py` — Depth Anything V2 Small (GPU, proses sendiri)
 - **In:** `frames/*.png`; config `depth`. Tidak bergantung pada [2] (urutan [2]/[2c] bebas).
@@ -1431,7 +1433,7 @@ torchvision==0.22.1+cu118   # (CUDA maks 11.7) tidak bisa cu126/cu128; cu118 mem
 transformers==5.17.0        # Sapiens2 (sejak 5.10.1, Python >= 3.10) + Depth Anything V2
 opencv-contrib-python       # contour, optical flow, thinning (ximgproc) — dibawa mediapipe.
                             # JANGAN tambah opencv-python (dua paket OpenCV bentrok di modul cv2)
-mediapipe                   # fallback pose (DITUNDA, D-010)
+mediapipe                   # fallback pose — SKIP (2026-10-27, revisi D-010 Q3); paket membawa opencv-contrib-python
 numpy, scipy                # resampling, interpolasi
 svgwrite                    # terpasang (MIT) tetapi TIDAK dipakai [5]: SVG ditulis sebagai string manual (T-203a)
 Pillow                      # raster render
@@ -1484,5 +1486,5 @@ rotoscope/
 | 2 | vectorize: siluet + lubang + batas grup (T-201a), garis oklusi (T-201b), anchor + `track_id` (T-202) → stylize garis polos, satu renderer + parameter per tipe (T-203a) → integrasi `run` / export (T-203b) → `--preview` (T-204) | Sudah keluar outline |
 | 3 | temporal pada probabilitas grup + kedalaman ternormalisasi (T-302, T-303) → `boil_preserve` (T-304) → kalibrasi ulang N/K/M/D/L/persentil/`min_hole_area` (T-305) | Flicker terkendali |
 | 4 | style params lengkap + SVG export | Bisa ganti style dari config |
-| 5 | fallback pose — DITUNDA (`BLOCKED`, D-010) | — |
+| 5 | fallback pose — SKIP (2026-10-27, T-501 / T-502 SKIP; docs/04 "Revisi D-010 Q3 + D-002") | — (milestone gugur) |
 | 6 | (opsional) eksperimen SAM 2 tiny, batch processing | — |
