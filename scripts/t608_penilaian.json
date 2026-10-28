@@ -1,0 +1,46 @@
+{
+ "format": "t608-penilaian/1",
+ "sumber": "work/t608/nilai_1/PENILAIAN.md",
+ "sha256": "f264b8b9761fa72e18c934c27112fcdcfd797ba21a15213528dab40ad54f813a",
+ "bytes": 1626,
+ "dibaca": "2026-10-28",
+ "catatan": "isian Rio VERBATIM (baris berisi jawaban); tanpa tafsiran. Baris (a) no. 2-10 dihapus Rio (tidak dibiarkan '...').",
+ "a_kerusakan": [
+  "1. detik awal: 0,00 ; detik akhir: 2,58 ; jenis: D ; keterangan: orang utama (jaket putih 08) menyatu dengan orang di kiri, kanan, dan belakang jadi satu siluet besar"
+ ],
+ "b_cut": {
+  "1": {"frame": [21, 22], "jawaban": "bukan", "komentar": "..."},
+  "2": {"frame": [59, 60], "jawaban": "Cut", "komentar": "..."},
+  "3": {"frame": [60, 61], "jawaban": "Cut", "komentar": "..."},
+  "4": {"frame": [61, 62], "jawaban": "Cut", "komentar": "..."},
+  "5": {"frame": [62, 63], "jawaban": "Cut", "komentar": "..."},
+  "6": {"frame": [63, 64], "jawaban": "Cut", "komentar": "..."},
+  "7": {"frame": [64, 65], "jawaban": "Cut", "komentar": "..."},
+  "8": {"frame": [65, 66], "jawaban": "Cut", "komentar": "..."},
+  "9": {"frame": [66, 67], "jawaban": "Cut", "komentar": "..."},
+  "10": {"frame": [67, 68], "jawaban": "Cut", "komentar": "..."},
+  "11": {"frame": [71, 72], "jawaban": "Cut", "komentar": "..."},
+  "12": {"frame": [72, 73], "jawaban": "bukan", "komentar": "..."},
+  "13": {"frame": [73, 74], "jawaban": "bukan", "komentar": "..."},
+  "14": {"frame": [87, 88], "jawaban": "bukan", "komentar": "..."},
+  "15": {"frame": [88, 89], "jawaban": "bukan", "komentar": "..."},
+  "16": {"frame": [89, 90], "jawaban": "bukan", "komentar": "..."},
+  "17": {"frame": [90, 91], "jawaban": "bukan", "komentar": "..."},
+  "18": {"frame": [105, 106], "jawaban": "bukan", "komentar": "..."},
+  "19": {"frame": [107, 108], "jawaban": "bukan", "komentar": "..."}
+ },
+ "c_f92_132": "frame 92-132 dibutuhkan: tidak ; komentar: ...",
+ "komentar_umum": "frame 54-132 tidak dibutuhkan",
+ "tanda": [
+  "Komentar umum 'frame 54-132 tidak dibutuhkan' lebih luas dari (c) (f92-132) dan tidak cocok dengan lingkup T-608 f0-f91 / kerumunan f0-f62 - TIDAK ditafsirkan, ditanyakan ke Rio",
+  "(b) 'Cut' huruf besar (No. 2-11); jawaban lain 'bukan'",
+  "(a) satu kerusakan, jenis D, detik 0,00-2,58 (= f0-f62 pada 24 fps)"
+ ],
+ "banding_cut_diff": {
+  "cut_diff": 0.06,
+  "belum_berlabel_terdeteksi": 19,
+  "rio_cut": [60, 61, 62, 63, 64, 65, 66, 67, 68, 72],
+  "rio_bukan": [22, 73, 74, 88, 89, 90, 91, 106, 108],
+  "catatan": "semua 19 terdeteksi cut_diff; 10 cut sungguhan, 9 positif palsu menurut Rio. Cut yang TIDAK terdeteksi tidak bisa dinilai (Rio hanya melabel yang terdeteksi). Skor per frame: work/t608/cut.json (perbandingan ambang belum dihitung)."
+ }
+}

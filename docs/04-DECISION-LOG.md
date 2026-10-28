@@ -5965,6 +5965,863 @@ Dibaca ulang sebelum mulai: `T305tutup-prompt.md` (bagian 1, 5 Tahap 4), entri "
 - **Syarat buka ulang:** klip baru (bukan klip5) dengan frame gerak cepat yang rusak terlihat, dan bobot QC `qc_fail_weight` tidak cukup.
 - D-010 dan D-002 **tidak diedit**; entri ini merujuk keduanya.
 
+### Keputusan T-608 (restorasi input klip5), 2026-10-27 — Tahap 1 berjalan
+
+Dicatat SEBELUM kode Tahap 1 (bahan penandaan, pengukuran, uji R0). Satu-satunya yang mendahului: alat F1 baca-saja
+`scripts/t608_hash.py` ditulis dan dijalankan lebih dulu (`work/t608/f1_sebelum_tahap1.txt`, 10 719 berkas), karena prompt meminta F1
+"PERTAMA" (preseden urutan: "Keputusan T-603").
+
+Dibaca ulang sebelum mulai: `T608-prompt.md`; docs/04 "Hasil Tahap 1b (diagnosis klip5)", "Keputusan akhir T-602", "Keputusan akhir T-605",
+"Penilaian Rio T-305f", "Hasil T-304 — penilaian Rio + penutupan", "T-607 Tahap 3b", "Hasil penutupan T-305 induk"; docs/05 Backlog
+"Pengolahan khusus klip5", "Peninjauan `cut_diff`", "Studi peningkatan kualitas video", T-305e. Tidak ada pertentangan dengan keputusan di bawah.
+
+**Diagnosis Rio (2026-10-27, verbatim):** "kerusakan pada klip 5 bukan karena model dan pengaturan modelnya, namun lebih ke video nya
+memiliki terlalu banyak noise dan kualitasnya jelek. Sehingga model tidak bisa lagi membedakan garis tangan dengan background." Rio meminta
+metode OTOMATIS supaya model bisa membedakan target dari background.
+
+**Catatan (dari chat, bukan keputusan):** hipotesis didukung sebagian, karena lubang muka klip5 terjadi saat seg melabeli muka sebagai
+Background (75,8%), dan ini tidak terjadi di 4 klip lain. "Noise" belum diukur. Penyebab lain yang bukan soal kualitas juga ada: orang lain
+menyatu dalam blob (50 / 92 frame), zoom (f63–f77), cut (f92–f104). Menurut pustaka (RASS, arXiv 2602.14042), restorasi sebagai pra-proses
+pada degradasi nyata memberi kenaikan kecil atau tidak sama sekali, kadang malah menurunkan hasil.
+
+**Keputusan Rio:**
+1. **T-608 masuk Phase 7.** Papan direkonsiliasi 42/50 → 42/51 dan dilaporkan per Phase.
+2. **Restorasi frame (denoise / deblock / SR) hanya untuk MASUKAN MODEL.** Target tetap dari `pick` (S1 / S2 tetap ditolak). Ini bukan M1
+   (M1 ditolak di T-606).
+3. **Kandidat:**
+   - **R0:** OpenCV temporal NLM (`fastNlMeansDenoisingColoredMulti`, CLAHE opsional);
+   - **R1:** Swin2SR compressed-SR ×4 (`caidas/swin2SR-compressed-sr-x4-48`, lewat `transformers`);
+   - **R2:** Real-ESRGAN `realesr-general-x4v3` (arsitektur ditulis di repo bila mungkin, tanpa dependency baru; denoise strength bila
+     tersedia);
+   - **R4** (zoom target, seg 2 pass) = cadangan, hanya rancangan singkat.
+4. **Posisi (usulan; final sesudah Tahap 1):** stage baru **[1a] restore**, opt-in PER KLIP (bukan YAML global). Parameter metode ada di
+   section YAML `restore` tersendiri. Keluaran berukuran sama dengan `frames/` dan dibaca oleh [1b] / [2] / [2c]. FOTO, `cut_diff` [3], dan
+   export tetap memakai `frames/`. Klip tanpa restore harus byte-identik. Kontrak docs/01 + D-014 ditulis SESUDAH rancangan disetujui.
+5. **Lingkup uji:** klip5 f0–f91. Trim produksi `--end 3.833` diputuskan di Tahap 4.
+6. **Alur:** Tahap 1 (CPU) → persetujuan → **1b** screening GPU di scratch (jendela ≤ 24 frame dari tanda Rio) → klip5 f0–f91 penuh untuk
+   ≤ 2 varian terbaik → penilaian Rio → Tahap 4.
+7. **Kriteria sukses (dikunci SEBELUM hasil):** **LOLOS** = Rio menilai klip5 f0–f91 **≥ 4** DAN kerusakan bertanda Rio berkurang nyata DAN
+   tanpa kerusakan baru DAN klip lain byte-identik. Bila tidak ada yang lolos, T-608 ditutup sebagai batas yang diketahui, **tanpa
+   menyetel ulang sesudah melihat hasil**.
+8. **Unduhan bobot** hanya dengan izin Rio per model (pin commit + sha256), sesudah laporan Tahap 1.
+
+**Lingkup Tahap 1:**
+- DALAM: `scripts/t608_*.py` (F3), bahan penilaian, pengukuran CPU, rancangan [1a], docs/04, docs/05.
+- LUAR: `src/`, `configs/`, `tests/`, GPU, unduh bobot, run produksi, `batch` (rencana batch menulis ulang `frames/`).
+- Proses yang mengimpor torch dijalankan dengan `CUDA_VISIBLE_DEVICES=-1`.
+- Tanpa commit.
+
+**Catatan pemeriksaan sumber (sebelum Tahap 1, atas permintaan Rio; bukan perubahan keputusan):**
+- Rio menulis bahwa sumber klip5 sudah diganti nama menjadi `klip5_new`. Yang ditemukan di `samples/`:
+  - `klip5.mp4` **masih ada**: 2 052 398 B, sha256 `67677307…38a8bd`. Nilai ini = `source_sha256` di `work/clips/klip5/meta.json` dan
+    `source.sha256` di `work/crop/klip5/kotak.json`;
+  - berkas baru **`kilp5_new.mp4`** (ejaan "kilp"; 2026-10-27 23:06): 2 016 722 B, sha256 `aea9506c…78fa13`. Isinya **BERBEDA**: ekspor
+    Clipchamp, 720 × 1280, **30 fps**, **2,033 s (61 frame)**, video 7,7 Mbit/s, audio 48 kHz. Bandingkan `klip5.mp4`: 60 fps, 5,61 s,
+    2,8 Mbit/s, audio 44,1 kHz. Hubungan isinya dengan `klip5.mp4` (potongan, sumber lain, atau ekspor ulang) **tidak diketahui (null)**.
+- **Data produksi lama masih cocok:**
+  - `work/clips/klip5/meta.json` sha256 `314535d2…` = `meta_sha256` di manifest seg / depth / stable / contours / strokes dan di
+    `out/klip5.export.json`;
+  - 133 frame; `work/crop/klip5/` (deteksi, saran, kotak, pratinjau) ada;
+  - `out/klip5.mp4` + `out/svg/klip5/` ada;
+  - `target/` dan `isolate/` klip5 tidak ada (sesuai penutupan T-605).
+
+  Tahap 1 memakai data ini. `kilp5_new.mp4` tidak di-ingest / run / batch (larangan Rio).
+- **Nama baru = klip baru bagi pipeline:** nama klip = stem sumber yang disanitasi (`export.clip_name`) → `work/clips/kilp5_new/`,
+  `work/crop/kilp5_new/`, `out/kilp5_new.mp4`. Identitas sumber (sha256) juga berbeda, jadi kotak crop klip5 tidak berlaku untuk berkas itu.
+  Pemakaiannya harus melewati [1] dari nol, keputusan crop baru, dan GPU [2] / [2c] penuh.
+
+### Hasil + rancangan T-608 Tahap 1 (2026-10-27) — usulan Claude Code; BERHENTI menunggu tanda + keputusan Rio
+
+Alat: `scripts/t608_tahap1.py` (`cut`, `ukur`, `ambigu`, `tepi`, `r0`, `bahan`, `cek`, `ringkas`) dan `scripts/t608_hash.py` (F1).
+Data: `work/t608/{cut,kualitas,ambigu,tepi,ringkas,bahan,bahan_buat}.json`; R0: `work/t608_scratch/r0/r0.json`. CPU saja
+(`CUDA_VISIBLE_DEVICES=-1`, torch tidak diimpor). Tanpa unduhan bobot, tanpa run / batch / ingest. `src/` / `configs/` / `tests/` tidak
+berubah. Definisi metrik ada di docstring alat dan ditulis sebelum dihitung, kecuali `tepi` (ditambahkan sesudah `ukur` / `ambigu`
+terlihat; lihat penyimpangan no. 1).
+
+**1. Bahan penandaan (`work/t608/nilai_1/`, dicek `ffprobe` / ukuran, tidak dibuka):**
+- `klip5_tandai.mp4` (FOTO | HASIL `out/klip5.mp4` sha256 `a7f46596…`, 1896 × 1046, 133 frame, 24 fps) dan
+  `klip5_tandai_lambat_0.5x.mp4` (266 frame). Bar bawah: nomor frame + detik, huruf besar.
+- `papan_cut_1–5.png`: 1920 × 1080, 4 cut per papan (papan 5: 3), panel 465 × 431, kiri f(k−1) | kanan f(k), No. 1–19.
+- `PANDUAN.md`, `PENILAIAN.md`: (a) kerusakan (detik awal–akhir + jenis A/B/C/D), (b) 19 cut (cut / bukan), (c) f92–f132 dibutuhkan?
+- Cut dihitung ulang dengan fungsi [3] (`cut_scores` + `detect_cuts`, `cut_diff` 0,06): 32 cut. Label Rio f92–104 = 13 cut, belum
+  berlabel = 19 (22, 60–68, 72–74, 88–91, 106, 108), **sama dengan docs/05**.
+
+**2. Kualitas input (`frames/` produksi sesudah crop; faktor skala 5 klip = 1,0, artinya `frames/` = area aktif sumber tanpa resize):**
+
+| klip | area aktif sumber (kanvas) | profil, fps sumber | video kb/s; bpp | σ derau flat med / p90 | blok 8×8 med / p90 | vol_norm med / p90 | PSNR bolak-balik ×2 med |
+|---|---|---|---|---|---|---|---|
+| test | 480 × 854 (1,00) | Main, 30 | 497; 0,040 | 0,23 / 0,26 | 1,07 / 1,10 | 0,377 / 0,427 | 27,6 |
+| Klip2 | 412 × 720 (0,32) | Main, 30 (Clipchamp) | 4829; 0,175 | 0,72 / 0,77 | 0,93 / 0,95 | 0,304 / 0,309 | 28,8 |
+| klip3 | 720 × 1280 (1,00) | Main, 29,97 | 973; 0,035 | 0,57 / 0,62 | 1,07 / 1,20 | 0,063 / 0,073 | 37,0 |
+| klip4 | 720 × 1280 (1,00) | Main, 30 | 1547; 0,056 | 0,15 / 0,17 | 1,31 / 1,39 | 0,020 / 0,028 | 44,4 |
+| **klip5** | 720 × 668 (0,52) | Main, **60** | 2829; 0,051 | 0,61 / **1,16** | 1,12 / 1,18 | 0,560 / 0,885 | 27,1 |
+
+**3. Uji hipotesis Rio dari `seg/probs`** (probs menyimpan ke-29 kelas, cukup):
+
+| klip | ambigu lengan/tangan vs Background per fg, med / p90 | ambigu orang vs Background per fg, med / p90 | entropi pita tepi ±6 px (bit), med / p90 | edge_ratio med / p10 | QC gagal |
+|---|---|---|---|---|---|
+| test | 0,0024 / 0,0036 | 0,014 / 0,025 | 0,33 / 0,41 | 4,82 / 4,25 | 0 / 283 |
+| Klip2 | 0,0005 / 0,0011 | 0,013 / 0,015 | 0,29 / 0,31 | 2,50 / 2,33 | 0 / 122 |
+| klip3 | 0,0020 / 0,0048 | 0,018 / 0,024 | 0,59 / 0,70 | 1,17 / 1,11 | 1 / 182 |
+| klip4 | 0,0020 / 0,0035 | 0,009 / 0,011 | 0,47 / 0,52 | 2,58 / 1,92 | 0 / 217 |
+| klip5 (semua) | 0,0003 / 0,0116 | 0,029 / 0,222 | 0,80 / 1,47 | 1,02 / 0,65 | 18 / 133 |
+
+klip5 per segmen (median):
+
+| segmen | σ flat | blok 8×8 | vol_norm | PSNR ×2 | ambigu lengan | ambigu orang | entropi pita | edge_ratio | fg / frame |
+|---|---|---|---|---|---|---|---|---|---|
+| **f0–62 kerumunan** | **0,35** | 1,12 | **0,150** | **32,4** | **0,0070** | **0,172** | **1,26** | **0,82** | 0,46 |
+| f63–77 zoom | 0,80 | 1,16 | 0,885 | 25,9 | 0,0000 | 0,014 | 0,57 | 1,88 | 0,57 |
+| f78–91 | 0,59 | 1,12 | 0,825 | 26,2 | 0,0000 | 0,011 | 0,49 | 3,08 | 0,32 |
+| f92–104 cut | 0,69 | 1,19 | 0,562 | 25,5 | 0,0001 | 0,011 | 0,63 | 1,62 | 0,39 |
+| f105–132 objek lain | 1,16 | 1,04 | 0,865 | 24,4 | 0,0002 | 0,008 | 0,36 | 1,02 | 0,57 |
+
+Per jendela 24 frame: ambigu orang 0,183 (f0–23), 0,161 (f24–47), 0,057 (f48–71), 0,008–0,011 (sesudahnya). Data:
+`work/t608/ringkas.json`.
+
+Korelasi Spearman (deskriptif; frame berdekatan saling bergantung, jadi n efektif ≪ n):
+- klip5 seluruh klip (133 frame): ambigu orang ~ σ flat **−0,79**, ~ vol_norm −0,80, ~ PSNR ×2 +0,86, ~ blok 8×8 +0,19. Artinya
+  frame dengan derau / detail tinggi justru ambiguitasnya RENDAH. Korelasi ini didominasi perbedaan ISI antar segmen (kerumunan vs zoom).
+- f0–62 saja (63 frame, isi kurang lebih sama): ambigu orang ~ σ flat −0,12, ~ blok +/−0,20, ~ vol_norm −0,24, **~ fg / frame −0,56**.
+  Entropi pita ~ σ flat +0,45, ~ vol_norm +0,41, **~ edge_ratio −0,62**, ~ fg / frame +0,61.
+
+**4. Tafsiran (jenis degradasi dominan klip5):**
+- **Ambiguitas model memang tinggi di klip5, tetapi hanya di f0–62 (kerumunan).** Ambigu orang ±10–19× klip lain, ambigu lengan ±3–14×,
+  entropi tepi ±2–4×. Di f63–f132 nilainya setara klip lain. Bagian hipotesis Rio "model tidak bisa membedakan tangan dari background"
+  **didukung untuk f0–62**.
+- **"Terlalu banyak noise" TIDAK didukung pengukuran ini.**
+  - σ derau di semua klip sangat kecil (≤ 1,2 dari 255; dekat lantai kuantisasi 8-bit). Kodek sudah menghaluskan derau sensor.
+  - klip5 f0–62 justru punya σ **terendah** di klip5 (0,35), di bawah Klip2 / klip3, padahal keduanya dinilai baik.
+  - Blok 8×8 klip5 (1,12) ringan, setara test / klip3, dan di bawah klip4 (1,31; klip4 dinilai 5).
+  - Ketajaman f0–62 (vol_norm 0,150; PSNR ×2 32,4) lebih lembut dari bagian zoom, tetapi tidak lebih lembut dari klip3 / klip4.
+  - Bitrate per piksel klip5 (0,051) setara klip4.
+- **Yang membedakan f0–62 adalah ISI dan kontras figur–latar:** batas orang hasil seg lebih lemah dari tepi kuat gambar (edge_ratio 0,82,
+  sedangkan klip lain 1,17–4,82), dan ambiguitas turun bila subjek lebih besar (ρ −0,56). Ini sesuai catatan chat: orang lain menyatu
+  dalam blob, kerumunan.
+- Di dalam f0–62, entropi tepi sedikit naik pada frame yang lebih berderau / berdetail (ρ +0,41–0,45). Jadi pengaruh kualitas tidak nol,
+  tetapi lebih lemah daripada pengaruh kontras tepi (−0,62) dan ukuran subjek.
+- **Kesimpulan sementara:** degradasi sinyal (derau / blok / blur) **bukan** penyebab dominan yang terukur. Penyebab dominan = kerumunan
+  dengan kontras figur–latar rendah dan subjek relatif kecil. Restorasi R0–R2 menyasar derau / blok / resolusi, jadi peluang "LOLOS"
+  diperkirakan **kecil**; ini sesuai pustaka (RASS).
+- **Batas ukur:**
+  - metrik per frame global, hanya luma (kroma 4:2:0 tidak diukur);
+  - σ flat membuang 10% gradien tertinggi, jadi derau nyamuk / ringing di DEKAT tepi tidak terlihat;
+  - blur gerak tangan tidak diukur terpisah;
+  - "noise" yang dilihat Rio bisa jadi kekacauan visual kerumunan, bukan derau sinyal — tidak bisa dibedakan dengan angka ini.
+
+**5. Kandidat (tanpa unduhan; lisensi dibaca dari web 2026-10-27):**
+
+| | R0 OpenCV NLM temporal (+ CLAHE) | R1 Swin2SR compressed-SR ×4 | R2 Real-ESRGAN `realesr-general-x4v3` |
+|---|---|---|---|
+| lisensi kode | OpenCV Apache-2.0 (sudah di stack) | `transformers` Apache-2.0 (terpasang); repo asli `mv-lab/swin2sr` LICENSE = Apache-2.0 (commit `6f25d768`, 2023-06-13) | `xinntao/Real-ESRGAN` LICENSE = BSD-3-Clause tanpa klausul tambahan (commit `a4abfb29`, 2024-04-02) |
+| lisensi bobot | — | model card `caidas/swin2SR-compressed-sr-x4-48` = `apache-2.0` (cardData + tag) | **tidak dinyatakan terpisah**; README tanpa teks lisensi bobot; bobot = aset rilis repo BSD-3 → **belum terverifikasi** |
+| pin usulan + ukuran | — | commit `1079c3c5fcea8a2c047b270ac8f4c6c18adb27c9`; `model.safetensors` 49 073 568 B, sha256 `3fc6baf86cda09a42e5f8167ca4b29fc043137f3c05b8d362717dd1bfef143b4` (+ `config.json` 776 B, `preprocessor_config.json` 152 B); `pytorch_model.bin` tidak diunduh | rilis `v0.2.5.0` (2022-04-24): `realesr-general-x4v3.pth` 4 885 111 B + `realesr-general-wdn-x4v3.pth` 4 885 111 B (untuk denoise strength); **sha256 tidak dipublikasikan** (digest null) → sha256 dihitung saat unduh lalu di-pin; aset rilis GitHub bisa diganti (pin lebih lemah dari HF) |
+| arsitektur | — | `Swin2SRForImageSuperResolution` ada di `transformers` 5.17.0 terpasang (berkas modul dicek); config checkpoint dari 4.26 → muat di 5.17 **belum diuji**; embed 180, 6 × 6 blok, jendela 8, `pixelshuffle_aux`; ±12,3 jt parameter | `SRVGGNetCompact` (64 fitur, 32 conv, PReLU, PixelShuffle ×4, + input nearest-up), ±1,22 jt parameter; ditulis di repo (± 30 baris, tanpa `basicsr`); `.pth` = pickle → `torch.load(weights_only=True)`; key `params` / `params_ema` = null (belum diketahui) |
+| data latih | — | DIV2K (+ Flickr2K, README); AIM 2022 Track 1 = bicubic ×4 + JPEG QF 10 (Pillow) (arXiv 2208.11184) | "pure synthetic data" (README); dataset x4v3 tidak disebut |
+| dependency baru | tidak | tidak | tidak |
+| VRAM *perkiraan* | 0 (CPU) | fp32 frame penuh 720 × 668 ±3–4,5 GB → **tiling wajib** (tile 256, overlap 32: ±0,6–1 GB); fp16 tidak disarankan (TU117 tanpa tensor core, risiko overflow attention) | fp32 frame penuh ±0,4–0,7 GB, tanpa tiling; fp16 ±½ |
+| waktu / frame | **terukur CPU 12 thread:** NLM multi (T 5) 1,84 s, NLM 1 frame 0,57 s, CLAHE 4 ms | *perkiraan* ±12 TFLOP / frame → **10–16 s** fp32 (GTX 1650 Ti ±3 TFLOPS) | *perkiraan* ±1,2 TFLOP / frame → **0,5–1,5 s** |
+| risiko | derau terukur sudah dekat lantai → NLM hampir tanpa efek (h 0,6: rata-rata \|Δ\| 0,9 tingkat; σ flat terukur tidak turun, 0,36 → 0,42); h besar = blur; NLM temporal menembus gerak (bayangan) / cut; CLAHE menaikkan kontras kerumunan juga (σ flat 0,36 → 0,82) | PSNR-oriented: detail palsu sedikit, tetapi lambat; domain JPEG QF 10 + bicubic vs H.264 Main (transform 4×4 + deblocking) — blok 8×8 klip5 ringan, jadi kemampuan deblock nyaris tak terpakai; per frame tanpa temporal → kedip | GAN: detail / tepi palsu (bisa MENAMBAH garis C di kerumunan), wajah "lukisan"; per frame → kedip antar frame; denoise strength (DNI x4v3 / wdn) tersedia |
+| status | boleh diuji (lisensi aman) | **boleh direkomendasikan** (kode + bobot Apache-2.0) | **tidak direkomendasikan** sampai Rio memutuskan status lisensi bobot |
+
+Keluaran R1 / R2 = ×4 lalu diperkecil ¼ (INTER_AREA) ke ukuran `frames/` (keputusan no. 4). Catatan: Sapiens2 meregangkan 720 × 668 ke
+768 × 1024 dan DA-V2 ke sisi pendek 518, jadi ukuran sama dengan `frames/` membuang sebagian detail SR. Ini dicatat, bukan diusulkan
+diubah.
+
+**R4 (cadangan, rancangan singkat):** seg 2 pass.
+- Pass 1 = seg biasa. Kotak target (dari masker [1b] atau klik `pick` yang diinterpolasi) + margin → potong → seg ulang dengan input
+  1024 × 768 (lebih banyak piksel model per orang) → probs ditempel kembali ke koordinat frame. Di luar kotak = pass 1.
+- Biaya: ±2× seg (±33 s / frame; f0–91 ±51 mnt).
+- Data yang mendukung: di f0–62, ambiguitas turun bila subjek lebih besar (ρ −0,56).
+- Hambatan: kotak target butuh pelacakan, dan [1b] gagal di klip5 (T-605).
+
+**6. Rancangan [1a] `restore` (HANYA rancangan; kontrak docs/01 + D-014 ditulis sesudah disetujui):**
+- **Penanda opt-in per SUMBER** (seperti crop T-607): `<work_dir>/restore/<nama>/pilihan.json`, format `rotoscope-restore-pilihan/1`:
+  `source` {sha256, bytes, width, height, path} + `method` (`r0` / `r1` / `r2`). Ditulis alat CLI (BUKAN stage), mis.
+  `python -m rotoscope restore-mode <video> [--set r0|r1|r2 | --off]`; tanpa aksi = status. Berlaku untuk semua folder trim
+  `<nama>@S-E` dari sumber itu. Alternatif: penanda per folder klip (`work/clips/<klip>/restore.json`; trim baru harus ditandai ulang).
+- **Parameter** di section YAML `restore` (`restore.r0.*`, `restore.r1.{model_id, revision, precision, tile, overlap}`,
+  `restore.r2.{weights_sha256, denoise_strength, precision}`, `restore.vram_min_free_mib`, `restore.ram_min_free_mib`). Section
+  ini tidak menandai klip apa pun; tanpa penanda = tanpa restore.
+- **Keluaran** (folder klip): `restore/frames/frame_%05d.png` (RGB uint8, ukuran = `frames/`); `restore/frames.jsonl` (per frame:
+  sidik piksel input + output, waktu, VRAM); `restore/manifest.json` (`rotoscope-restore/1`, `clip`, `frame_count`, `frame_size`,
+  `key` = metode + parameter section-nya + model id / revision / sha256 bobot + precision + tile + sidik piksel gabungan `frames/` +
+  sha256 `pilihan.json` + versi torch / transformers / opencv → `key_sha256`; `run`; ditulis TERAKHIR).
+- **Basi + resume:**
+  - per frame untuk R1 / R2 (tanpa memori antar frame);
+  - R0 temporal: frame k bergantung pada k ± 2 → kunci = sidik semua frame; resume per frame tetap sah selama kunci sama;
+  - kunci beda → basi: CPU (R0) dihitung ulang otomatis dengan peringatan, GPU (R1 / R2) hanya dengan `--yes`;
+  - penanda dihapus (`--off`) → `restore/` lama DIHAPUS dengan pesan (seperti [1b]);
+  - tulis atomik per frame (`.tmp` + `os.replace`); manifest terakhir.
+- **Pembaca:** fungsi bersama `model_frames(clip)` → `restore/frames/` bila penanda ada DAN `restore/` up-to-date, selain itu `frames/`.
+  - Dipakai HANYA [1b], [2], [2c].
+  - Manifest [1b] / [2] / [2c] menambah key `restore` {method, key_sha256} HANYA bila restore dipakai. Klip tanpa penanda = manifest
+    byte-identik, tanpa hitung ulang (pola T-606).
+  - Penanda ada tetapi `restore/` basi / belum lengkap → [1b] / [2] / [2c] **BERHENTI** (exit 1 + perintah), tidak diam-diam memakai
+    `frames/` (mencampur = salah, dan [2] mahal).
+  - Key `restore` berubah → [2] / [2c] menolak seperti beda parameter (`--restart --yes`, GPU).
+  - [3] (`cut_diff`, FOTO), [4]–[6], dan bahan penilaian tetap dari `frames/`.
+- **GPU:** proses sendiri (subprocess seperti [1b]). Sebelum memuat model: cek RAM + VRAM. Proses selesai = CUDA context lepas sebelum [2]
+  (butuh bebas ≥ 3300 MiB). **`--yes` wajib setiap kali [1a] memakai GPU** (aturan Rio [1b]); R0 = CPU, tanpa `--yes`. Satu model GPU
+  pada satu waktu (aturan keras 6). fp32 / fp16 saja.
+- **Urutan `run`:** ingest → **[1a] restore (opt-in)** → [1b] isolate → [2] → [2c] → [3] … Subperintah stage
+  `python -m rotoscope restore <video> [--yes] [--restart] [--dry-run] [--limit N]`. `batch`: status restore di rencana; `--yes`
+  mencakup [1a]. Unduhan: `python -m rotoscope download --restore r1|r2` (hanya sesudah izin Rio).
+- **Interaksi:**
+  - crop / trim: `frames/` berubah → sidik berubah → [1a] basi (dihitung ulang). Folder trim dihitung dari `frames/`-nya sendiri; R0 di
+    tepi trim memakai jendela terpotong, jadi frame tepi bisa beda dari versi tanpa trim (diterima, dicatat).
+  - pick: `points.json` tetap cocok, karena sidik piksel `frames/` tidak berubah dan koordinatnya sama. SAM [1b] melihat frame restorasi.
+- **Byte-identik klip lain:** tanpa penanda → [1a] tidak membuat subprocess / berkas, manifest [1b] / [2] / [2c] tanpa key `restore` →
+  test, Klip2, klip3, klip4 tanpa hitung ulang (dibuktikan F1 di Tahap 4).
+- **Determinisme:** R0 deterministik di CPU; R1 / R2 `torch.use_deterministic_algorithms` + cudnn deterministic, dibuktikan dengan dua run
+  byte-identik.
+- **Lokasi bobot R2** (bukan HF): belum diputuskan (pertanyaan untuk Rio).
+
+**7. Rencana 1b (screening GPU di scratch `work/t608_scratch/1b/`, sesudah tanda + persetujuan Rio):**
+- **Jendela:** ≤ 24 frame di f0–91, dipilih dari tanda Rio. Aturan: rentang 24 frame dengan detik kerusakan bertanda terbanyak, tanpa cut
+  sungguhan (jawaban (b)) di dalamnya; seri → f0–62. Diisi sesudah `PENILAIAN.md` kembali.
+- **Varian usulan (Rio memilih SEBELUM run; tanpa menyetel ulang sesudahnya):**
+  - V0 produksi (dihitung ulang di scratch; sekaligus cek determinisme terhadap seg produksi);
+  - R0 = NLM temporal (h 3, T 5) + CLAHE;
+  - R1 Swin2SR;
+  - R2 dn 0,5 — HANYA bila lisensi bobot diterima Rio.
+- **Mekanisme tanpa [1a] di `src/`:**
+  - per varian, `ingest --start S --end E` klip5 ke `work_dir` scratch (CPU);
+  - folder A: `frames/` diganti hasil restorasi (dibuat skrip `scripts/t608_1b.py`) → [2] + [2c] GPU;
+  - folder B: `frames/` asli (hard link) + `seg/` / `depth/` dari A → [3]–[6] CPU.
+
+  Ini meniru semantik [1a]: model melihat hasil restorasi, sisa pipeline melihat `frames/`.
+- **Metrik otomatis per varian (jendela):**
+  - ambiguitas no. 3 pada seg baru (ambigu lengan / orang, entropi pita), edge_ratio;
+  - lubang muka Q1 (definisi T-305 1b), komponen derau Q2 (kecil < 5% tanpa wajah);
+  - QC gagal;
+  - kualitas input (σ / blok / vol_norm) pada frame restorasi;
+  - IoU foreground antar frame (kedip);
+  - opsional: skor objek SAM dengan titik arsip `scripts/t605_points_rio.json` f0. **Catatan:** titik itu dalam koordinat SEBELUM crop
+    (720 × 1280, `meta_sha256` `a3b4e991…`), jadi harus dikonversi (y − 344, titik di luar kotak dibuang, sidik frame dihitung ulang) di
+    scratch. Hanya berlaku bila jendela memuat f0.
+- **Anggaran GPU per varian, 24 frame (*perkiraan*):**
+  - seg 24 × 16,5 s ≈ 6,6 mnt + muat ±1 mnt;
+  - depth ≈ 1 mnt;
+  - restore: R1 4–6,5 mnt, R2 < 1 mnt, R0 CPU ±0,7 mnt;
+  - total ≈ 9–15 mnt per varian → 4 varian ≈ 40–55 mnt.
+
+  Lanjutan f0–91 penuh (≤ 2 varian): seg 92 × 16,5 s ≈ 25 mnt + depth ±3 + restore (R1 15–25 mnt) → ≤ 55 mnt per varian, ≤ 1,8 jam total.
+- **Bahan papan:** FOTO | V0 | varian berdampingan per jendela, normal + 0,5×, nomor frame + detik (format `klip5_tandai`).
+- **Perintah GPU untuk Rio:** dicetak `scripts/t608_1b.py` di 1b, satu per baris, wajib `--yes` + `--config work\t608_scratch\1b\<varian>\config.yaml`.
+  Bentuk persisnya dicek dulu dengan langkah CPU (ingest scratch) sebelum diberikan.
+
+**8. Daftar Tahap 4 (sinkronisasi dokumen, BUKAN Tahap 1):**
+- docs/01 [2b] masih `DITUNDA` / `BLOCKED` di 4 tempat (diagram baris [2b], judul "[2b] `fallback_pose.py`", komentar stack
+  `mediapipe`, tabel "Urutan build" baris 5) → `SKIP` (revisi D-010 Q3, 2026-10-27).
+- docs/04 P-002 masih menulis "T-501/T-502 `BLOCKED`" → catatan SKIP. Entri lama tidak diedit; ditambah catatan baru.
+- Data berharga → `scripts/t608_*.json` ter-track (F4).
+
+**9. F1:** `f1_sebelum_tahap1` = `f1_sesudah_tahap1` = **10 719 / 10 719 berkas identik** (`work/clips/*` + `work/crop/*` + `out/`;
+0 hilang / berubah / tambahan; daftar hash byte-identik, sha256 `3cfe66ca…`). `samples/klip5.mp4` tidak disentuh.
+
+**Penyimpangan / keraguan:**
+1. **Metrik `tepi` ditambahkan SESUDAH hasil `ukur` / `ambigu` terlihat** (bukan definisi pra-registrasi), untuk memisahkan "lembut" dari
+   "isi kerumunan". Dicatat sebagai analisis lanjutan, bukan kriteria.
+2. Nilai `h` R0 (0,6) diambil dari median σ flat klip5. Itu hanya untuk WAKTU; efeknya praktis nol. Usulan h 3 untuk 1b bukan hasil
+   penyetelan terhadap hasil 1b (1b belum ada).
+3. σ flat naik sedikit sesudah NLM (0,36 → 0,42). Dugaan: pembulatan uint8 + masker tepi yang dihitung ulang; belum dibuktikan.
+4. Perkiraan VRAM / waktu R1 / R2 dari hitungan FLOP / aktivasi, BUKAN pengukuran (bobot belum diunduh).
+5. Batas ukur di no. 4: luma saja, derau di dekat tepi tidak terlihat, blur gerak tidak diukur. Korelasi deskriptif (n efektif kecil).
+6. `kilp5_new.mp4` hanya diperiksa `ffprobe` + sha256. Isinya tidak dibandingkan dengan `klip5.mp4`.
+
+**Keputusan yang dibutuhkan dari Rio:** lihat laporan Tahap 1 (chat). Ringkas: (a) isi `PENILAIAN.md`; (b) lanjut 1b sesuai rencana /
+dikurangi / dialihkan ke R4 / tutup, mengingat tafsiran no. 4; (c) varian 1b + parameter R0; (d) status lisensi bobot R2; (e) izin unduh
+R1 (pin di atas); (f) rancangan [1a] (penanda per sumber vs per klip, nama perintah, berhenti vs cadangan `frames/`, lokasi bobot R2);
+(g) maksud `kilp5_new.mp4`.
+
+### Keputusan T-608 sesudah Tahap 1 (2026-10-28) — arah diubah ke isolasi
+
+Dicatat SEBELUM langkah lain di Tahap 1b-1. Dibaca ulang sebelum mencatat: `T608-prompt.md`, "Keputusan T-608 (restorasi input klip5)",
+"Hasil + rancangan T-608 Tahap 1", dan `work/t608/nilai_1/PENILAIAN.md` yang sudah diisi Rio (isi verbatim dicatat di entri hasil 1b-1).
+
+**Keputusan Rio:**
+1. **Opsi A: restorasi bukan lagi jalur utama.** Alasan (chat 2026-10-28, potongan f15–f17 dari Rio):
+   - orang utama (jaket putih 08) menyatu dengan orang di kiri, kanan, dan belakang menjadi satu siluet;
+   - kepala penonton tergambar sebagai bulatan acak;
+   - pagar kaca ikut tergambar.
+
+   Seg mengenali SEMUA orang (bukan per orang), jadi penyebabnya adalah pemisahan orang, bukan noise. Ini selaras dengan angka Tahap 1:
+   ambiguitas tinggi hanya di kerumunan f0–62, dan derau di sana justru terendah.
+2. **Uji ulang [1b] isolate (SAM 2.1 tiny) klip5 dengan pick BARU.** Klik hanya di frame kerumunan (f0–f62), tanpa klik di frame zoom
+   f63+. Alasannya dugaan T-605: klik di f64 mengacaukan memori. Titik arsip T-605 tidak dipakai (koordinat sebelum crop).
+3. **Cadangan, hanya bila SAM tetap gagal:** SAM di atas frame R1 (restorasi). Itu butuh keputusan Rio + izin unduh R1 terpisah.
+   - R1 TIDAK diunduh sekarang.
+   - **R2 dibuang.**
+   - **Rancangan [1a] ditunda.**
+4. **Kriteria antara (dikunci sekarang, sebelum hasil):** Rio menilai masker mengikuti orang utama di **≥ 90%** frame kerumunan yang
+   adegannya diklik. **Kriteria akhir tetap keputusan no. 7 T-608** (klip5 f0–f91 ≥ 4, kerusakan bertanda berkurang nyata, tanpa
+   kerusakan baru, klip lain byte-identik).
+5. **Video sumber = `samples/klip5.mp4`.** `kilp5_new.mp4` di luar lingkup dan tidak disentuh.
+
+**Tahap 1b-1 (CPU) → BERHENTI:**
+- (a) isi `PENILAIAN.md` verbatim → docs/04 + `scripts/t608_penilaian.json`; label cut dibandingkan dengan deteksi `cut_diff`;
+- (b) salinan scratch klip5 `work/t608_scratch/iso/` + config scratch (`paths.work_dir` ke scratch). `frames/`, `meta.json`, dan berkas
+  crop DISALIN (bukan hard link). pick / isolate dengan `--config` scratch tidak boleh menjalankan ingest ulang atau menyentuh produksi;
+- (c) adegan persis seperti [1b] (cut [3], `cut_diff` 0,06). Frame klik = minimal satu per adegan yang beririsan dengan f0–f62 (frame
+  awal; tambah satu frame tengah bila adegan > 30 frame). Tanpa klik di f63+;
+- (d) `work/t608/nilai_1b/PANDUAN_PICK.md`; perintah dicek dulu dengan `--dry-run` / langkah CPU (`CUDA_VISIBLE_DEVICES=-1`);
+- (e) F1 baru `work/t608/f1_sebelum_iso.txt`; produksi identik sampai akhir;
+- (f) rencana 1b-2 (belum dikerjakan).
+
+Tanpa GPU oleh Claude Code, tanpa commit, tanpa perubahan `src/` / `configs/` / `tests/`.
+
+### Penilaian Rio T-608 Tahap 1 (2026-10-28) — verbatim; 1b-1 (a)
+
+Sumber: `work/t608/nilai_1/PENILAIAN.md` (1 626 B, sha256 `f264b8b9…f813a`). Salinan ter-track: `scripts/t608_penilaian.json`.
+Isian apa adanya:
+- **(a)** `1. detik awal: 0,00 ; detik akhir: 2,58 ; jenis: D ; keterangan: orang utama (jaket putih 08) menyatu dengan orang di kiri,
+  kanan, dan belakang jadi satu siluet besar` (baris 2–10 dihapus Rio).
+- **(b)** No. 1 (f21→22) `bukan`; No. 2–11 (f59→60 … f67→68, f71→72) `Cut`; No. 12–19 (f72→73, f73→74, f87→88 … f90→91, f105→106,
+  f107→108) `bukan`. Semua komentar `...`.
+- **(c)** `frame 92-132 dibutuhkan: tidak ; komentar: ...`
+- **Komentar umum:** `frame 54-132 tidak dibutuhkan`
+
+**Tanda (tidak ditafsirkan):**
+1. Komentar umum (f54–132) lebih luas dari (c) (f92–132) dan tidak cocok dengan lingkup T-608 f0–f91 / kerumunan f0–f62 → ditanyakan ke Rio.
+2. (b) ditulis `Cut` (huruf besar).
+
+**Banding dengan `cut_diff` 0,06:**
+- Ke-19 cut belum berlabel semuanya terdeteksi. Menurut Rio: **10 cut sungguhan** (f60–68, f72) dan **9 positif palsu** (f22, f73, f74,
+  f88–91, f106, f108).
+- Cut yang tidak terdeteksi tidak bisa dinilai, karena hanya cut terdeteksi yang dilabel.
+- Akibat untuk [1b]: cut palsu f22 memecah kerumunan menjadi adegan f0–21 dan f22–59, jadi kedua adegan butuh klik.
+
+### Hasil T-608 Tahap 1b-1 (2026-10-28) — scratch + adegan + panduan pick siap; BERHENTI menunggu klik + run GPU Rio
+
+Alat: `scripts/t608_iso.py` (`config`, `siapkan`, `adegan`, `uji`, `cek_pick`) → `work/t608/iso_{config,salinan,adegan,uji,cek_pick}.json`.
+CPU saja: semua subprocess CLI dengan `CUDA_VISIBLE_DEVICES=-1`. Tanpa GPU / unduhan / commit; `src/` / `configs/` / `tests/` tidak berubah.
+
+**1. Config scratch** `work/t608_scratch/iso/config.yaml` (sha256 `85d07264…`): salinan `configs/default.yaml`, hanya `paths` diubah
+(`work_dir` / `out_dir` absolut ke `work/t608_scratch/iso/{work,out}`). Dibandingkan SESUDAH `load_pipeline`: dari 79 field, yang beda
+hanya `paths.work_dir` dan `paths.out_dir`.
+
+**2. Salinan produksi** (`shutil.copy2`, berkas baru, BUKAN hard link — termasuk `seg/` dan `depth/`, jadi syarat "hard link hanya bila
+terbukti aman" tidak perlu dibuktikan) → `work/t608_scratch/iso/work/clips/klip5/` + `work/t608_scratch/iso/work/crop/klip5/`:
+- `meta.json` 1, `qc_report.json` 1, `frames/` 133, `seg/` 268, `depth/` 135, crop 7 → **545 berkas, 310 814 791 B**;
+- sha256 setiap salinan = sumber (0 beda);
+- `st_nlink` = 1 dan bukan berkas yang sama (0 hard link);
+- `meta.json` sha256 `314535d2…` = produksi → identitas klip sama dengan manifest seg / depth (tidak ada hitung ulang GPU di 1b-2).
+
+Tidak disalin: `stable/`, `contours/`, `strokes/` (dihitung ulang di 1b-2).
+
+**3. Adegan persis [1b]** (`isolate.detect_scenes`, `cut_diff` 0,06 dari config scratch; sama dengan adegan dari `frames/` produksi):
+33 adegan, 32 cut. Kerumunan (adegan yang beririsan dengan f0–f62):
+
+| adegan | panjang | frame klik |
+|---|---|---|
+| f0–f21 | 22 | f0 |
+| f22–f59 | 38 (> 30) | f22, f40 (tengah) |
+| f60 | 1 | f60 |
+| f61 | 1 | f61 |
+| f62 | 1 | f62 |
+
+- Frame klik: **f0, f22, f40, f60, f61, f62**; klik di f63+: tidak ada.
+- Tidak ada adegan kerumunan yang melewati f62 (f62 sendiri adegan 1 frame).
+- Frame SAM = 63 (≈ 57 s menurut `isolate.py`: 0,67 s / frame + muat 15 s).
+- **Frame kriteria no. 4** = f0–f62 (63 frame): lolos bila masker mengikuti orang utama di **≥ 57** frame (90% × 63 = 56,7).
+- f22 = cut palsu menurut label Rio, tetapi tetap memecah adegan → klik f22 wajib. f60 / f61 / f62 = cut sungguhan menurut Rio → masing-masing
+  adegan 1 frame dengan kliknya sendiri.
+
+**4. Uji perintah (CPU):**
+- **Uji isolate dengan titik SINTETIS** di salinan terpisah `work/t608_scratch/iso_uji/`. Isinya `meta.json` + `frames/` + crop (141
+  berkas, sha256 = produksi) dan config sendiri. Titik: 1 klik kiri di tengah + 1 klik kanan di pojok per frame klik, ditulis
+  `pick.write_points`, sehingga lolos validasi skema.
+  - `isolate --dry-run` → rc 0: 5 job (f0–21 klik f0; f22–59 klik f22, f40; f60; f61; f62), semua "tanpa mundur", `tanpa_prompt: 70
+    frame (f63–f132)`, 63 frame SAM, catatan "adegan f63 … tanpa klik" (sesuai keputusan, bukan galat).
+  - `isolate` tanpa `--yes` → rc 1 "butuh GPU … Tidak ada yang dihitung / dihapus".
+  - `isolate/` / `isolate.partial/` / `isolate.old/` tidak dibuat.
+  - Salinan uji DIHAPUS sesudah uji (hasil di `iso_uji.json`).
+- **Perintah pick Rio persis** (`pick samples\klip5.mp4 --frame N --dry-run --config work\t608_scratch\iso\config.yaml`, N = 0, 22, 40, 60,
+  61, 62) → rc 0 semua, tanpa ingest (meta.json scratch sudah ada → `cmd_pick` tidak memanggil ingest), tanpa `points.json`. Tampilan
+  skala 1,0 (kanvas 1120 × 668, muat di 1920 × 1080). Kanvas dry-run (6 PNG) lalu dihapus bersama `target/`.
+- `isolate --dry-run` di scratch iso → rc 0, "target/points.json tidak ada — dilewati".
+- **Temuan untuk panduan:** pesan galat `isolate` tanpa `--yes` juga menyarankan `run … --yes`. Di scratch, `run` menjalankan ingest + semua
+  stage. Karena itu `PANDUAN_PICK.md` melarang `run` / `batch`.
+
+**5. Panduan** `work/t608/nilai_1b/PANDUAN_PICK.md`:
+- 6 perintah pick;
+- cara klik (kiri 4–8 di orang utama; kanan 10–30 di orang kiri / kanan / belakang termasuk baju putih, kepala penonton, pagar kaca;
+  kotak opsional; U / R / Enter);
+- cek `isolate --dry-run` (yang harus terlihat);
+- perintah GPU `isolate samples\klip5.mp4 --yes --config work\t608_scratch\iso\config.yaml`, perkiraan ±1–2 mnt, VRAM reserved ±0,9 GB
+  (puncak GPU ±2,4 GB), RAM ±4–5 GB;
+- tips (browser, charger, jangan klik di PowerShell / Esc);
+- peringatan wajib `--config`: tanpa itu titik masuk ke produksi `work/clips/klip5/target/`, dan run produksi berikutnya memakai GPU [1b].
+
+**6. Rencana 1b-2 (sesudah run Rio; BELUM dikerjakan) — DIGANTI 2026-10-28 oleh "Hasil T-608 1b-1 lanjutan" no. 4 (lingkup f0–53):**
+1. **Verifikasi isolate (CPU):**
+   - `isolate/manifest.json` (kunci = titik + sidik frame scratch, model / revision, `run`: waktu, VRAM, RAM);
+   - `frames.jsonl`: status per frame — target / kosong di f0–f62, `tanpa_prompt` f63–f132;
+   - luas + skor objek per frame, PNG 63;
+   - `isolate --dry-run` ulang → up-to-date.
+2. **[3]–[6] di scratch oleh Claude Code (CPU):** `stabilize` / `vectorize` / `stylize` / `export` `samples\klip5.mp4 --config` scratch.
+   - [2] / [2c] tidak dijalankan (salinan valid, identitas sama).
+   - [3] memakai masker (key `isolate` di manifest [3]) → `work/t608_scratch/iso/out/klip5.mp4`.
+3. **Metrik deskriptif** (bukan kriteria), SEBELUM produksi vs SESUDAH scratch, f0–f62:
+   - luas masker / area aktif, jumlah komponen masker;
+   - strok siluet per frame, komponen derau (Q2), panjang strok;
+   - frame tanpa target.
+4. **Bahan** (`work/t608/nilai_1b/`):
+   - (i) pratinjau masker: FOTO + masker berwarna transparan + garis tepi, f0–f91 (f63+ ditandai "tanpa klik"), normal + 0,5×;
+   - (ii) berdampingan FOTO | SEBELUM (`out/klip5.mp4` produksi) | SESUDAH (scratch), f0–f91, normal + 0,5×, nomor frame + detik.
+5. **PANDUAN + PENILAIAN:**
+   - kriteria no. 4: per adegan "masker mengikuti orang utama?" + detik / frame yang salah → hitung frame benar dari 63;
+   - kriteria no. 7: nilai 1–5 klip5 f0–f91, kerusakan bertanda (0,00–2,58 D) berkurang nyata ya / tidak, kerusakan baru ya / tidak + detik.
+6. **Aturan hasil:**
+   - < 57 / 63 → keputusan Rio no. 3 (cadangan R1: keputusan + izin unduh terpisah);
+   - lolos no. 4 tetapi tidak no. 7 → ditutup sesuai no. 7 (tanpa menyetel ulang).
+   - "Klip lain byte-identik" dibuktikan F1. Pemindahan ke produksi = Tahap 4.
+
+**7. F1:** `f1_sebelum_iso` (sebelum langkah 1b-1 mana pun, sesudah keputusan dicatat) = `f1_sesudah_iso` (jeda sesi) =
+`f1_sesudah_iso1b1` (akhir 1b-1): **10 719 / 10 719 berkas identik** (`work/clips/*` + `work/crop/*` + `out/`; 0 hilang / berubah /
+tambahan). Produksi tidak tersentuh oleh salin / pick dry-run / isolate dry-run. `scripts/t608_hash.py` kini menerima label pembanding
+kedua (`sesudah_iso1b1 sebelum_iso`), supaya snapshot lama tidak ditimpa.
+
+**Tanda / pertanyaan:**
+1. **Komentar umum Rio "frame 54-132 tidak dibutuhkan"** (lihat penilaian di atas). Bila benar:
+   - klik f60–f62 tidak perlu;
+   - lingkup kriteria no. 7 (f0–f91) dan frame kriteria no. 4 (f0–f62) mungkin ingin diubah ke f0–f53.
+
+   Mengubah kriteria yang sudah dikunci = keputusan Rio, dan harus SEBELUM hasil. Panduan tetap memakai 6 frame sesuai (c).
+2. Adegan f60 / f61 / f62 hanya 1 frame: masker di sana bergantung penuh pada klik frame itu (tanpa memori dari frame lain).
+3. `kilp5_new.mp4` tidak disentuh.
+
+### Keputusan lingkup T-608 (2026-10-28)
+
+Jawaban Rio atas laporan 1b-1 bagian 8. Dicatat SEBELUM ada hasil isolate: Rio belum mengklik, dan `work/t608_scratch/iso/.../target/`
+belum ada. Dibaca ulang sebelum mencatat: `T608-prompt.md`, semua entri T-608 di atas.
+
+1. **Benar: frame 54–132 tidak dibutuhkan.** Lingkup T-608 = **klip5 f0–53 (detik 0,00–2,21)**. Ini menjawab komentar umum Rio di
+   "Penilaian Rio T-608 Tahap 1" dan menggantikan lingkup f0–f91 (keputusan T-608 no. 5).
+2. **Kriteria diubah SEBELUM ada hasil:**
+   - **no. 4 (antara):** masker mengikuti orang utama di **≥ 49 / 54 frame (f0–53)**;
+   - **no. 7 (akhir):** klip5 **f0–53** dinilai **≥ 4** DAN kerusakan bertanda Rio di rentang ini berkurang nyata DAN tanpa kerusakan baru
+     DAN klip lain byte-identik. Tetap: tidak lolos → ditutup sebagai batas yang diketahui, tanpa menyetel ulang sesudah melihat hasil.
+3. **Klik cukup f0, f22, f40** (f60–62 tidak diklik). Masker f54+ tidak dinilai dan tidak dihitung.
+4. **Trim produksi** (`--end 2.25` → f0–53) diputuskan di Tahap 4, bukan sekarang.
+5. **Backlog docs/05:** pesan error `isolate` tanpa `--yes` menyarankan `run … --yes`, padahal `run` menjalankan ingest + semua stage →
+   perbaiki pesannya kelak.
+
+**Akibat (fakta dari daftar adegan 1b-1, bukan keputusan baru):**
+- Adegan berklik = f0–21 dan f22–59. SAM tetap menghitung seluruh adegan f22–59 (60 frame SAM), jadi masker f54–59 ADA tetapi tidak
+  dinilai / dihitung (no. 3).
+- Kerusakan bertanda Rio (0,00–2,58 D) beririsan dengan lingkup baru pada 0,00–2,21.
+
+### Hasil T-608 1b-1 lanjutan (2026-10-28) — panduan 3 frame + rencana 1b-2 diperbarui; BERHENTI menunggu klik + run GPU Rio
+
+Alat: `scripts/t608_iso.py` diperluas (`adegan_lingkup`, `config|siapkan <set>`, `uji lingkup`, `cek_pick lingkup`). Keluaran baru
+`work/t608/iso_{adegan_lingkup,config_iso_iso_uji,salinan_iso_uji,uji_lingkup,cek_pick_lingkup}.json`. Keluaran rencana 6 klik
+(`iso_adegan.json`, `iso_uji.json`, `iso_cek_pick.json`) disimpan sebagai riwayat, tidak dipakai lagi. CPU saja (`CUDA_VISIBLE_DEVICES=-1`);
+tanpa GPU / unduhan / commit; `src/` / `configs/` / `tests/` tidak berubah.
+
+**1. Adegan dalam lingkup** (`isolate.detect_scenes`, `cut_diff` 0,06; klik = keputusan Rio, BUKAN dihitung ulang):
+
+| adegan | panjang | klik | catatan |
+|---|---|---|---|
+| f0–f21 | 22 | f0 | — |
+| f22–f59 | 38 | f22, f40 | melewati f53: masker f54–59 dihitung SAM tetapi tidak dinilai |
+
+- Tidak ada adegan dalam lingkup yang tanpa klik, dan tidak ada klik di luar lingkup.
+- Frame SAM = 60 (6 di luar lingkup) ≈ 55 s.
+- **Frame dinilai no. 4 = 54 (f0–53), ambang 49.**
+- Catatan: aturan "frame tengah" 1b-1 untuk f22–53 akan memberi f37. Klik f40 tetap dipakai, karena itu keputusan Rio no. 3.
+
+**2. Cek CPU:**
+- **Config:** `iso` dan `iso_uji` (dibuat ulang) = `default.yaml` kecuali `paths.work_dir` / `paths.out_dir` (79 field dibandingkan
+  sesudah load).
+- **Uji titik SINTETIS:** salinan uji `work/t608_scratch/iso_uji/` dibuat ulang (141 berkas, sha256 = produksi, 0 hard link), lalu DIHAPUS
+  sesudah uji.
+  - `isolate --dry-run` → rc 0: `berklik f0–f21, f22–f59`; 2 job (klik f0; klik f22, f40; keduanya tanpa mundur);
+    `tanpa_prompt: 73 frame (f60–f132)`; 60 frame SAM ≈ 55 s; catatan "adegan f60 … tanpa klik" (sesuai keputusan).
+  - `isolate` tanpa `--yes` → rc 1 "butuh GPU … Tidak ada yang dihitung / dihapus"; `isolate/`, `.partial/`, `.old/` tidak dibuat.
+- **3 perintah pick Rio persis** (`--frame 0 / 22 / 40 --dry-run --config work\t608_scratch\iso\config.yaml`): rc 0, tanpa ingest, tanpa
+  `points.json`, skala 1,0. Kanvas dry-run (3 PNG) dihapus bersama `target/`.
+- `isolate --dry-run` scratch iso → rc 0 "dilewati". `target/` scratch iso belum ada (siap untuk Rio).
+
+**3. Panduan** `work/t608/nilai_1b/PANDUAN_PICK.md` ditulis ulang untuk 3 frame. Peringatan `--config` scratch + larangan `run` / `batch`
+ada di bagian PALING atas. "Yang harus terlihat" di dry-run: 2 job, 73 `tanpa_prompt`, 60 frame SAM. Baris GPU yang diharapkan:
+`2 job, 60 frame SAM, 73 frame tanpa_prompt`.
+
+**4. Rencana 1b-2 (diperbarui; menggantikan rencana no. 6 di "Hasil T-608 Tahap 1b-1"):** dikerjakan sesudah Rio mengabari "isolate
+selesai" + baris terakhir PowerShell, lalu BERHENTI untuk penilaian Rio.
+1. **Verifikasi isolate (CPU):**
+   - `isolate/manifest.json`: kunci (titik + sidik frame scratch), model / revision, `run` (waktu, VRAM bebas / reserved, RAM);
+   - `frames.jsonl`: status per frame — f0–53 `target` / `kosong` (dinilai); f54–59 dihitung, tidak dinilai; f60–132 `tanpa_prompt`;
+   - 60 PNG label; luas + skor objek per frame;
+   - jumlah klik kiri / kanan / kotak per frame dari `points.json` (untuk laporan);
+   - `isolate --dry-run` ulang → up-to-date.
+2. **[3]–[6] di scratch oleh Claude Code (CPU):** `stabilize` / `vectorize` / `stylize` / `export samples\klip5.mp4 --config` scratch.
+   - [2] / [2c] tidak dijalankan (salinan valid, identitas sama).
+   - [3] memakai masker (key `isolate` di manifest [3]).
+   - Diproses SELURUH 133 frame, supaya ambang [4] per klip setara dengan SEBELUM (`out/klip5.mp4` produksi, 133 frame). Bahan dan metrik
+     hanya f0–53. Trim produksi (Tahap 4) akan mengubah ambang [4] per klip sedikit; ini dicatat.
+3. **Metrik deskriptif, HANYA f0–53** (bukan kriteria):
+   - luas masker / area aktif, jumlah komponen masker, skor objek SAM, frame `kosong`;
+   - SEBELUM vs SESUDAH: strok siluet per frame, komponen derau (Q2: < 5% tanpa wajah), panjang strok, porsi panjang strok di dalam vs di
+     luar masker (dilebarkan `dilate_px`).
+4. **Bahan, HANYA f0–53** (`work/t608/nilai_1b/`; nomor frame + detik besar; batas adegan f22 ditandai "adegan baru (cut palsu)"):
+   - (i) pratinjau masker di atas FOTO (masker berwarna transparan + garis tepi), normal + 0,5×;
+   - (ii) FOTO | SEBELUM (produksi) | SESUDAH (scratch), normal + 0,5×.
+5. **PANDUAN + PENILAIAN** untuk kriteria baru:
+   - **no. 4:** frame / detik saat masker TIDAK mengikuti orang utama (rentang) → frame benar dihitung dari 54; lolos **≥ 49**;
+   - **no. 7:** nilai 1–5 klip5 f0–53; kerusakan bertanda (0,00–2,58 D, di lingkup 0,00–2,21) berkurang nyata ya / tidak; kerusakan baru
+     ya / tidak + detik.
+   - Rio diminta memperhatikan khusus **f22** (cut palsu: adegan dipotong di sana, jadi masker bisa melompat di f21 → f22) dan **area pagar
+     kaca**.
+6. **Aturan hasil (dikunci):**
+   - no. 4 < 49 / 54 → keputusan Rio no. 3 (cadangan R1; butuh keputusan + izin unduh terpisah);
+   - no. 4 lolos tetapi no. 7 tidak → T-608 ditutup sesuai no. 7, tanpa menyetel ulang;
+   - "klip lain byte-identik" dibuktikan F1. Pemindahan ke produksi (titik ke `work/clips/klip5/target/` + trim `--end 2.25`) = Tahap 4.
+
+**5. F1:** `f1_sebelum_lingkup` (sesudah keputusan dicatat, sebelum langkah lain) = `f1_sesudah_lingkup` (akhir): **10 719 / 10 719
+berkas identik** (0 hilang / berubah / tambahan). Snapshot lama tidak ditimpa.
+
+### Hasil T-608 1b-2 langkah 1 (2026-10-28) — isolate KOSONG 60 / 60; diagnosis CPU: klik kanan berlebih; BERHENTI menunggu keputusan Rio
+
+**Run GPU Rio** (2026-10-28 07:04–07:05 UTC; Rio: "isolate selesai" + log PowerShell):
+- `isolate samples\klip5.mp4 --yes --config work\t608_scratch\iso\config.yaml`: 2 job, 60 frame SAM, 73 `tanpa_prompt`, rc 0.
+- Waktu: wall 60,1 s; p50 0,666 s / frame (frame pertama 9,57 s); muat model 0,71 s.
+- VRAM bebas sebelum muat 3313,7 MiB; reserved maks 856 MiB; allocated 562,1 MiB. RAM puncak proses 3536,8 MiB. Frame NaN 0.
+- **Hasil: `target` 0, `kosong` 60 (f0–f59), `tanpa_prompt` 73 (f60–f132).** Luas 0 px di SEMUA frame, termasuk ketiga frame klik.
+  Skor objek f0 −3,911 (klik), f22 −0,908 (klik), f40 −0,637 (klik); rentang f0–f59 −3,911 … −0,567.
+
+**Verifikasi (CPU):**
+- `isolate/manifest.json` kunci `7474ea156ed2`; 60 PNG label; `isolate --dry-run` ulang = up-to-date.
+- Titik Rio (`target/points.json` scratch), satu target per frame, semuanya dengan kotak:
+
+  | frame | klik kiri | klik kanan | kotak |
+  |---|---|---|---|
+  | f0 | 14 | 67 | [122, 58, 516, 508] |
+  | f22 | 20 | 47 | [110, 91, 554, 486] |
+  | f40 | 19 | 47 | [166, 101, 586, 489] |
+
+**Pembanding T-605** (`scripts/t605_data.json`, klip5 sebelum crop): f0 dengan 11 kiri / 30 kanan + kotak → skor **+3,247**, masker
+122 145 px. Masker baru hilang di f3 (skor −0,003). Kegagalan sekarang berbeda: masker sudah kosong DI FRAME KLIK itu sendiri.
+
+**Diagnosis CPU** (`scripts/t608_diag.py prompt` → `work/t608/iso_diag_prompt.json`):
+- Model + config sama, `device="cpu"`, sesi 1 frame per frame klik. Tidak ada pelacakan, masker tidak disimpan, scratch / produksi tidak
+  ditulis.
+- Varian `rio` mereplikasi skor GPU PERSIS (−3,911 / −0,908 / −0,637).
+
+| varian (kiri / kanan / kotak) | f0 skor; luas px (porsi frame) | f22 | f40 |
+|---|---|---|---|
+| `rio` (semua + kotak) | −3,911; 0 | −0,908; 0 | −0,637; 0 |
+| `pos_neg_semua` (semua, tanpa kotak) | −4,354; 0 | −1,798; 0 | −1,727; 0 |
+| `pos_kotak_neg30` (30 kanan) | +2,701; 31 708 (0,066) | +4,163; 74 701 (0,155) | +4,319; 67 982 (0,141) |
+| `pos_kotak_neg10` (10 kanan) | +17,425; 89 447 (0,186) | +16,844; 86 778 (0,180) | +16,873; 87 528 (0,182) |
+| `pos_kotak` (0 kanan) | +23,043; 89 776 (0,187) | +22,601; 87 622 (0,182) | +22,312; 86 286 (0,179) |
+| `pos` (tanpa kotak) | +22,322; 87 336 (0,182) | +22,365; 87 324 (0,182) | +22,082; 85 786 (0,178) |
+| `kotak` saja | +18,114; 89 968 (0,187) | +18,348; 80 336 (0,167) | +18,355; 76 394 (0,159) |
+
+- **Kesimpulan:** kepala "ada objek" SAM 2.1 berbalik negatif ketika klik kanan sangat banyak (47–67). Tanpa klik kanan atau dengan 10, skor
+  sangat positif dan maskernya ±18% frame. Jadi kegagalan run ini berasal dari **jumlah klik kanan**, BUKAN dari ketidakmampuan SAM
+  menemukan target di frame klik.
+- **Belum diketahui:** apakah masker varian itu mengikuti orang utama atau ikut memuat orang sebelah (tidak dilihat; angka luas saja).
+  Juga belum diketahui apakah pelacakan bertahan di f1–21 / f23–59; di T-605 skor turun di bawah 0 sejak f3.
+- **Ikut menyebabkan:** `PANDUAN_PICK.md` menulis "Klik KANAN BANYAK (10–30)" dan "lebih banyak klik kanan lebih baik". Data ini
+  menunjukkan 30 sudah melemahkan dan 47–67 mematikan masker.
+
+**Status kriteria no. 4:** run ini = **0 / 54** (masker kosong di semua frame dinilai) → menurut aturan hasil = gagal.
+- Karena penyebabnya terbukti prosedur klik, keputusan apakah run ini dihitung sebagai hasil akhir no. 4 atau diulang dengan klik baru = keputusan Rio.
+- Mengulang dengan klik kanan sedikit tidak mengubah kriteria, tetapi tetap merupakan percobaan kedua sesudah melihat hasil.
+
+**Tidak dikerjakan (penyimpangan dari rencana 1b-2):** langkah 2–5 ([3]–[6], metrik, bahan, PANDUAN / PENILAIAN). Alasannya: masker
+kosong di semua frame, dan [3] tidak menggambar frame `kosong` → panel SESUDAH f0–53 akan kosong dan no. 4 sudah pasti 0 / 54 tanpa
+penilaian visual. Diagnosis CPU di atas BUKAN bagian rencana; ditambahkan untuk membedakan "SAM gagal" dari "prompt gagal".
+
+**F1:** `f1_sebelum_iso2` = `f1_sesudah_iso2`: 10 719 / 10 719 berkas identik. Produksi tidak tersentuh oleh run Rio (scratch) maupun oleh
+diagnosis.
+
+### Keputusan T-608 1b-2: percobaan kedua isolate (2026-10-28)
+
+Rio memilih opsi A. Dicatat SEBELUM langkah lain (sebelum arsip titik lama, panduan baru, dan klik baru).
+
+1. **Run pertama gagal karena kesalahan panduan, bukan karena metode.** Klik kanan 47–67 per frame membuat skor objek negatif. Panduan
+   (`PANDUAN_PICK.md` + chat) menyarankan "klik kanan banyak"; ini kesalahan panduan, bukan kesalahan Rio.
+2. **Percobaan kedua = percobaan TERAKHIR untuk kriteria no. 4.** Kriteria no. 4 (≥ 49 / 54, f0–53) dan no. 7 (f0–53 ≥ 4 dst.) tidak
+   berubah. Tidak ada percobaan ketiga. Bila gagal → keputusan R1 atau tutup T-608.
+3. **Aturan klik baru** (per frame klik f0, f22, f40):
+   - satu kotak di sekitar orang utama;
+   - klik kiri 4–8 (jaket, kepala, kedua tangan);
+   - klik kanan **MAKSIMAL 10**, hanya di bagian orang lain yang menempel dengan orang utama.
+4. **Sebelum GPU: pratinjau masker di CPU** untuk frame klik (cara `t608_diag`), supaya Rio bisa memperbaiki klik sebelum run.
+
+**Alur:**
+- (a) arsip `points.json` lama → `work/t608/arsip_iso1/` (cek sha256), lalu hapus dari `target/` scratch; `isolate/` scratch dihapus;
+- (b) `PANDUAN_PICK.md` diperbarui;
+- (c) BERHENTI sampai Rio mengetik "klik selesai";
+- (d) hitung klik per frame (kanan > 10 → peringatkan, jangan lanjut); pratinjau CPU f0 / f22 / f40 (FOTO + masker transparan + titik) →
+  `work/t608/nilai_1b/pratinjau_klik/`; laporkan skor objek + porsi masker;
+- (e) "pratinjau OK" → lanjut; "ulang frame N" → klik ulang frame itu, ulangi (d);
+- (f) Rio menjalankan isolate GPU → "isolate selesai" → langkah 1–5 rencana 1b-2 → BERHENTI untuk penilaian;
+- (g) F1 baru di setiap titik berhenti.
+
+**Pelaksanaan (a)–(b), 2026-10-28** (BERHENTI menunggu "klik selesai"):
+- **(a) Arsip** (`scripts/t608_iso.py arsip iso1` → `work/t608/arsip_iso1/arsip.json`):
+  - `target/` (`points.json` 25 244 B sha256 `87f2d78d…6cd6`, `points.prev.json`) + `isolate/` (manifest, `frames.jsonl`, 60 PNG label)
+    → 64 berkas, 178 829 B, sha256 salinan = sumber;
+  - baru kemudian `target/` + `isolate/` scratch dihapus; `isolate --dry-run` scratch = "dilewati".
+- **Alat pratinjau** (`scripts/t608_diag.py pratinjau`):
+  - hitung klik per frame; klik kanan > 10 → PERINGATAN + berhenti tanpa render (rc 1); klik kiri di luar 4–8 / target ≠ 1 / kotak ≠ 1 /
+    frame ≠ {0, 22, 40} → peringatan saja;
+  - sesi SAM CPU 1 frame dengan klik apa adanya → `klik_f%05d.png` (bar teks + FOTO + masker biru transparan + garis tepi + kotak kuning +
+    titik hijau / merah) + `pratinjau.json` (skor objek, luas, porsi frame, jumlah komponen 8-arah, porsi komponen terbesar).
+  - **Diuji** dengan titik arsip:
+    - apa adanya → berhenti (67 / 47 / 47 kanan);
+    - `--uji-buang-kanan` (hanya uji alat) → skor +23,04 / +22,60 / +22,31 (= diagnosis `pos_kotak`), PNG 720 × 712, komponen 25 / 66 / 68
+      (terbesar 94,5 / 94,1 / 97,0% masker).
+
+    Keluaran uji di scratch, lalu dihapus. PNG tidak dibuka.
+- **(b) `PANDUAN_PICK.md`** ditulis ulang:
+  - bagian paling atas: `--config` scratch + "klik kanan MAKSIMAL 10" + larangan `run` / `batch` + hanya f0 / f22 / f40;
+  - tabel aturan (1 kotak; kiri 4–8 di jaket / kepala / kedua tangan; kanan 0–10 hanya di bagian orang lain yang menempel);
+  - alur: klik → "klik selesai" → pratinjau CPU → "pratinjau OK" / "ulang frame N" → dry-run → GPU → "isolate selesai";
+  - kalimat "klik kanan banyak" dan "lebih banyak lebih baik" dihapus.
+
+**(d) "klik selesai" #1, 2026-10-28** (`t608_diag.py pratinjau` → rc 1, BERHENTI tanpa render; tidak ada GPU):
+
+| frame | kiri | kanan | kotak | disimpan (UTC) |
+|---|---|---|---|---|
+| f0 | 27 | **40** | 1 | 07:24:14 |
+| f22 | 34 | **40** | 1 | 07:25:44 |
+| f40 | 38 | **46** | 1 | 07:27:05 |
+
+- Ketiga frame melanggar aturan no. 3: kanan > 10 dan kiri > 8.
+- Titik ini baru, bukan sisa run 1: 0 / 0 / 1 titik sama dengan arsip.
+- Rio diminta klik ulang ketiga frame (R untuk mengosongkan). Belum dihitung sebagai percobaan isolate, karena GPU belum dijalankan.
+
+**(d) "klik selesai" #2, 2026-10-28** (`t608_diag.py pratinjau` → rc 0; `points.json` sha256 `63c3ac7b…`; 0 peringatan):
+
+| frame | kiri / kanan / kotak | skor objek | masker px (porsi frame) | komponen 8-arah (terbesar) | PNG |
+|---|---|---|---|---|---|
+| f0 | 8 / 10 / 1 | +18,397 | 84 783 (17,6%) | 35 (97,9%) | `klik_f00000.png` |
+| f22 | 8 / 10 / 1 | +18,169 | 79 520 (16,5%) | 13 (99,9%) | `klik_f00022.png` |
+| f40 | 8 / 10 / 1 | +17,588 | 77 866 (16,2%) | 28 (99,7%) | `klik_f00040.png` |
+
+- PNG 720 × 712 di `work/t608/nilai_1b/pratinjau_klik/` (+ `pratinjau.json`); tidak dibuka Claude Code.
+- Aturan no. 3 terpenuhi di ketiga frame.
+- Angka saja tidak menunjukkan apakah masker = orang utama saja; itu dinilai Rio dari PNG. BERHENTI menunggu "pratinjau OK" / "ulang frame N".
+
+**(e) Jawaban Rio atas pratinjau #2 (2026-10-28):** "ulang frame 40" (tanpa alasan tertulis). f0 dan f22 tidak disebut → tetap. Rio
+mengklik ulang f40 lalu mengetik "klik selesai" → (d) diulang untuk ketiga frame (pratinjau lama ditimpa; angkanya tercatat di tabel di
+atas).
+
+**(d) "klik selesai" #3, 2026-10-28** (`points.json` sha256 `9380ba65…`; rc 0; 0 peringatan):
+- Hanya f40 berubah (disimpan 07:44:43 UTC). Klik f0 / f22 identik dengan versi #2 (dibandingkan dengan `points.prev.json`).
+- Angka f0 / f22 sama dengan #2.
+
+| frame | kiri / kanan / kotak | skor objek | masker px (porsi frame) | komponen 8-arah (terbesar) |
+|---|---|---|---|---|
+| f0 | 8 / 10 / 1 | +18,397 | 84 783 (17,6%) | 35 (97,9%) |
+| f22 | 8 / 10 / 1 | +18,169 | 79 520 (16,5%) | 13 (99,9%) |
+| f40 (baru) | 8 / 10 / 1 | +17,079 | 78 587 (16,3%) | 21 (99,6%) |
+
+BERHENTI menunggu "pratinjau OK" / "ulang frame N".
+
+**(e) Jawaban Rio atas pratinjau #3 (2026-10-28):** "pratinjau OK" → titik final = `points.json` sha256 `9380ba65…`. Lanjut ke run GPU Rio.
+
+### Keputusan T-608: lingkup masker badan atas (2026-10-28)
+
+Dicatat SEBELUM run GPU percobaan kedua (sesudah "pratinjau OK").
+
+1. **Masker sengaja hanya badan atas** di f0, f22, f40: kotak berhenti di pagar kaca. Badan di bawah pagar kaca dibuang dengan sengaja.
+2. **Saat menilai kriteria no. 4 dan no. 7:** badan bawah yang tidak tergambar BUKAN kerusakan dan BUKAN masker salah. Masker dinilai
+   **benar** bila menutup badan atas orang utama tanpa orang lain. Ini menegaskan cara menilai; angka kriteria (no. 4 ≥ 49 / 54; no. 7
+   f0–53 ≥ 4 dst.) tidak berubah.
+3. **Risiko yang diamati saat menilai** (dicatat, BUKAN kriteria baru): tepi masker yang acak di titik target menempel orang lain (mis.
+   kanan bawah dekat panel jaket gelap) bisa menjadi garis bergerigi atau berkedip.
+4. **Butir 2 dan 3 dimasukkan ke PANDUAN + PENILAIAN 1b-2** (langkah 5 rencana 1b-2, "Hasil T-608 1b-1 lanjutan" no. 4).
+
+### Hasil T-608 1b-2 percobaan kedua (2026-10-28) — langkah 1–5 selesai; BERHENTI menunggu penilaian Rio
+
+Alat: `scripts/t608_1b2.py` (`metrik`, `bahan`, `cek`) → `work/t608/iso2_{metrik,bahan_buat,bahan}.json`. CPU saja; tanpa commit;
+`src/` / `configs/` / `tests/` tidak berubah. Rio mengetik "isolate selesai" tanpa menempel log PowerShell, jadi angka run dibaca dari
+`isolate/manifest.json` + `frames.jsonl`.
+
+**1. Verifikasi isolate (run GPU Rio 07:58:04–07:58:57 UTC):**
+- Kunci `6c62b6a1…` (`points_sha256` `9380ba65…` = titik "pratinjau OK"); SAM 2.1 tiny `de431c40`, fp32.
+- Waktu: wall 53,8 s, p50 0,662 s / frame (frame pertama 7,94 s).
+- VRAM bebas sebelum muat 3313,7 MiB; reserved maks 856 MiB; RAM puncak proses 3536,9 MiB. NaN 0.
+- **f0–53: `target` 54 / 54** (f54–59 juga `target`; f60–132 `tanpa_prompt`). Skor objek f0–53 **+4,282 … +18,397** (median +6,51), semua
+  positif. Luas 64 686–92 988 px (13,5–19,3% frame).
+- Luas frame klik = pratinjau CPU persis (84 783 / 79 520 / 78 587).
+- 60 PNG label; `isolate --dry-run` ulang = up-to-date.
+- Status `target` hanya berarti masker tidak kosong. Benar / salahnya (kriteria no. 4) = penilaian Rio.
+
+**2. [3]–[6] di scratch** (`stabilize` / `vectorize` / `stylize` / `export samples\klip5.mp4 --config` scratch; rc 0; 35 / 22 / 24 / 10 s; 133
+frame):
+- Manifest [3] memuat key `isolate` (kunci `6c62b6a1…`, `target_mask` default); produksi tanpa key itu.
+- Cut sama dengan produksi.
+- [2] / [2c] tidak dijalankan.
+- `T_high` [4] per klip 0,017522 → 0,017852, `T_low` 0,007997 → 0,007468 (dihitung dari 133 frame dengan masker).
+- Hasil: `work/t608_scratch/iso/out/klip5.mp4` (sha256 `43fcc34c…`; 1080 × 1002, 133 frame).
+
+**3. Metrik f0–53** (deskriptif; definisi di docstring alat; SEBELUM = produksi, SESUDAH = scratch; median per frame):
+
+| | SEBELUM | SESUDAH |
+|---|---|---|
+| strok | 40 | 11 |
+| panjang strok (px) | 8 682,5 | 2 567,9 |
+| porsi panjang strok di luar masker (+4 px) | 0,777 | 0,104 |
+| komponen peta grup ≥ 800 px | 4 | 1 |
+| komponen kecil (< 5% frame, tanpa deteksi wajah) | 2,5 | 0 |
+| foreground peta grup / frame | 0,447 | 0,179 |
+| per tipe per frame (rata-rata): batas grup / oklusi / siluet / lubang | 23,1 / 10,1 / 4,26 / 2,81 | 7,2 / 3,0 / 1,41 / 0,17 |
+
+- Per adegan:
+  - A (f0–21): skor median +5,03; masker 18,6%; strok 44,5 → 11,5; luar masker 0,788 → 0,120;
+  - B (f22–53): skor +7,20; masker 15,4%; strok 35,5 → 11,0; luar masker 0,760 → 0,093.
+- Lompatan luas masker > 15%: hanya f8 (0,161 → 0,186).
+- **Temuan:** SESUDAH punya **2 siluet di SETIAP frame f0–21**: badan atas (±88–90 ribu px, 92–94% di dalam masker) + **satu bentuk kecil
+  terpisah tepat di bawah badan** (bbox ±x 230–420, y 471–535; 4 249–8 457 px; 36–82% di dalam masker). f22–53: 1 siluet.
+  Tidak ditafsirkan; dimasukkan ke "perhatian khusus" panduan.
+
+**4. Bahan** (`work/t608/nilai_1b/`; dicek `ffprobe`, tidak dibuka; h264 yuv420p 24 fps). Bar bawah: frame / detik, adegan, `[FRAME KLIK]`
+f0 / f22 / f40, "ADEGAN BARU (cut palsu)" f22–24.
+- `masker_f0-53.mp4` (948 × 1046, 54 frame) + `_lambat_0.5x.mp4` (108): FOTO + masker biru transparan + garis tepi;
+- `berdampingan_f0-53.mp4` (1878 × 746, 54) + `_lambat_0.5x.mp4` (108): FOTO | SEBELUM (`out/klip5.mp4` `a7f46596…`) | SESUDAH.
+
+**5. Panduan + penilaian:** `PANDUAN_PENILAIAN.md` + `PENILAIAN_1b2.md`.
+- (a) no. 4: rentang frame masker salah → frame benar = 54 − salah, lolos ≥ 49;
+- (b) no. 7: nilai 1–5 (definisi skala di panduan), kerusakan bertanda (0,00–2,21) berkurang nyata ya / tidak, kerusakan baru ya / tidak +
+  frame;
+- (c) risiko butir 3 (bukan kriteria);
+- aturan badan atas (butir 2) di bagian atas;
+- perhatian khusus: f22 (cut palsu), area pagar kaca, bentuk kecil di bawah badan f0–21.
+
+"Klik lain byte-identik" dibuktikan F1.
+
+**F1:** `f1_sebelum_iso7` = `f1_sesudah_iso7`: 10 719 / 10 719 berkas identik. Produksi (termasuk `out/klip5.mp4`) tidak tersentuh.
+Semua titik berhenti sejak keputusan percobaan kedua punya pasangan F1 identik (`iso3` … `iso7`, `iso5b`, `iso6b`).
+
+### Penilaian Rio T-608 1b-2 percobaan kedua (2026-10-28) — verbatim; no. 4 GAGAL (34 / 54), no. 7 GAGAL (nilai 3); BERHENTI menunggu keputusan Rio
+
+Sumber: `work/t608/nilai_1b/PENILAIAN_1b2.md` (2 215 B, sha256 `d19bc4ac…0998b`, diubah 16:29 WIB). Salinan ter-track:
+`scripts/t608_penilaian_1b2.json`. Isian apa adanya (baris jawaban, urutan berkas):
+- **(a) no. 4:**
+  - `frame masker salah: f2-f21 ; komentar: garis badan di Bawah pagar tertutup (seharusnya dilewatkan)`
+  - `frame masker salah: f6-f8 ; komentar: garis badan di Bawah pagar tertutup (seharusnya dilewatkan), lengan kiri tidak tertutup
+    sehingga garis lengan jadi acak acakan`
+  - `frame masker salah: f9-f8 ; komentar: garis badan di Bawah pagar tertutup (seharusnya dilewatkan), lengan kiri tidak tertutup
+    sehingga garis lengan jadi acak acakan`
+  - `frame masker salah: f15-f17 ; komentar: garis kepala tidak menyatu`
+- **(b) no. 7:** `nilai (1-5): 3`. Baris "kerusakan bertanda … berkurang nyata" dihapus Rio. Kerusakan baru:
+  - `kerusakan baru: lubang di kepala ; frame/detik: f10-f14 ; apa yang terlihat: lubang di kepala`
+  - `kerusakan baru: garis kepala tidak menyatu ; frame/detik: f15 ; apa yang terlihat: garis kepala tidak menyatu`
+  - `kerusakan baru: lengan kanan menghilang ; frame/detik: f31-f33 ; apa yang terlihat: gumpalan yang tidak terlihat seperti lengan`
+  - `kerusakan baru: lengan kanan menghilang ; frame/detik: f31-f33 ; apa yang terlihat: bahu kiri dan lengan kiri menyatu`
+  - `kerusakan baru: lengan kanan menghilang ; frame/detik: f41-f43 ; apa yang terlihat: gumpalan yang tidak terlihat seperti lengan`
+  - `kerusakan baru: lengan kanan menghilang ; frame/detik: f41-f43 ; apa yang terlihat: bahu kiri dan lengan kiri menyatu`
+  - `kerusakan baru: lengan kanan punya garis bergerigi ; frame/detik: f45-f46 ; apa yang terlihat: garis bergerigi`
+  - `kerusakan baru: garis pemisah wajah dan rambut berantakan ; frame/detik: f48-f53 ; apa yang terlihat: garis melengkung sepanjang
+    wajah (tidak sesuai dengan hairline video)`
+- **(c) risiko:** `garis bergerigi / berkedip di tepi menempel: gari bergerigi di tangan kiri ; frame/detik: f9-f18 ; tempat: lengan kiri`
+- **Perhatian khusus:** `frame 22 (cut palsu): ...`; `area pagar kaca: ...`; `bentuk kecil di bawah badan : f9(lubang di area kepala)`
+  (label "f0-21" dihapus Rio).
+- **Komentar umum:** `...`
+
+**Tanda (tidak ditafsirkan):**
+1. (a) Rentang `f9-f8` terbalik. Seluruhnya di dalam f2–f21, jadi hitungan no. 4 tidak berubah.
+2. (b) Baris "kerusakan bertanda berkurang nyata" tidak dijawab.
+3. (b) f31–33 dan f41–43 masing-masing dua baris berjudul "lengan kanan menghilang" dengan isi berbeda; isi kedua menyebut "bahu kiri dan
+   lengan kiri".
+4. Temuan metrik "bentuk kecil terpisah di bawah badan" ada di SETIAP frame f0–21; Rio menandai f2–21 (alasan "badan di bawah pagar
+   tertutup").
+
+**Hitungan kriteria:**
+- **No. 4: GAGAL.** Frame salah (gabungan semua baris) = **f2–f21 = 20**. Frame benar = 54 − 20 = **34 / 54** (f0–1 + f22–53); ambang
+  ≥ 49 (kurang 15).
+  - Per adegan: A (f0–21) 2 / 22 benar; B (f22–53) 32 / 32 benar.
+  - Kepekaan: tanpa alasan pagar (hanya "lengan kiri tidak tertutup" + "garis kepala tidak menyatu"), salah = 7 (bila `f9-f8` = f8–9) atau
+    13 (bila = f9–18) → 47 / 41 benar. Hasil tetap GAGAL.
+- **No. 7: GAGAL.**
+  - nilai **3** (ambang ≥ 4);
+  - kerusakan baru **ya**: f10–14, f15, f31–33, f41–43, f45–46, f48–53 (20 frame; adegan A 6, adegan B 14);
+  - kerusakan bertanda berkurang nyata: tidak diisi;
+  - klip lain byte-identik: terbukti F1 (di bawah).
+- Fakta dari isian: di adegan B masker dinilai benar 32 / 32, tetapi kerusakan baru ada di 14 frame adegan B.
+
+**Aturan hasil (dikunci sebelum hasil):** no. 4 < 49 / 54 → keputusan Rio no. 3 (cadangan R1; keputusan + izin unduh terpisah). Percobaan
+kedua = percobaan TERAKHIR untuk no. 4; tidak ada percobaan ketiga → **keputusan Rio: R1 atau tutup T-608** ("Hasil T-608 1b-1 lanjutan"
+no. 6; "Keputusan T-608 1b-2: percobaan kedua isolate" no. 2). Aturan "no. 4 lolos, no. 7 tidak" tidak berlaku. Tahap 4 TIDAK dijalankan;
+titik tetap di scratch, produksi tidak berubah.
+
+**F1:** `f1_sebelum_nilai1b2` (daftar sha256 = `f1_sesudah_iso7`) = `f1_sesudah_nilai1b2`: 10 719 / 10 719 berkas identik (0 hilang /
+berubah / tambahan).
+
+### Keputusan akhir T-608 (2026-10-28)
+
+Keputusan Rio, dicatat SEBELUM langkah lain Tahap 4:
+1. **T-608 ditutup sebagai batas yang diketahui.** Kriteria no. 4 (34 / 54) dan no. 7 (nilai 3, kerusakan baru) gagal. Status **DONE
+   (ditutup tanpa lolos kriteria)**; rekonsiliasi papan per Phase.
+2. **R1 tidak dijalankan dan tidak diunduh.** Alasan:
+   - di adegan B masker benar 32 / 32, tetapi kerusakan baru tetap muncul (berasal dari seg, bukan masker);
+   - Tahap 1 mengukur derau bukan penyebab dominan.
+3. **Produksi klip5 MEMAKAI hasil isolate percobaan kedua**, karena Rio menilai hasil SESUDAH secara keseluruhan lebih baik dari produksi
+   sekarang. Ini **perbaikan parsial, BUKAN lolos kriteria**.
+   - Titik iso2 dipindah ke `work/clips/klip5/target/points.json`, dan klip5 di-trim ke f0–53 (`--end 2.25`).
+   - Trim hanya lewat CLI, jadi docs/05 mencatat bahwa run / batch klip5 berikutnya wajib memakai `--end 2.25`.
+4. **Ketidakkonsistenan isian Rio dicatat apa adanya.** Hasil gagal di semua tafsiran (47 / 41 / 34 < 49), jadi tidak ditanyakan ulang.
+5. **Backlog baru di docs/05:**
+   - pick: klik kanan sangat banyak (47–67 per frame) membuat skor objek SAM negatif dan masker kosong; tambah peringatan di pick bila
+     klik kanan > 10 per frame. Dugaan (belum dibuktikan): kegagalan klip5 di T-605 (30 klik kanan) sebagian karena ini;
+   - kerusakan interior di dalam masker yang benar (klip5 adegan B): lengan menjadi gumpalan, bahu dan lengan menyatu, garis bergerigi,
+     garis rambut–wajah;
+   - bentuk kecil / garis di batas pagar kaca di bawah badan, klip5 f0–21 (penyebab belum diselidiki);
+   - label cut Rio klip5 (10 cut, 9 positif palsu) ditambahkan ke "Peninjauan `cut_diff`";
+   - "Studi peningkatan kualitas video": tambahkan angka Tahap 1 T-608 (derau bukan dominan; R1 / R2 tidak diuji; lisensi bobot R2 tidak
+     dinyatakan).
+
+**Alur:**
+- **Tahap 4a (CPU) → BERHENTI:**
+  - (a) bukti di salinan scratch BARU: ingest klip5 `--end 2.25` = 54 frame dengan sha256 sama dengan frame produksi f0–53 (tidak sama →
+    BERHENTI);
+  - (b) arsip keadaan produksi klip5 yang akan berubah (`out/klip5.mp4`, `out/svg/klip5/`, `meta.json`) → `work/t608/arsip_produksi_sebelum/`
+    + sha256;
+  - (c) titik iso2 → `work/clips/klip5/target/points.json`; sha256 frame di titik cocok dengan frame produksi;
+  - (d) satu perintah GPU untuk Rio (`run samples\klip5.mp4 --end 2.25 --restart-from ingest --yes`, TANPA `--config` scratch) + perkiraan
+    waktu / VRAM / RAM, dicek lewat langkah CPU; BERHENTI sampai "run selesai".
+- **Tahap 4b (sesudah "run selesai"):**
+  - (e) verifikasi output baru (54 frame, masker dipakai, mp4 + svg lengkap; strok setara scratch iso2);
+  - (f) docs/04, docs/05, CLAUDE.md (bila memuat status task);
+  - (g) docs/01: [2b] "DITUNDA" → "SKIP" di semua tempat (docs/04 "Revisi D-010 Q3 + D-002"); laporkan status P-002;
+  - (h) data berharga → `scripts/t608_data.json` SEBELUM penghapusan (ukuran Tahap 1, diagnosis klik, ringkasan manifest iso1 / iso2,
+    titik iso2 + sha256 frame, pin R1 usulan, angka run produksi baru), dicek byte-identik dengan keluaran skrip;
+  - (i) F4: hapus `T608-prompt.md` dan `work/t608_scratch/`; `work/t608/` dipertahankan;
+  - (j) F1: klip lain (test, Klip2, klip3, klip4 + out/ mereka) identik; snapshot baru;
+  - (k) `tests/test_config.py`;
+  - (l) usulan pesan commit, tanpa commit.
+
+**Pelaksanaan Tahap 4a, 2026-10-28** (alat `scripts/t608_tahap4.py` `siapkan` / `ingest` / `banding` / `arsip` →
+`work/t608/t4a_*.json`; CPU, `CUDA_VISIBLE_DEVICES=-1`). BERHENTI di (c): butuh keputusan Rio soal folder klip.
+- **(a) LOLOS.** Scratch BARU `work/t608_scratch/trim4a/`: crop klip5 produksi disalin (7 berkas, sha256 sama, bukan hard link); config =
+  default kecuali `paths` (dicek sesudah load).
+  - `ingest samples\klip5.mp4 --end 2.25` → "frame 0–53 (54 frame) pada 24 fps → folder **`klip5@0-2.25`**".
+  - 54 / 54 frame sama dengan produksi f0–53: sha256 berkas DAN sidik piksel `pick`; tidak ada frame tambahan.
+  - `meta.json` beda hanya di `frame_count` (133 → 54) dan `trim` (baru); `crop`, `fps`, ukuran kerja sama.
+- **(b) Arsip** `work/t608/arsip_produksi_sebelum/` (`arsip.json`): 137 berkas, 40 821 629 B, sha256 salinan = sumber.
+  - Isi: `out/klip5.mp4` (`a7f46596…`), manifest export, `out/svg/klip5/` (134 berkas), `work/clips/klip5/meta.json` (`314535d2…`).
+- **(c) Cek titik iso2** (`points.json` `9380ba65…`; 8 kiri / 10 kanan / 1 kotak di f0, f22, f40):
+  - sidik piksel ketiga frame klik = frame produksi `klip5` = frame scratch `klip5@0-2.25`;
+  - `check_doc_matches_clip` ok untuk keduanya (sumber + ukuran frame sama; `meta_sha256` beda hanya memicu cek per frame).
+  - **Titik BELUM disalin ke produksi.** Temuan: trim CLI menulis ke folder LAIN (T-607: `<nama>@S-E`).
+    `run samples\klip5.mp4 --end 2.25` memakai `work/clips/klip5@0-2.25/` dan menulis `out/klip5@0-2.25.mp4` + `out/svg/klip5@0-2.25/`.
+    Titik di `work/clips/klip5/target/` tidak dibaca run ber-trim, tetapi membuat `run` klip5 TANPA trim menjalankan [1b].
+    `out/klip5.mp4`, `out/svg/klip5/`, dan `work/clips/klip5/meta.json` tidak berubah oleh run ber-trim.
+- **(d) Cek perintah di scratch** (titik disalin ke scratch `klip5@0-2.25/target/`; tanpa GPU):
+  - `isolate … --end 2.25 --dry-run` rc 0: 2 adegan (f0–21 klik f0; f22–53 klik f22, f40), `tanpa_prompt` 0, SAM 54 frame ≈ 51 s;
+  - `run … --end 2.25 --restart-from ingest` (tanpa `--yes`) rc 1: "Tidak ada yang dihapus" (folder baru: 0 berkas); GPU ≈ 15,6 mnt
+    (seg 54 × 16,5 s ≈ 14,8 mnt, depth ≈ 0,2, isolate ≤ 0,6);
+  - `run … --end 2.25` (tanpa `--yes`) rc 1: ingest jalan, berhenti di [1b] "butuh GPU … --yes".
+  - Sesudah ketiganya: `isolate/` tidak ada, titik sama, frame 54 / 54 sama.
+- **F1:** `f1_sebelum_tahap4a` (sesudah keputusan dicatat) = `f1_sesudah_tahap4a`: 10 719 / 10 719 identik. Produksi tidak berubah.
+
 ## Pitfall yang sudah diketahui
 
 ### P-001 — Temporal flicker / boiling 🔴 RISIKO TERTINGGI

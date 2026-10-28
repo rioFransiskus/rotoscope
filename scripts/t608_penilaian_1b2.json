@@ -1,0 +1,65 @@
+{
+ "format": "t608-penilaian/1",
+ "sumber": "work/t608/nilai_1b/PENILAIAN_1b2.md",
+ "sha256": "d19bc4ac86c89b32b6012dec3fdd3038cf951e228df1dc516eaadbcfce70998b",
+ "bytes": 2215,
+ "diubah": "2026-10-28T16:29:40+07:00",
+ "dibaca": "2026-10-28",
+ "catatan": "isian Rio VERBATIM (baris berisi jawaban, urutan berkas); tanpa tafsiran. Baris templat berisi escape editor ('\\_', '\\*') tidak disalin. Baris (b) 'kerusakan bertanda ... berkurang nyata' dihapus Rio (tidak diisi). Perhatian khusus 'frame 22' dan 'area pagar kaca' dibiarkan '...'; label 'bentuk kecil di bawah badan f0-21' diubah Rio menjadi 'bentuk kecil di bawah badan :'.",
+ "a_no4": [
+  "frame masker salah: f2-f21 ; komentar: garis badan di Bawah pagar tertutup (seharusnya dilewatkan)",
+  "frame masker salah: f6-f8 ; komentar: garis badan di Bawah pagar tertutup (seharusnya dilewatkan), lengan kiri tidak tertutup sehingga garis lengan jadi acak acakan",
+  "frame masker salah: f9-f8 ; komentar: garis badan di Bawah pagar tertutup (seharusnya dilewatkan), lengan kiri tidak tertutup sehingga garis lengan jadi acak acakan",
+  "frame masker salah: f15-f17 ; komentar: garis kepala tidak menyatu"
+ ],
+ "b_no7": {
+  "nilai": "nilai (1-5): 3",
+  "kerusakan_bertanda_berkurang": null,
+  "kerusakan_baru": [
+   "kerusakan baru: lubang di kepala ; frame/detik: f10-f14 ; apa yang terlihat: lubang di kepala",
+   "kerusakan baru: garis kepala tidak menyatu ; frame/detik: f15 ; apa yang terlihat: garis kepala tidak menyatu",
+   "kerusakan baru: lengan kanan menghilang ; frame/detik: f31-f33 ; apa yang terlihat: gumpalan yang tidak terlihat seperti lengan",
+   "kerusakan baru: lengan kanan menghilang ; frame/detik: f31-f33 ; apa yang terlihat: bahu kiri dan lengan kiri menyatu",
+   "kerusakan baru: lengan kanan menghilang ; frame/detik: f41-f43 ; apa yang terlihat: gumpalan yang tidak terlihat seperti lengan",
+   "kerusakan baru: lengan kanan menghilang ; frame/detik: f41-f43 ; apa yang terlihat: bahu kiri dan lengan kiri menyatu",
+   "kerusakan baru: lengan kanan punya garis bergerigi ; frame/detik: f45-f46 ; apa yang terlihat: garis bergerigi",
+   "kerusakan baru: garis pemisah wajah dan rambut berantakan ; frame/detik: f48-f53 ; apa yang terlihat: garis melengkung sepanjang wajah (tidak sesuai dengan hairline video)"
+  ]
+ },
+ "c_risiko": "garis bergerigi / berkedip di tepi menempel: gari bergerigi di tangan kiri ; frame/detik: f9-f18 ; tempat: lengan kiri",
+ "perhatian_khusus": [
+  "frame 22 (cut palsu): ...",
+  "area pagar kaca: ...",
+  "bentuk kecil di bawah badan : f9(lubang di area kepala)"
+ ],
+ "komentar_umum": "...",
+ "tanda": [
+  "(a) rentang 'f9-f8' terbalik (akhir < awal) - TIDAK ditafsirkan; seluruhnya di dalam f2-f21, jadi hitungan no. 4 tidak berubah",
+  "(a) baris f6-f8 dan f9-f8 memuat alasan f2-f21 ditambah 'lengan kiri tidak tertutup'",
+  "(b) baris 'kerusakan bertanda ... berkurang nyata' dihapus (tidak dijawab)",
+  "(b) f31-f33 dan f41-f43 masing-masing dua baris dengan judul sama ('lengan kanan menghilang') dan isi berbeda; isi kedua menyebut 'bahu kiri dan lengan kiri'",
+  "(c) 'gari bergerigi' ditulis apa adanya"
+ ],
+ "hitung": {
+  "no4": {
+   "frame_salah": "f2-f21 (gabungan semua baris (a))",
+   "n_salah": 20,
+   "n_benar": 34,
+   "frame_benar": "f0-f1, f22-f53",
+   "per_adegan": {"A_f0_21": "2 / 22 benar", "B_f22_53": "32 / 32 benar"},
+   "ambang": 49,
+   "lolos": false,
+   "kepekaan": "tanpa alasan pagar (hanya 'lengan kiri tidak tertutup' + 'garis kepala tidak menyatu'): f6-f9 + f15-f17 = 7 salah -> 47 benar (bila 'f9-f8' = f8-f9) atau f6-f18 = 13 salah -> 41 benar (bila = f9-f18); keduanya < 49"
+  },
+  "no7": {
+   "nilai": 3,
+   "nilai_ambang": 4,
+   "nilai_lolos": false,
+   "kerusakan_bertanda_berkurang": "tidak diisi",
+   "kerusakan_baru": "ya: f10-f14, f15, f31-f33, f41-f43, f45-f46, f48-f53 (20 frame: adegan A f10-f15 6, adegan B 14)",
+   "klip_lain_byte_identik": "F1 identik (sebelum_nilai1b2 = sesudah_iso7; sesudah_nilai1b2 dicatat di docs/04)",
+   "lolos": false
+  },
+  "aturan_hasil": "no. 4 < 49 / 54 -> keputusan Rio no. 3 (cadangan R1; keputusan + izin unduh terpisah); percobaan kedua = TERAKHIR, tanpa percobaan ketiga -> keputusan R1 atau tutup T-608 (docs/04 'Hasil T-608 1b-1 lanjutan' no. 6, 'Keputusan T-608 1b-2: percobaan kedua isolate' no. 2)"
+ }
+}
