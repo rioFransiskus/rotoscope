@@ -36,6 +36,15 @@ def _no_real_display(monkeypatch):
     monkeypatch.setattr(pick, "probe_display", lambda: DISPLAY)
 
 
+@pytest.fixture(autouse=True)
+def _no_message_config():
+    """--config untuk perintah siap tempel = state global stage_common; tiap test mulai tanpa sisa test lain."""
+    from rotoscope import stage_common
+    stage_common.set_message_config(None)
+    yield
+    stage_common.set_message_config(None)
+
+
 # ── Klip sintetis ──────────────────────────────────
 def frame_rgb(i: int, w: int = W, h: int = H) -> np.ndarray:
     y, x = np.indices((h, w))
@@ -1019,3 +1028,253 @@ def test_empty_targets_are_not_saved(tmp_path):
     st.set_box(1, 1, 20, 20)
     st.undo()
     assert 2 in st.targets and [t["id"] for t in pick.targets_json(st)] == [1]
+
+
+# ── (30)–(38) T-609: klik kanan berlebih (YAML isolate.neg_points_warn_max) + pratinjau masker ──
+def neg_clicks(n: int, y: int = 30) -> list:
+    """n klik kanan di posisi berbeda (tampilan = frame, s = 1)."""
+    return [step for k in range(n) for step in rclick(2 + (k % 30) * 2, y + k // 30)]
+
+
+def lines_of(st: pick.PickState, neg_max: int = 10, **kw) -> list[tuple[str, tuple, float]]:
+    info = pick.PanelInfo("k", 0, 0, 4, {}, [], neg_max)
+    return [ln for ln in pick.panel_lines(st, info, **kw) if ln]
+
+
+def test_t609_over_negative_per_target_and_strict_threshold():
+    st = pick.PickState(small_view())
+    st.add_point(1, 1, 1)
+    for k in range(10):
+        st.add_point(2 + k, 20, 0)
+    assert st.over_negative(10) == [] and st.over_negative(9) == [(1, 10)]
+    st.add_point(30, 20, 0)
+    assert st.over_negative(10) == [(1, 11)] and st.over_negative(11) == []
+    two = pick.PickState(small_view())                                    # 2 target × 6 = 12 per FRAME, 6 per target
+    for tid in (1, 2):
+        two.set_box(1, 1, 30, 30)
+        for k in range(6):
+            two.add_point(2 + k, 10 + tid, 0)
+        two.next_target()
+    assert two.over_negative(10) == [] and two.over_negative(5) == [(1, 6), (2, 6)]
+    doc = {"frames": [{"frame_index": 4, "targets": [{"id": 2, "points": [{"label": 0}] * 12}]},
+                      {"frame_index": 7, "targets": [{"id": 1, "points": [{"label": 1}] * 30 + [{"label": 0}] * 3}]}]}
+    assert pick.doc_over_negative(doc, 10) == [(4, 2, 12)] and pick.doc_over_negative(None, 0) == []
+
+
+def test_t609_panel_mark_and_yellow_block_only_above_threshold():
+    st = pick.PickState(small_view())
+    st.add_point(1, 1, 1)
+    for k in range(10):
+        st.add_point(2 + k, 20, 0)
+    assert not any("(>" in t or "lebih dari" in t for t, *_ in lines_of(st))
+    st.add_point(30, 20, 0)
+    lines = lines_of(st)
+    assert any(t.startswith(" 1 hijau: 1 kiri, 11 kanan") and t.endswith("(>10)") for t, *_ in lines)
+    warn = [(t, c) for t, c, _ in lines if "lebih dari 10" in t or "masker kosong" in t]
+    assert warn and all(c == pick.TEXT_YELLOW for _, c in warn)
+    assert not any("(>" in t for t, *_ in lines_of(st, neg_max=11))     # ambang = nilai PanelInfo (YAML), bukan konstanta
+    assert any(t.endswith("(>3)") for t, *_ in lines_of(st, neg_max=3))
+    big = pick.fit_view(720, 1280, 1920, 1020)                             # 6 target × 140 klik kanan + catatan
+    st6 = pick.PickState(big, known_other_ids={1, 2, 3})
+    for k in range(6):
+        st6.set_box(100, 100, 300, 500)
+        for j in range(140):
+            st6.add_point(10 + j, 10 + k, 0)
+        st6.next_target()
+    info = pick.PanelInfo("nama_klip_yang_sangat_panjang_sekali", 120, 0, 181, {1: [0, 64]}, ["catatan panjang " * 8], 10)
+    assert pick.widest_text_px(st6, info) <= pick.PANEL_W - 2 * pick.PANEL_MARGIN
+    assert pick.panel_layout(st6, info)[1] <= big.canvas_h
+
+
+def test_t609_tips_text_new_rule_no_many_right_clicks():
+    st = pick.PickState(small_view())
+    text = " ".join(t for t, *_ in lines_of(st))
+    assert "4-8 klik kiri" in text and "paling banyak 10" in text and "menempel target" in text
+    assert "klik kanan banyak" not in text and "3-5" not in text
+    assert "paling banyak 7" in " ".join(t for t, *_ in lines_of(st, neg_max=7))
+    assert "(paling banyak 7 per target)" in pick.no_negative_warning([1], 7)
+
+
+def test_t609_terminal_warning_after_save_not_blocking(tmp_path, capsys):
+    work, _ = make_clip(tmp_path)
+    rc, _ = run_gui(work, 0, [*click(5, 5), *neg_clicks(11), ("key", ENTER)])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "PERINGATAN: frame 0 target 1: 11 klik kanan (lebih dari 10)" in out and "Tetap disimpan" in out
+    assert "Cek dulu: python -m rotoscope pick v.mp4 --mask-preview" in out
+    t = pick.load_points(points_path(work))["frames"][0]["targets"][0]
+    assert sum(p["label"] == 0 for p in t["points"]) == 11                  # tersimpan apa adanya (tidak diblokir)
+    rc, _ = run_gui(work, 1, [*click(5, 5), *neg_clicks(10), ("key", ENTER)])
+    out = capsys.readouterr().out
+    assert rc == 0 and "frame 1 target 1" not in out
+    assert "frame lain dengan klik kanan > 10: f0 (target 1: 11)" in out and "--frame 0" in out
+    rc = pick.run_pick(work, 2, video="v.mp4", gui=FakeGui([*click(5, 5), *neg_clicks(4), ("key", ENTER)]), display=DISPLAY,
+                       neg_max=3)
+    out = capsys.readouterr().out
+    assert rc == 0 and "frame 2 target 1: 4 klik kanan (lebih dari 3)" in out and "f0 (target 1: 11)" in out
+
+
+def test_t609_loaded_points_over_threshold_marked_at_open(tmp_path):
+    work, _ = make_clip(tmp_path)
+    save_points(work, 3, [(1, 1, 1), *[(2 + k, 20, 0) for k in range(12)]])
+    _, st = session_state(work, 3)
+    assert st.over_negative(10) == [(1, 12)] and any(t.endswith("(>10)") for t, *_ in lines_of(st))
+
+
+def test_t609_save_removes_only_target_pratinjau(tmp_path, capsys):
+    work, _ = make_clip(tmp_path)
+    tgt = work / "target"
+
+    def plant():
+        (tgt / "pratinjau").mkdir(parents=True, exist_ok=True)
+        (tgt / "pratinjau" / "klik_f00000_t1.png").write_bytes(b"lama")
+        (tgt / "pick_dryrun").mkdir(exist_ok=True)
+        (tgt / "pick_dryrun" / "frame_00000.png").write_bytes(b"d")
+        (tgt / "lain.txt").write_text("x")
+        (tgt / "pratinjau.partial").mkdir(exist_ok=True)
+    plant()
+    rc, _ = run_gui(work, 0, [*click(5, 5), ("key", ENTER)])
+    out = capsys.readouterr().out
+    assert rc == 0 and not (tgt / "pratinjau").exists() and "pratinjau masker lama dihapus" in out
+    assert (tgt / "pick_dryrun" / "frame_00000.png").is_file() and (tgt / "lain.txt").is_file()
+    assert (tgt / "pratinjau.partial").is_dir() and points_path(work).is_file()
+    assert "Cek masker di frame klik (CPU, tanpa GPU): python -m rotoscope pick v.mp4 --mask-preview" in out
+    plant()
+    before = points_path(work).read_bytes()
+    assert run_gui(work, 0, [("key", ENTER)])[0] == 0                       # tanpa perubahan: tidak ditulis, tidak dihapus
+    assert run_gui(work, 0, [*click(9, 9), ("key", ESC), ("key", ESC)])[0] == 0          # Esc: tidak disimpan
+    assert pick.run_pick(work, 0, video="v.mp4", dry_run_only=True, gui=NoGui(), display=DISPLAY) == 0
+    assert (tgt / "pratinjau" / "klik_f00000_t1.png").read_bytes() == b"lama" and points_path(work).read_bytes() == before
+    assert "pratinjau masker lama dihapus" not in capsys.readouterr().out
+    rc, _ = run_gui(work, 0, [("key", ord("r")), ("key", ENTER), ("key", ENTER)])        # hapus entri = titik berubah
+    assert rc == 0 and not (tgt / "pratinjau").exists() and pick.load_points(points_path(work))["frames"] == []
+    (tgt / "pratinjau").write_bytes(b"bukan folder")                       # bukan folder → tidak disentuh
+    assert pick.remove_mask_preview(work) is False and (tgt / "pratinjau").is_file()
+
+
+def test_t609_preview_cmd_carries_trim_and_config(tmp_path):
+    work, _ = make_clip(tmp_path)
+    meta = json.loads((work / "meta.json").read_text(encoding="utf-8"))
+    meta["trim"] = {"start_s": 0.0, "end_s": 2.25, "start_frame": 0, "end_frame": 54}
+    (work / "meta.json").write_text(json.dumps(meta), encoding="utf-8")
+    s = pick.open_session(work, 0, "v.mp4")
+    from rotoscope import stage_common
+    stage_common.set_message_config(None)
+    assert s.preview_cmd() == "python -m rotoscope pick v.mp4 --start 0 --end 2.25 --mask-preview"
+    conf = tmp_path / "c.yaml"
+    stage_common.set_message_config(conf)
+    try:
+        assert s.preview_cmd() == f"python -m rotoscope pick v.mp4 --start 0 --end 2.25 --config {conf.resolve()} --mask-preview"
+    finally:
+        stage_common.set_message_config(None)
+
+
+class PopenRec:
+    calls: list = []
+    rc = 0
+
+    def __init__(self, argv, env=None):
+        PopenRec.calls.append((list(argv), dict(env) if env is not None else None))
+
+    def wait(self, timeout=None):
+        return PopenRec.rc
+
+    def poll(self):
+        return PopenRec.rc
+
+
+def test_t609_cli_mask_preview_subprocess_cpu_env(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    calls: list = []
+    monkeypatch.setattr(cli, "CPU_MAINS", {"ingest": fake_ingest(calls)})
+    PopenRec.calls, PopenRec.rc = [], 0
+    monkeypatch.setattr(cli, "_popen", PopenRec)
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0")
+    video = tmp_path / "klip.mp4"
+    video.write_bytes(b"x")
+    assert cli.main(["pick", str(video), "--mask-preview"]) == 1                # belum di-ingest: TIDAK ingest
+    assert calls == [] and "klik target dulu" in capsys.readouterr().err
+    work = tmp_path / "work" / "clips" / "klip"
+    build_clip(work, video)
+    assert cli.main(["pick", str(video), "--mask-preview"]) == 1                # tanpa points.json
+    assert "belum ada titik" in capsys.readouterr().err and PopenRec.calls == []
+    save_points(work, 1, [(1, 1, 1)])
+    assert cli.main(["pick", str(video), "--mask-preview", "--dry-run"]) == 2
+    assert cli.main(["pick", str(video), "--mask-preview", "--frame", "1"]) == 2 and PopenRec.calls == []
+    PopenRec.rc = 7
+    assert cli.main(["pick", str(video), "--mask-preview"]) == 7
+    argv, env = PopenRec.calls[-1]
+    assert argv[1:] == ["-m", "rotoscope.mask_preview", "--work-dir", str(work)] and env["CUDA_VISIBLE_DEVICES"] == "-1"
+    conf = tmp_path / "c.yaml"
+    conf.write_text("isolate:\n  neg_points_warn_max: 3\n", encoding="utf-8")
+    PopenRec.rc = 0
+    assert cli.main(["pick", str(video), "--mask-preview", "--config", str(conf)]) == 0
+    assert PopenRec.calls[-1][0][-2:] == ["--config", str(conf)] and calls == []
+    sub = cli.build_parser()._subparsers._group_actions[0].choices["pick"]                 # noqa: SLF001
+    assert "--mask-preview" in sub.format_help()
+
+
+class CtrlCProc:
+    """Anak pratinjau palsu: wait() tanpa batas → Ctrl+C; wait(timeout) → selesai 130 sendiri (`finishes`) atau TimeoutExpired."""
+    log: list = []
+
+    def __init__(self, argv, env=None, *, finishes=True, boom=False):
+        self.finishes, self.boom, self.returncode = finishes, boom, None
+        CtrlCProc.log.append(("mulai", argv[2]))
+
+    def wait(self, timeout=None):
+        if self.returncode is not None:                                   # sudah dihentikan (terminate)
+            return self.returncode
+        if timeout is None:
+            raise RuntimeError("boom") if self.boom else KeyboardInterrupt
+        if not self.finishes:
+            raise subprocess.TimeoutExpired("anak", timeout)
+        self.returncode = 130
+        return 130
+
+    def poll(self):
+        return self.returncode
+
+    def terminate(self):
+        CtrlCProc.log.append(("terminate",))
+        self.returncode = 1                                               # Windows TerminateProcess → exit 1
+
+
+def test_t609_mask_preview_helper_ctrl_c_one_line(tmp_path, monkeypatch, capsys):
+    """Helper proses anak pratinjau sendiri (keputusan Rio: run_gpu_stage tidak disentuh): Ctrl+C → anak diberi waktu; anak
+    keluar 130 sendiri → induk tidak mencetak apa pun; anak tidak selesai → dihentikan + SATU baris; galat lain → dihentikan."""
+    monkeypatch.setattr(cli, "TERMINATE_TIMEOUT_S", 0.01)
+    CtrlCProc.log = []
+    monkeypatch.setattr(cli, "_popen", lambda argv, env=None: CtrlCProc(argv, env))
+    with pytest.raises(KeyboardInterrupt):
+        cli.run_mask_preview(["--work-dir", "x"])
+    assert CtrlCProc.log == [("mulai", "rotoscope.mask_preview")] and "dihentikan" not in capsys.readouterr().err
+    monkeypatch.setattr(cli, "_popen", lambda argv, env=None: CtrlCProc(argv, env, finishes=False))
+    with pytest.raises(KeyboardInterrupt):
+        cli.run_mask_preview(["--work-dir", "x"])
+    err = capsys.readouterr().err
+    assert CtrlCProc.log[-1] == ("terminate",) and err.count("dihentikan (Ctrl+C) di pratinjau masker") == 1
+    monkeypatch.setattr(cli, "_popen", lambda argv, env=None: CtrlCProc(argv, env, boom=True))
+    with pytest.raises(RuntimeError):
+        cli.run_mask_preview(["--work-dir", "x"])
+    assert CtrlCProc.log[-1] == ("terminate",) and "dihentikan" not in capsys.readouterr().err
+    monkeypatch.chdir(tmp_path)                                             # lewat cli: exit 130, satu baris, tanpa traceback
+    work, video = make_clip(tmp_path)
+    save_points(work, 1, [(1, 1, 1)])
+    monkeypatch.setattr(cli, "_popen", lambda argv, env=None: CtrlCProc(argv, env, finishes=False))
+    assert cli.main(["pick", str(video), "--mask-preview"]) == 130
+    err = capsys.readouterr().err
+    assert err.count("dihentikan") == 1 and "Traceback" not in err and "ERROR" not in err
+
+
+def test_t609_cli_pick_reads_yaml_threshold(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    work, video = make_clip(tmp_path)
+    seen: list = []
+    monkeypatch.setattr(pick, "run_pick", lambda wd, frame, **kw: seen.append((frame, kw)) or 0)
+    assert cli.main(["pick", str(video)]) == 0
+    assert seen[-1][0] == 0 and seen[-1][1]["neg_max"] == 10
+    conf = tmp_path / "c.yaml"
+    conf.write_text("isolate:\n  neg_points_warn_max: 3\n", encoding="utf-8")
+    assert cli.main(["pick", str(video), "--frame", "2", "--config", str(conf)]) == 0
+    assert seen[-1][0] == 2 and seen[-1][1]["neg_max"] == 3

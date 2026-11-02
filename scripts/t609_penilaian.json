@@ -1,0 +1,107 @@
+{
+ "format": "t609-penilaian/1",
+ "sumber": {
+  "path": "work/t609/PANDUAN_UJI.md",
+  "sha256": "ead26208ac8bcf19dc70a13246f41e197e4b4bc9b6f3180ac4258674448baaa8",
+  "bytes": 11450,
+  "blok": "## Template jawaban (salin, isi, kirim)",
+  "baris_isi": [
+   206,
+   233
+  ]
+ },
+ "tanggal_uji": "2026-11-02",
+ "verbatim": [
+  "U1 langkah 1 (pratinjau dibuat, folder pratinjau ada): ya",
+  "U1 langkah 2 (teks saran baru terlihat): ya",
+  "U1 langkah 3 (10 kanan → tanpa tanda): ya",
+  "U1 langkah 4 (11 kanan → (>10) + tulisan kuning): ya",
+  "U1 langkah 5 (U → tanda hilang): ya",
+  "U1 langkah 6 (simpan tidak ditolak + PERINGATAN + \"pratinjau masker lama dihapus\"): ya",
+  "U1 langkah 7 (folder pratinjau hilang, points.json masih ada): ya",
+  "U1 langkah 8 (tanda langsung tampil saat dibuka ulang): ya",
+  "U1 langkah 9 (10 kanan → tanpa PERINGATAN): ya",
+  "U1 teks saran + tulisan kuning mudah dimengerti: ya",
+  "",
+  "U2 klip5 f0  gambar jelas: ya — masker: benar",
+  "U2 klip5 f22 gambar jelas: ya — masker: benar",
+  "U2 klip5 f40 gambar jelas: ya — masker: benar",
+  "U2 klip3 f85 gambar jelas: ya — masker: benar",
+  "U2 contoh SALAH f0 / f22 / f40 terlihat salah: ya",
+  "U2 (pilihan) dua target, gambar per target jelas: ya",
+  "U2 pesan terminal \"Buka setiap PNG dan cek\" mudah dimengerti: ya",
+  "",
+  "U3 langkah 1 (tanpa saran \"run … --yes\"): ya",
+  "U3 langkah 2 (PERINGATAN klik kanan di rencana): ya",
+  "",
+  "",
+  "U4 langkah 2 (satu baris \"dihentikan\", tanpa Traceback / ERROR): ya",
+  "U4 langkah 3 ($LASTEXITCODE = 130): ya",
+  "",
+  "U4 langkah 4 (PNG lama masih ada): ya",
+  "U4 langkah 5 (jalan ulang selesai normal): ya"
+ ],
+ "jawaban": {
+  "U1 langkah 1 (pratinjau dibuat, folder pratinjau ada)": "ya",
+  "U1 langkah 2 (teks saran baru terlihat)": "ya",
+  "U1 langkah 3 (10 kanan → tanpa tanda)": "ya",
+  "U1 langkah 4 (11 kanan → (>10) + tulisan kuning)": "ya",
+  "U1 langkah 5 (U → tanda hilang)": "ya",
+  "U1 langkah 6 (simpan tidak ditolak + PERINGATAN + \"pratinjau masker lama dihapus\")": "ya",
+  "U1 langkah 7 (folder pratinjau hilang, points.json masih ada)": "ya",
+  "U1 langkah 8 (tanda langsung tampil saat dibuka ulang)": "ya",
+  "U1 langkah 9 (10 kanan → tanpa PERINGATAN)": "ya",
+  "U1 teks saran + tulisan kuning mudah dimengerti": "ya",
+  "U2 klip5 f0  gambar jelas": "ya — masker: benar",
+  "U2 klip5 f22 gambar jelas": "ya — masker: benar",
+  "U2 klip5 f40 gambar jelas": "ya — masker: benar",
+  "U2 klip3 f85 gambar jelas": "ya — masker: benar",
+  "U2 contoh SALAH f0 / f22 / f40 terlihat salah": "ya",
+  "U2 (pilihan) dua target, gambar per target jelas": "ya",
+  "U2 pesan terminal \"Buka setiap PNG dan cek\" mudah dimengerti": "ya",
+  "U3 langkah 1 (tanpa saran \"run … --yes\")": "ya",
+  "U3 langkah 2 (PERINGATAN klik kanan di rencana)": "ya",
+  "U4 langkah 2 (satu baris \"dihentikan\", tanpa Traceback / ERROR)": "ya",
+  "U4 langkah 3 ($LASTEXITCODE = 130)": "ya",
+  "U4 langkah 4 (PNG lama masih ada)": "ya",
+  "U4 langkah 5 (jalan ulang selesai normal)": "ya"
+ },
+ "catatan": [
+  "Pesan Rio 2026-11-02: semua lolos.",
+  "Blok 'Contoh isian' di bawah template = contoh asli panduan, BUKAN jawaban Rio (diabaikan).",
+  "Isian U4 'tulis baris yang muncul' dan 'angka' dibiarkan kosong oleh Rio (bagian itu terhapus dari baris); jawaban 'ya' berlaku dan dicatat apa adanya."
+ ],
+ "semua_ya": true,
+ "kriteria": {
+  "K1": {
+   "lolos": true,
+   "bukti": [
+    "test_pick: test_t609_over_negative_per_target_and_strict_threshold, test_t609_panel_mark_and_yellow_block_only_above_threshold, test_t609_terminal_warning_after_save_not_blocking, test_t609_loaded_points_over_threshold_marked_at_open (10 = tanpa tanda / tanpa PERINGATAN; 11 = tanda + blok + PERINGATAN; ambang dari YAML)",
+    "uji Rio U1 langkah 3-9 = ya (scratch work/t609_scratch/pick/)"
+   ]
+  },
+  "K2": {
+   "lolos": true,
+   "bukti": [
+    "aturan keluar no. 3 tidak memicu: median 1,937 s <= 15 s, RAM 1 247,2 MiB <= 4 096 MiB, tanpa CUDA",
+    "satu perintah CPU per klip (pick --mask-preview) -> PNG f0 / f22 / f40 klip5@0-2.25 dan f85 klip3; cuda_initialized false; CUDA_VISIBLE_DEVICES=-1 dipaksa cli + dicek modul",
+    "uji Rio U2: gambar jelas = ya untuk klip5 f0 / f22 / f40 dan klip3 f85; contoh SALAH terlihat salah = ya"
+   ]
+  },
+  "K3": {
+   "lolos": true,
+   "bukti": [
+    "test_isolate::test_44_neg_warning_before_gpu_and_message_without_run (tanpa cli_cmd('run'), tanpa 'rotoscope run', tanpa '(atau'); mutan 'pesan butuh GPU menyarankan lagi run --yes' tertangkap",
+    "uji Rio U3 langkah 1 = ya"
+   ]
+  },
+  "K4": {
+   "lolos": true,
+   "bukti": [
+    "F1: setiap snapshot sesudah = sebelum (11 332 berkas; daftar di t609_data.json f1)",
+    "suite Tahap 4: 38 berkas, 1 751 lolos, 5 skip, 0 gagal",
+    "mutasi: 44 / 44 tertangkap + kontrol lolos (t609_data.json mutasi)"
+   ]
+  }
+ }
+}

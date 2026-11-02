@@ -7033,6 +7033,446 @@ CPU, `CUDA_VISIBLE_DEVICES=-1`, torch tidak diimpor):
   klip3, klip4, klip5 lama, `klip5@0-2.25` + `out/` + `work/crop/`.
 - **(k)** `tests/test_config.py`: 193 lolos, 0 skip, 0 gagal.
 
+### Keputusan T-609 + T-305e SKIP (2026-10-29) — Tahap 1 berjalan
+
+Dicatat SEBELUM kode ditulis (alat F1 `scripts/t609_hash.py` + snapshot `sebelum_tahap1` dijalankan lebih dulu, sesuai urutan prompt).
+**Konteks:**
+- docs/05 Backlog "pick: peringatan bila klik kanan > 10 per frame" dan "Pesan error `isolate` tanpa `--yes` menyarankan `run … --yes`"
+  (keduanya dicatat 2026-10-28, T-608).
+- Dasar data: "Hasil T-608 1b-2 langkah 1" (diagnosis CPU `scripts/t608_diag.py prompt`: kotak + 10 klik kanan → skor objek +16,8 …
+  +17,4; 30 kanan → +2,7 … +4,3; 47–67 kanan → negatif, masker kosong) dan alat pratinjau CPU ("Keputusan T-608 1b-2: percobaan kedua
+  isolate", `scripts/t608_diag.py pratinjau`; dipakai 3× sebelum run GPU percobaan kedua).
+
+**Keputusan Rio (2026-10-29):**
+1. **T-609 dibuka di Phase 7** (docs/05), status `WIP` Tahap 1.
+2. **Lingkup T-609** = tiga bagian:
+   - (a) peringatan klik kanan berlebih di `pick`;
+   - (b) pratinjau masker SAM 2.1 tiny di CPU untuk setiap frame yang diklik;
+   - (c) pesan error `isolate` tanpa `--yes` tidak lagi menyarankan `run … --yes`.
+3. **Aturan keluar bagian (b), dikunci SEBELUM pengukuran:** (b) dibuang dari T-609 bila median waktu CPU per frame klik (tanpa waktu
+   muat model) **> 15 s**, ATAU puncak RAM proses **> 4 GiB**, ATAU pratinjau tidak bisa berjalan tanpa CUDA. Rujukan lama: uji asap
+   CPU T-602 2,06–2,66 s / frame, RAM puncak 1,34 GiB ("Hasil T-602 Tahap 1b-1").
+4. **T-305e → `SKIP`:** tidak ada keluhan terlihat; output akhir 4 klip dinilai A di penutupan T-305 induk ("Hasil penutupan T-305
+   induk"). Dibuka lagi hanya bila klip baru menunjukkan masalah subjek kecil yang terlihat. SKIP tidak dihitung selesai.
+5. **Backlog berikut TIDAK dikerjakan** (peluang berhasil rendah) dan tetap di backlog tanpa perubahan: kerusakan interior dari seg
+   (klip5 adegan B), studi peningkatan kualitas video, peninjauan `cut_diff`.
+6. **Output semua klip** (`work/clips/*`, `work/crop/*`, `out/`) **wajib byte-identik.** Tidak ada perubahan pada stage [2]–[6]; format
+   `points.json` tetap `rotoscope-target-points/1`; algoritma [1b] tidak berubah.
+
+**Lingkup rinci (dari prompt):**
+- (a) ambang awal 10 klik kanan. Dirancang di Tahap 1: hitungan per target per frame atau per frame; tempat peringatan (panel +
+  terminal sesudah simpan); memblokir simpan atau tidak (usulan awal: tidak, konsisten dengan peringatan "tanpa klik kanan"); ambang
+  = konstanta modul (konsisten "Keputusan T-604 setelah Tahap 1" no. 5) atau YAML; peringatan yang sama di `isolate --dry-run` dan
+  sebelum GPU untuk `points.json` lama. Teks saran panel: kotak di sekitar target + 4–8 klik kiri + klik kanan paling banyak 10, hanya
+  di bagian orang lain yang menempel target (tanpa kalimat "klik kanan banyak").
+- (b) per frame berklik: sesi SAM 2.1 tiny satu frame, prompt apa adanya, device CPU, `CUDA_VISIBLE_DEVICES=-1`, model dari cache HF
+  yang dipin (tanpa unduhan), bukti `torch.cuda` tidak terinisialisasi. Keluaran: PNG per frame klik (FOTO + masker transparan + garis
+  tepi + kotak + titik kiri / kanan + bar teks frame, detik, skor objek, porsi masker) + satu JSON ringkas (skor objek, luas, komponen
+  8-arah, porsi komponen terbesar, waktu). Pratinjau satu frame BUKAN hasil propagasi video; hanya mengecek prompt di frame klik.
+  Tempat perintah, folder keluaran (di luar `isolate/`, tidak memengaruhi kunci basi [1b]), perilaku saat `points.json` berubah, dan
+  pesan "yang harus dicek Rio" dirancang di Tahap 1; teks docs/01 (+ docs/02 bila ada parameter) diusulkan, belum diterapkan; nomor D
+  baru hanya bila kontrak [1b] berubah.
+- (c) `isolate.run_isolate` (StageError "butuh GPU"): hapus `(atau run … --yes)` atau ganti dengan kalimat bahwa `run` menjalankan
+  ingest + semua stage; pesan lain di `isolate.py` / `cli.py` yang menyarankan `run … --yes` untuk [1b] saja dilaporkan. Bentuk trim
+  kanonik `--start 0 --end 2.25` bukan bug (di luar lingkup).
+- **LUAR lingkup:** stage [2]–[6], `batch.py`, algoritma [1b], format `points.json`, unduhan model, pemakaian GPU.
+
+**Kriteria sukses (dikunci sekarang, sebelum hasil):**
+- **K1:** target dengan klik kanan di atas ambang → peringatan terlihat di panel sebelum simpan dan di terminal sesudah simpan; di bawah
+  atau sama dengan ambang → tidak ada peringatan baru (test + uji Rio di scratch).
+- **K2** (bila (b) tidak dibuang aturan no. 3): satu perintah CPU menghasilkan PNG per frame klik untuk `klip5@0-2.25` (f0, f22, f40) dan
+  klip3 (f85) tanpa CUDA; Rio menilai PNG "jelas" untuk membedakan masker benar / salah.
+- **K3:** pesan `isolate` tanpa `--yes` tidak lagi menyarankan `run … --yes` (test).
+- **K4:** output semua klip byte-identik (F1); test lolos; semua mutasi tertangkap.
+
+**Aturan:** F1 `scripts/t609_hash.py` → `work/t609/` (snapshot nama baru, tidak menimpa); F2 uji + ukur hanya di salinan
+`work/t609_scratch/` (salin, bukan hard link) dengan config scratch (`paths.work_dir` dicek sesudah load), `target/` produksi tidak
+ditulis; F3 alat `scripts/t609_*.py`, data berharga → `scripts/t609_data.json` sebelum scratch dihapus; F4 (Tahap 4) hapus
+`T609-prompt.md` + `work/t609_scratch/`, `work/t609/` dipertahankan. Berkas repo hanya lewat Edit / Write; tanpa commit; tidak membuka
+PNG / MP4; tanpa GPU (setiap proses yang memuat torch memakai `CUDA_VISIBLE_DEVICES=-1`); tanpa unduhan; test per berkas, berurutan,
+foreground, < 8 menit per potongan; mutation check wajib.
+**Tahap:** 1 (CPU; menulis hanya docs/04, docs/05, `work/t609*/`, `scripts/t609_*`): F1 → keputusan + papan → ukur (b) di scratch →
+rancangan (a) / (b) / (c) → rencana test + mutasi + rencana uji Rio + draf PANDUAN → F1 identik → BERHENTI + laporan. 2–3 sesudah
+persetujuan Rio (implementasi, test, mutasi, uji nyata CPU di scratch, bahan uji Rio). 4 sesudah uji Rio lolos (docs final, data, F4).
+
+### Hasil + rancangan T-609 Tahap 1 (2026-10-29) — usulan Claude Code; BERHENTI menunggu keputusan Rio
+
+CPU saja; tanpa GPU / unduhan; `src/` / `configs/` / `tests/` tidak berubah. Berkas repo yang berubah: docs/04, docs/05, alat F3
+`scripts/t609_hash.py` + `scripts/t609_ukur.py`. Scratch `work/t609_scratch/` (salinan `klip5@0-2.25` + klip3: `meta.json`, `frames/`,
+`target/points.json`; 56 + 184 berkas, sha256 = sumber, 0 hard link; config scratch beda dari default HANYA `paths.work_dir` /
+`paths.out_dir`, dicek sesudah load → `work/t609/salinan.json`). Papan direkonsiliasi: 43/52, Phase 3 7/11, Phase 7 6/7 (= harapan).
+
+**1. Ukur bagian (b)** (`scripts/t609_ukur.py ukur <klip>` → `work/t609/ukur_*.json`; `putusan` → `work/t609/ukur_putusan.json`). Satu
+proses per klip, `CUDA_VISIBLE_DEVICES=-1` dipasang sebelum import apa pun, `isolate.TorchSamBackend(cfg, device="cpu")` (pin
+`de431c40…`, lisensi `apache-2.0`, fp32, cache HF offline — `HF_HUB_OFFLINE` dipasang `describe()`), sesi 1 frame per (frame klik,
+target), prompt APA ADANYA, 2 putaran. Waktu per frame = sesi + prompt + inferensi + masker + komponen + render PNG (tanpa muat model).
+
+| klip / frame | kiri / kanan / kotak | skor objek | masker px (porsi frame) | komponen 8-arah (terbesar) | putaran 1 total / inferensi (s) | putaran 2 total (s) |
+|---|---|---|---|---|---|---|
+| `klip5@0-2.25` f0 | 8 / 10 / 1 | +18,397 | 84 783 (17,6%) | 35 (97,9%) | 2,21 / 1,93 | 1,80 |
+| `klip5@0-2.25` f22 | 8 / 10 / 1 | +18,169 | 79 520 (16,5%) | 13 (99,9%) | 1,81 / 1,63 | 1,76 |
+| `klip5@0-2.25` f40 | 8 / 10 / 1 | +17,079 | 78 587 (16,3%) | 21 (99,6%) | 1,86 / 1,69 | 1,74 |
+| klip3 f85 | 16 / 0 / 0 | +23,031 | 137 514 (14,9%) | 10 (99,8%) | 2,02 / 1,79 | 1,80 |
+
+- Per proses (klip5 / klip3): import torch + transformers 7,39 / 3,15 s; `describe` (cek cache + lisensi + processor) 6,28 / 4,07 s; muat
+  model 0,75 / 0,40 s; seluruh proses 25,9 / 11,6 s; 6 thread. RAM proses: working set puncak **1 247,2** / 1 194,9 MiB; private puncak
+  2 417,5 / 2 379,5 MiB. `torch.cuda.is_available()` False, `torch.cuda.is_initialized()` False di akhir.
+- **Aturan keluar no. 3:** median putaran 1 (4 frame klik) **1,937 s** ≤ 15 s ✔; RAM puncak **1 247,2 MiB** ≤ 4 096 MiB ✔; berjalan
+  tanpa CUDA ✔ → **bagian (b) DIPERTAHANKAN.** Rujukan T-602 2,06–2,66 s / frame, 1,34 GiB: sejalan.
+- **Cek kabel (data nyata):** skor (3 desimal) dan luas (px persis) CPU = hasil [1b] produksi GPU di frame klik (`isolate/frames.jsonl`
+  kind `klik`, kunci = `points.json` sekarang) di **4 / 4** frame; klip5 juga = angka pratinjau T-608 "(d) klik selesai #3" (skor, luas,
+  komponen) 3 / 3; putaran 2 = masker identik 4 / 4. Artinya: [1b] menghitung semua frame klik lebih dulu tanpa memori (frame kondisi
+  awal, `track_job`), jadi pratinjau satu frame = masker [1b] DI FRAME KLIK — termasuk f40 (klik kedua di adegan f22–53). Pratinjau
+  tidak memperlihatkan frame hasil pelacakan (maju / mundur).
+- PNG uji (720 × 712 dan 720 × 1324) di `work/t609_scratch/ukur/`; tidak dibuka.
+
+**2. Rancangan (a) — peringatan klik kanan berlebih.**
+
+| butir | opsi | pro | kontra | rekomendasi |
+|---|---|---|---|---|
+| a1 hitungan | per target per frame / per frame (jumlah semua target) | SAM menerima prompt per target (satu sesi per target, `build_jobs`): klik kanan target 2 tidak masuk prompt target 1 | per frame lebih mudah dijelaskan, tetapi 2 target × 6 klik kanan = 12 → peringatan palsu. Data T-608 = 1 target per frame (dua definisi sama di data) | **per target per frame** |
+| a2 ambang | > 10 (10 boleh) / ≥ 10 | 10 = nilai yang terbukti baik (+16,8 … +17,4; klik final Rio 10 / frame, "pratinjau OK") | 11–29 belum diukur | **> 10** |
+| a3 panel | tanda di baris target + blok kuning / tanda saja / blok saja | tanda menunjuk target mana; blok kuning menjelaskan akibat + cara memperbaiki | blok menambah 2–3 baris (panel 600–668 px; blok saran dibuang dulu bila tidak muat) | **`(>10)` di baris target + blok kuning** |
+| a4 terminal sesudah simpan | frame yang disimpan / + frame lain di berkas | kasus T-608: ketiga frame bermasalah sekaligus | 1 baris lagi | **frame ini + frame lain di berkas** |
+| a5 memblokir simpan | tidak / konfirmasi Enter kedua / blokir | tidak: konsisten dengan peringatan "tanpa klik kanan" (keputusan T-604 no. 3); 11–29 belum terbukti buruk; akibatnya terlihat di pratinjau (b) | konfirmasi: paling sulit terlewat, tetapi state + langkah baru; blokir: menolak kasus yang mungkin benar | **tidak memblokir** |
+| a6 ambang di | konstanta modul `pick.NEG_CLICK_WARN_MAX = 10` (dipakai pick, isolate, pratinjau) / YAML (mis. `isolate.neg_click_warn_max`) | modul: hanya peringatan, keluaran pipeline tidak berubah (alasan sama dengan "Keputusan T-604 setelah Tahap 1" no. 5); `run_pick` sekarang tidak membaca config; satu sumber untuk tiga pemakai | modul: aturan keras 3 menyebut "threshold" di YAML. YAML: bisa disetel tanpa kode, tetapi parameter baru (docs/02 + validasi + `test_config`), pick harus memuat config, dan nilai lain butuh data baru | **konstanta modul — mohon persetujuan EKSPLISIT** (aturan keras 3) |
+| a7 isolate | `--dry-run` + sebelum GPU (dengan / tanpa `--yes`) | `points.json` lama (dibuat sebelum T-609) tertangkap sebelum GPU | rencana `batch` memanggil `run_isolate(dry_run, log no-op)` → tidak tampil di batch (`batch.py` di luar lingkup) | **ya; tidak saat up-to-date (tanpa GPU); tidak memblokir; tidak masuk kunci / manifest** |
+
+Teks usulan (ASCII di pick / font Hershey; lebar diukur dengan `pick._text_w`, ruang panel 372 px):
+- **Saran panel** (0,45, dibungkus `wrap_text`; 340 / 347 px): `Saran: kotak di sekitar target + 4-8 klik kiri + klik kanan paling banyak
+  10, hanya di bagian orang lain yang menempel target.` (menggantikan "3-5 klik kiri tersebar per target + klik kanan di orang / benda yang
+  menempel ke target"). Tanpa kalimat "klik kanan banyak".
+- **Baris target:** ` 1 hijau: 8 kiri, 14 kanan, kotak (>10)` (terlebar diuji: ` 6 oranye: 18 kiri, 140 kanan, kotak (>10)` 271 px).
+- **Blok kuning panel** (0,45, dibungkus): `(>10) = klik kanan lebih dari 10: skor SAM bisa negatif dan masker kosong. Kurangi dengan U
+  (klik terakhir) atau R.`
+- **Terminal sesudah simpan:** `PERINGATAN: frame 0 target 1: 14 klik kanan (lebih dari 10) - skor objek SAM bisa negatif dan masker
+  kosong (T-608: 47-67 klik kanan -> masker kosong; 10 -> baik). Cek dulu: python -m rotoscope pick <video> --preview. Tetap disimpan.`
+  + bila ada: `  frame lain dengan klik kanan > 10: f22 (target 1: 47), f40 (target 1: 47) - pick ulang: python -m rotoscope pick <video> --frame 22`.
+- **Peringatan tanpa klik kanan** (teks lama) ditambah `(paling banyak 10 per target)` sesudah "klik kanan di orang / benda yang menempel".
+- **isolate** (`--dry-run` dan sebelum GPU): `PERINGATAN: klik kanan lebih dari 10 per target: f0 target 1 (67), f22 target 1 (47), f40
+  target 1 (47). Data T-608: 30 klik kanan melemahkan skor objek SAM, 47-67 membuat masker kosong. Cek (CPU): <pick --preview>; kurangi
+  klik: <pick --frame 0>. Tidak memblokir.`
+
+**3. Rancangan (b) — pratinjau masker CPU.**
+
+| butir | opsi | pro | kontra | rekomendasi |
+|---|---|---|---|---|
+| b1 perintah | P1 `pick <video> --preview` / P2 `isolate <video> --preview` / P3 otomatis sesudah simpan pick / P4 subperintah baru | P1: satu alat untuk klik + cek klik (alur pick → pratinjau → `isolate --dry-run` → run `--yes`); kontrak [1b] tidak berubah (tanpa D baru); pick = alat CPU | P2: stage GPU yang wajib `--yes` mendapat mode CPU tanpa `--yes` (membingungkan) + kontrak CLI [1b] berubah. P3: setiap simpan +12–26 s (import + muat model), tidak bisa dilewati tanpa flag lain. P4: kata kerja CLI baru. `--preview` juga ada di `run` (arti lain: video jendela N frame) | **P1** |
+| b2 tempat kode | modul baru `src/rotoscope/mask_preview.py` (proses sendiri) / di `isolate.py` / di `pick.py` | modul baru: `isolate.py` hanya mendapat peringatan (a) + teks (c); `pick.py` tetap tanpa torch; memakai ulang `isolate.TorchSamBackend(device="cpu")`, `Prompt`, `target_mask`, `load_valid_points`, `ram_free_mib` (tanpa duplikasi) | satu berkas + satu berkas test baru | **modul baru + `tests/test_mask_preview.py`** |
+| b3 proses + CUDA | cli menjalankan `python -m rotoscope.mask_preview --work-dir … [--config]` sebagai subprocess dengan env `CUDA_VISIBLE_DEVICES=-1` | proses induk tetap tanpa torch (test lama); modul MENOLAK berjalan bila env ≠ `-1` (dicek sebelum import torch); sesudah inferensi `torch.cuda.is_initialized()` harus False, kalau tidak hasil tidak dipromosikan (exit 1) | — | **ya** |
+| b4 folder | `target/pratinjau/` / folder baru di klip / `isolate/` | `target/` = wilayah pick (preseden `target/pick_dryrun/` T-604; nama `pratinjau/` = `crop/<nama>/pratinjau/` T-607); kunci [1b] = byte `points.json` + frame + model, `[3]` membaca `isolate/` saja → tidak memengaruhi apa pun | — | **`target/pratinjau/`**; tulis ke `target/pratinjau.partial/` lalu ditukar (terputus → folder lama utuh) |
+| b5 isi | PNG per (frame, target) `klik_f%05d_t%d.png` + `pratinjau.json` / satu PNG per frame berisi semua target | per target: tampilan = gaya T-608 yang sudah dipakai Rio 3× (masker biru transparan α 0,45 + garis tepi 2 px + kotak kuning + titik kiri hijau / kanan merah + bar teks); satu sesi per target = cara [1b] | multi-target: tumpang tindih antar target tidak terlihat (di [1b] diselesaikan logit terbesar) | **per (frame, target)**; bar: `frame 0 (detik 0,00)  target 1  skor objek +18,40  masker 17,6% frame` (desimal koma; font dikecilkan sampai muat lebar frame); detik = (awal trim + N) / fps = detik video sumber |
+| b6 `points.json` berubah | (i) pick menghapus `target/pratinjau/` saat simpan yang mengubah berkas + mencetak perintah pratinjau / (ii) dibiarkan; `pratinjau.json` mencatat sha256; pratinjau / `--dry-run` melapor "basi" / (iii) dibuat ulang otomatis | (i): PNG yang tersisa selalu cocok dengan titik sekarang; murah dibuat ulang (12–26 s) | (i): pick menghapus berkas (hanya di `target/pratinjau/`) | **(i)**; pratinjau selalu membuat ulang SEMUA frame berklik (tanpa `--frame`); `pratinjau.json` tetap mencatat sha256 `points.json` + sidik piksel per frame |
+| b7 cek RAM | pakai `isolate.ram_min_free_mib` (4 096) / tanpa cek / parameter baru | tanpa parameter baru, docs/02 tidak berubah; terukur private puncak 2,4 GiB | 4 096 lebih ketat dari kebutuhan | **pakai yang ada** |
+| b8 klik kanan > 10 | render tetap + peringatan / berhenti tanpa render (alat T-608) | PNG memperlihatkan akibatnya (skor negatif, masker kosong); konsisten a5 | — | **render tetap + peringatan (a)** |
+
+- **Prasyarat + galat** (exit 1, tanpa tulis): `meta.json` / `points.json` tidak ada → "belum ada titik — pick dulu" (pratinjau TIDAK
+  menjalankan ingest); titik tidak valid / frame basi / hilang → pesan `isolate.load_valid_points` (perintah pick ulang); model tidak di
+  cache → perintah `download` (tanpa unduhan); RAM bebas kurang. `--preview` + `--dry-run` atau + `--frame` → exit 2.
+- **Pesan terminal "yang harus dicek Rio"** (sesudah pratinjau):
+
+  ```
+  Pratinjau masker (CPU; SATU frame per klik = masker [1b] di frame klik, BUKAN hasil pelacakan video): <klip>\target\pratinjau
+    f0 target 1: skor objek +18,40, masker 17,6% frame, 35 bagian (terbesar 97,9%) -> klik_f00000_t1.png
+  Buka setiap PNG dan cek:
+    1. Warna biru menutup target SAJA (orang lain / latar tidak ikut).
+    2. Bagian target yang penting tidak bolong (kepala, tangan, badan di dalam kotak kuning).
+    3. Skor objek positif. Negatif atau masker 0% = SAM tidak menemukan target.
+  Masker salah di frame N -> python -m rotoscope pick <video> --frame N, lalu pratinjau lagi.
+  Frame di antara klik tidak diperiksa di sini; lihat hasil [1b] sesudah run.
+  ```
+
+  + `PERINGATAN: f40 target 1: masker kosong (skor objek -0,64)` bila skor ≤ 0 atau luas 0 (tanpa ambang baru; skor > 0 = konvensi
+  "ada objek" SAM).
+- **`pratinjau.json`** (`rotoscope-mask-preview/1`): identitas klip, sha256 `points.json`, model id + revision + precision, device
+  `cpu`, `mask_threshold`, versi torch / transformers, `run` (muat, total, RAM puncak, thread, `cuda_initialized` false), per frame:
+  sidik piksel, detik, per target: kiri / kanan / kotak, skor objek, luas, porsi, komponen 8-arah, porsi komponen terbesar, waktu, PNG,
+  peringatan. Catatan di berkas: satu frame per klik, bukan propagasi.
+
+**4. Rancangan (c) — pesan error isolate.**
+- `isolate.run_isolate` (StageError "butuh GPU"), sekarang: `… Jalankan ulang dengan --yes: <isolate> --yes (atau <run> --yes).
+  Rencana: <isolate> --dry-run`. **Usul (hapus, opsi C1):** `… Tidak ada yang dihitung / dihapus. Jalankan ulang [1b] saja dengan --yes:
+  <isolate> --yes. Rencana tanpa GPU: <isolate> --dry-run. Cek klik dulu (CPU): <pick> --preview`. Opsi C2 (ganti dengan kalimat "`run`
+  menjalankan ingest + semua stage") ditolak: tetap memuat teks `run … --yes` yang bisa ditempel; C1 lebih pendek.
+- Pesan lain yang menyebut `run … --yes` (dilaporkan, tidak diubah): `cli.py` hint `run` saat [1b] gagal ("Lihat pesan [1b] di atas
+  (mis. butuh --yes untuk GPU, …)") — konteks `run`, benar; `cli.py` `crop` sesudah keputusan → `run … --restart-from ingest --yes` —
+  memang semua stage; `require_yes` untuk `run --restart-from isolate` — perintah pengguna sendiri. Saran lain di [1b] sudah `isolate …
+  --yes` (`--restart` tanpa `--yes`; `target_mask.py` ×2). Tidak ada pesan lain di `isolate.py` / `cli.py` yang menyarankan `run … --yes`
+  untuk [1b] saja.
+
+**5. Usulan teks docs/01** (diterapkan di Tahap 2 hanya sesudah Rio setuju):
+- `pick.py` CLI: `python -m rotoscope pick <video> [--frame N] [--config P] [--start S --end E] [--dry-run | --preview]`; Out +
+  `target/pratinjau/` (`klik_f%05d_t%d.png` + `pratinjau.json`; dihapus pick saat simpan yang mengubah `points.json`).
+- `pick.py` Kontrol, sesudah butir peringatan "tanpa klik kanan": "Target dengan klik kanan **> 10** (per target per frame;
+  `NEG_CLICK_WARN_MAX`, konstanta modul, T-609; data docs/04 'Hasil T-608 1b-2 langkah 1') → `(>10)` di baris target + blok kuning di
+  panel selama mengklik, PERINGATAN di terminal sesudah simpan (frame ini + frame lain di berkas). Tidak memblokir."
+- `pick.py` butir baru **"Pratinjau masker (T-609; `--preview`)"**: proses sendiri `rotoscope.mask_preview`, CPU (`CUDA_VISIBLE_DEVICES=-1`
+  dipaksa + dicek; `torch.cuda` tidak terinisialisasi), model = `isolate.model_id` / `revision` dari cache (tanpa unduhan), sesi SAM 1
+  frame per (frame klik, target), prompt apa adanya, `isolate.mask_threshold`; semua frame berklik dibuat ulang; tulis ke
+  `pratinjau.partial/` lalu ditukar; cek RAM `isolate.ram_min_free_mib`. **Sama dengan masker [1b] di frame klik** (T-609: skor + luas
+  4 / 4); BUKAN hasil pelacakan (frame lain tidak diperiksa). Terukur CPU 6 thread: 1,8–2,2 s / frame, proses 12–26 s, RAM working set
+  ≤ 1,25 GiB. Exit 0 | 1 | 2 | 130.
+- [1b] butir baru: "**Peringatan klik kanan > 10** (T-609): dicetak di `--dry-run` dan sebelum GPU (dengan / tanpa `--yes`); tidak
+  memblokir, tidak masuk kunci / manifest; up-to-date tanpa peringatan."
+- docs/02 tidak berubah (tanpa parameter baru) — kecuali Rio memilih YAML di a6. **Nomor D baru tidak diusulkan:** kontrak [1b] (In /
+  Out / kunci / manifest) tidak berubah.
+
+**6. Rencana test + mutasi (Tahap 2; test per berkas, berurutan).**
+- `tests/test_pick.py`: (P1) hitungan per target: 10 → tanpa tanda, 11 → tanda; 2 target × 6 → tanpa tanda; (P2) panel: `(>10)` + blok
+  kuning ada / tidak ada; teks terlebar ≤ ruang dengan 6 target × 140 klik kanan; (P3) terminal sesudah simpan: peringatan frame ini
+  (frame, target, jumlah) untuk 11, tidak untuk 10; simpan tidak diblokir; (P4) frame lain di berkas > 10 tercantum; (P5) titik lama > 10
+  → tanda saat dibuka; (P6) teks saran baru ("4-8 klik kiri", "paling banyak 10"); tidak ada "klik kanan banyak"; (P7) simpan yang
+  mengubah berkas menghapus `target/pratinjau/` (+ pesan); Esc / tanpa perubahan / `--dry-run` tidak; (P8) perintah pratinjau siap tempel
+  (trim + `--config`); (P9) cli `pick --preview`: subprocess `rotoscope.mask_preview` dengan env `CUDA_VISIBLE_DEVICES=-1` (dipalsukan),
+  `--preview` + `--dry-run` / + `--frame` → exit 2, tanpa `meta.json` / `points.json` → exit 1 tanpa ingest; pick + cli tetap tanpa torch.
+- `tests/test_isolate.py`: (I1) `--dry-run` mencetak peringatan untuk 11, tidak untuk 10; (I2) tanpa `--yes`: peringatan dicetak lalu
+  StageError tanpa `cli_cmd('run', …)` dan tanpa teks `run ` + `--yes`, dengan `isolate … --yes` + `--dry-run` (K3); (I3) dengan `--yes`
+  (backend palsu): peringatan dicetak, tidak memblokir, hasil dihitung + dipromosikan; (I4) up-to-date tanpa peringatan; (I5) manifest /
+  kunci tanpa field baru.
+- `tests/test_mask_preview.py` (baru; backend palsu): (M1) PNG per (frame, target) + `pratinjau.json` lengkap; ukuran PNG W × (H + bar);
+  piksel di dalam masker berwarna campuran, di luar = FOTO (kecuali tanda); (M2) komponen 8-arah + porsi terbesar pada masker sintetis
+  (2 gumpal, sentuh diagonal); (M3) env ≠ `-1` → exit 1 sebelum torch di-import; (M4) `cuda_initialized` palsu True → exit 1, folder lama
+  utuh; (M5) tukar atomik: PNG frame yang sudah tidak diklik hilang; terputus → folder lama utuh, `pratinjau.partial/` dihapus run berikut;
+  (M6) frame basi / hilang → exit 1 tanpa tulis; (M7) tanpa `points.json` → exit 1; (M8) `isolate/`, `points.json`, kunci [1b] tidak
+  berubah (`run_isolate(dry_run)` tetap up-to-date); (M9) detik memakai awal trim; (M10) skor ≤ 0 / masker kosong → PERINGATAN, PNG tetap
+  dibuat; (M11) klik kanan > 10 → peringatan (a) juga; (M12) multi-target: sesi per target dengan `obj_id` + prompt target itu sendiri;
+  (M13) RAM kurang → exit 1, model tidak dimuat; (M14) opt-in `ROTOSCOPE_SAM_CPU_TESTS=1`: bobot asli di CPU, sintetis.
+- `tests/test_cli.py`: subperintah `pick --preview` di help; `isolate` tidak berubah.
+- **Mutasi** (`scripts/t609_mutations.py`, pola T-604: penggantian teks di memori, satu proses per mutan; setiap mutan harus
+  menggagalkan ≥ 1 test, kontrol lolos): (1) `>` → `>=`; (2) hitungan per frame (jumlah target); (3) menghitung klik kiri; (4) tanda
+  panel hilang; (5) peringatan terminal hilang; (6) simpan diblokir; (7) frame lain tidak dicantumkan; (8) peringatan isolate `--dry-run`
+  hilang; (9) peringatan isolate sebelum GPU hilang; (10) pesan butuh GPU memuat lagi `run … --yes`; (11) penjaga env pratinjau dibuang;
+  (12) cli tidak mengirim env; (13) device `cuda`; (14) pratinjau ditulis ke `isolate/`; (15) tanpa tukar folder (PNG basi tertinggal);
+  (16) komponen 4-arah; (17) porsi terbesar terhadap luas frame; (18) prompt / `obj_id` target salah; (19) detik tanpa awal trim; (20)
+  peringatan masker kosong hilang; (21) pick tidak menghapus `target/pratinjau/` saat simpan / menghapus saat Esc; (22) status frame tidak
+  dicek; (23) teks saran lama; (24) cek RAM dilewati; (25) penjaga `cuda_initialized` dibuang.
+- **Uji nyata Tahap 3** (scratch, `CUDA_VISIBLE_DEVICES=-1`): `pick … --preview --config work\t609_scratch\config.yaml` untuk
+  `klip5@0-2.25` + klip3 → angka = tabel no. 1; `isolate --dry-run` scratch dengan titik T-608 iso1 (67 / 47 / 47 kanan, arsip
+  `work/t608/arsip_iso1/`) di folder scratch kedua → peringatan; F1 identik.
+
+**7. Rencana uji Rio (Tahap 3)** = draf `work/t609/PANDUAN_UJI_draf.md`: U1 (K1) pick di scratch klip3 f85, klik kanan sampai 11 → tanda
++ blok; U sampai 10 → hilang; simpan dengan 11 → PERINGATAN terminal; U2 (K2) pratinjau `klip5@0-2.25` + klip3 + contoh SALAH (titik
+iso1, masker kosong) → Rio menilai PNG "jelas" / "tidak jelas" per frame; U3 (K3) `isolate` scratch tanpa `--yes` → pesan tanpa `run`.
+Semua di scratch (`--config work\t609_scratch\…\config.yaml`); `target/` produksi tidak ditulis.
+
+**8. F1:** `f1_sebelum_tahap1` = 11 332 berkas (out/ 1 132, crop 18, 7 `qc_report.json`); `f1_sesudah_tahap1` vs `sebelum_tahap1`:
+hilang 0, berubah 0, tambahan 0 → **identik**.
+
+**9. Keraguan / penyimpangan:**
+1. **a6 vs aturan keras 3** — konstanta modul untuk ambang klik kanan butuh persetujuan eksplisit Rio.
+2. **Nama flag `--preview`** sama dengan `run --preview` (video jendela N frame); arti berbeda per subperintah. Alternatif: `--mask-preview`.
+3. **b6 (i)**: pick menghapus `target/pratinjau/` (hanya folder itu) saat simpan — perilaku baru pick yang menghapus berkas.
+4. **Ukur memakai klik Rio produksi saja** (4 frame, 1 target); multi-target belum diukur (waktu ≈ per target).
+5. **Waktu import / describe pertama** (klip5 7,4 + 6,3 s) lebih lama dari klip3 (3,2 + 4,1 s) karena cache disk dingin; per frame tidak
+   terpengaruh.
+6. **Urutan kerja:** alat F1 + snapshot dijalankan sebelum entri keputusan (sesuai prompt langkah 1 → 2).
+
+### Keputusan T-609 sesudah Tahap 1 (2026-10-29) — Tahap 2–3 dimulai
+
+Dicatat SEBELUM kode ditulis. Rancangan Tahap 1 disetujui Rio dengan perubahan berikut:
+1. **Ambang klik kanan di YAML, BUKAN konstanta modul** (menggantikan rekomendasi a6): `isolate.neg_points_warn_max: 10` (nama lain boleh
+   diusulkan di laporan), dibaca oleh `pick` dan `isolate`. **Syarat:** key ini TIDAK masuk kunci basi [1b], manifest, atau hash stage
+   mana pun → tidak ada klip yang menjadi basi. Dibuktikan dengan cara CPU yang tidak menulis ke produksi (bukan `batch` / `ingest` di
+   produksi) + test. Bila tidak bisa tanpa mengubah kunci / hash → BERHENTI dan lapor.
+2. **Setuju:** hitungan per target per frame; peringatan bila klik kanan > ambang; tidak memblokir simpan; juga di `isolate --dry-run`
+   dan sebelum GPU.
+3. **Nama flag pratinjau: `pick <video> --mask-preview`** (bukan `--preview`, supaya tidak tertukar dengan `run --preview`).
+4. **Setuju opsi b6-i:** pick menghapus `target/pratinjau/` saat titik yang disimpan berubah. **Syarat:** penghapusan HANYA di
+   `target/pratinjau/` klip itu; diperiksa + dilaporkan bahwa tidak ada kode lain (isolate, batch, identitas klip, stage [3]) yang
+   membaca atau meng-hash isi `target/` selain `points.json` dan `points.prev.json`.
+5. **Setuju opsi C1** untuk pesan isolate (hapus saran `run … --yes`).
+6. **Setuju** teks docs/01 dari "Hasil + rancangan T-609 Tahap 1" bagian 5 diterapkan di Tahap 2, tanpa nomor D baru. docs/02 bertambah
+   satu baris untuk parameter no. 1.
+7. **Tambahan:** ukur satu kasus multi-target di scratch (2 target di satu frame, titik SINTETIS yang wajar, ditandai SINTETIS): waktu per
+   (frame, target) dan PNG per target.
+
+**Tahap 2–3:** implementasi + test + semua mutasi (ditambah mutasi pembacaan key YAML) + uji nyata CPU di scratch + bahan uji Rio +
+PANDUAN final (kata sederhana, langkah bernomor, "yang harus terlihat", contoh isian; semua perintah uji memakai `--config` scratch).
+Karena config berubah, SELURUH suite dijalankan per berkas test, berurutan, foreground, < 8 menit per potongan. Aturan T-609 tetap
+(Edit / Write saja, tanpa GPU / unduhan / commit, tidak membuka PNG / MP4, snapshot F1 nama baru). Sesudahnya BERHENTI + laporan.
+
+### Hasil T-609 Tahap 2–3 (2026-10-29) — implementasi + test + mutasi + uji nyata CPU; BERHENTI menunggu uji Rio
+
+CPU saja (`CUDA_VISIBLE_DEVICES=-1` di setiap proses yang memuat torch); tanpa GPU / unduhan / commit; PNG tidak dibuka.
+- **Berkas.** Baru: `src/rotoscope/mask_preview.py`, `tests/test_mask_preview.py`, alat F3 `scripts/t609_{mutations,tahap3,kunci}.py`.
+  Diubah: `src/rotoscope/{config,pick,isolate,cli}.py`, `configs/default.yaml` + docs/02 (SATU baris `isolate.neg_points_warn_max: 10`),
+  docs/01 (teks bagian 5 Tahap 1, dengan `--mask-preview` + key YAML: tabel CLI, catatan diagram, `pick.py` Out / CLI / Kontrol /
+  butir "Pratinjau masker", [1b] butir peringatan + pesan, pohon repo), `tests/test_{pick,isolate,config,cli}.py`. Tanpa nomor D baru.
+- **Implementasi = rancangan Tahap 1 + keputusan sesudah Tahap 1:**
+  - (a) `pick.over_negative` / `doc_over_negative` (per target per frame, `>` ambang); panel `(>N)` + blok kuning; terminal sesudah
+    simpan (frame ini + frame lain); tidak memblokir; teks saran baru memakai nilai YAML. Ambang = `cfg.isolate.neg_points_warn_max`,
+    diteruskan cli `pick` → `run_pick(neg_max=…)`; default kode = `IsolateConfig().neg_points_warn_max` (pick tidak punya angka 10
+    sendiri). isolate: peringatan di `--dry-run` (juga saat up-to-date — dry-run selalu memeriksa titik; rincian kecil di luar
+    rancangan) dan sebelum GPU; `run` biasa yang up-to-date tanpa peringatan.
+  - (b) `pick <video> --mask-preview` → subprocess `rotoscope.mask_preview` dengan env `CUDA_VISIBLE_DEVICES=-1` (fungsi bersama
+    `cli._run_child`, dipakai juga `run_gpu_stage`, perilaku sama); `--mask-preview` + `--dry-run` / `--frame` → exit 2; tanpa
+    `meta.json` / `points.json` → exit 1 tanpa ingest. `pick.commit` menghapus `target/pratinjau/` sesudah tulis berhasil (HANYA folder
+    itu; bukan folder → tidak disentuh; reparse point / link tidak diikuti).
+  - (c) pesan "butuh GPU": `Jalankan ulang [1b] saja dengan --yes: <isolate> --yes. Rencana tanpa GPU: <isolate> --dry-run. Cek klik
+    dulu (CPU): <pick> --mask-preview` (tanpa `run … --yes`).
+- **Syarat no. 1 (key YAML bukan kunci / hash) — TERPENUHI tanpa mengubah kunci atau hash mana pun:**
+  - kode: `build_key` hanya memakai field `model_id`, `revision`, `precision`, `mask_threshold`, `cut_diff`; bagian `isolate` tidak
+    pernah di-`section_hash` / `to_dict` / `asdict` utuh (dicek test_46 untuk semua modul `src/rotoscope/`); key hanya muncul di
+    `config.py`, `pick.py`, `isolate.py`, `mask_preview.py`, `cli.py`;
+  - test: test_45 (kunci [1b], manifest, `section_hash` semua bagian selain `isolate`, `export_hash` sama untuk 0 / 3 / 1000; run
+    ulang = up-to-date tanpa backend) + test_47 (rantai CPU nyata [3]–[6] + [1b] tiruan: ganti nilai ke 0 / 1000 → SEMUA berkas klip +
+    `out/` byte-identik, termasuk manifest dan cap waktu, tanpa backend [1b]);
+  - data nyata BACA-SAJA (`scripts/t609_kunci.py` → `work/t609/kunci_bukti.json`): 7 klip produksi × nilai 10 / 0 / 1000 — `qc_hash`
+    [2], `stabilize_hash` / `groups_hash` / `isolate.target_mask_hash` [3], `vectorize_hash` [4], `style_hash` [5], `export_hash` [6],
+    `key_sha256` [1b] (klip3, `klip5@0-2.25`) = nilai TERSIMPAN di manifest produksi; `run_isolate(dry_run)` in-process = up-to-date
+    untuk ketiga nilai (nilai 0: peringatan `f0 / f22 / f40 target 1 (10)` muncul, status tetap up-to-date). Tanpa batch / ingest.
+- **Syarat no. 4 (siapa membaca `target/`) — diperiksa (grep `src/rotoscope/`):** hanya `target/points.json` yang dibaca di luar pick:
+  `isolate.points_path` / `points_present` (isolate, batch, cli `run`), `target_mask.py` ([3]: byte `points.json` untuk kunci [1b] +
+  `isolate/`). `points.prev.json` hanya ditulis pick. Identitas klip = byte `meta.json` saja (`stage_common.clip_identity`); `cli.clip_folders`
+  membaca `meta.json`; `clean_tmp` hanya di folder stage. Tidak ada kode produksi yang meng-hash / memindai isi `target/`. Catatan: alat
+  F1 (`scripts/t60x_hash.py`) meng-hash SEMUA berkas `work/clips/*` (termasuk `target/`) — pratinjau di produksi akan tampil sebagai
+  tambahan F1 (alat, bukan pipeline).
+- **Test** (per berkas, berurutan, foreground; < 8 menit per potongan): **38 berkas, 1 750 lolos, 5 skip, 0 gagal.** Baru: test_pick
+  +9 fungsi (30–38), test_isolate +5 (43–47), test_mask_preview 20 (M1–M17; M14 opt-in), test_config +3 kasus validasi. Disesuaikan:
+  `test_cli.py::test_pick_uses_trim_folder` (fungsi palsu `run_pick` menerima `neg_max`). Opt-in bobot SAM asli di CPU
+  (`ROTOSCOPE_SAM_CPU_TESTS=1`): `test_m14_real_sam_cpu` dan `test_38_real_sam_cpu_contract` lolos.
+- **Mutasi** (`scripts/t609_mutations.py`, 4 potongan; kontrol = kelima modul asli di-exec → 356 lolos): **39 / 39 tertangkap** pada
+  kode final (`work/t609/mutations.json`), termasuk 6 mutasi key YAML (pick / isolate / pratinjau / cli mengabaikan nilai, key masuk
+  kunci [1b], validasi dibuang, default berubah). Catatan: putaran pertama potongan 2 (sebelum kode final) mencatat kegagalan TAMBAHAN
+  di test_34 / test_47 / test_m5 untuk mutan yang tidak berhubungan; tidak muncul lagi di potongan ulang maupun 25 run terpisah
+  test_34 + test_47 → dugaan kunci berkas / beban sistem sesaat (belum dibuktikan). `REPLACE_DELAY_S = 0` dibuang dari fixture
+  test_mask_preview supaya rename folder memakai jeda retry asli.
+- **Uji nyata CPU di scratch** (`scripts/t609_tahap3.py`; perintah CLI asli, `--config` scratch; `work/t609/tahap3_jalan.json`):
+
+  | perintah | hasil |
+  |---|---|
+  | `pick samples\klip5.mp4 --end 2.25 --mask-preview` | rc 0, 18,8 s (muat 8,0 s); f0 / f22 / f40 = angka Tahap 1 persis (skor, luas, komponen); RAM puncak 1 232 MiB; `cuda_initialized` false |
+  | `pick samples\klip3.mp4 --mask-preview` | rc 0, 11,9 s; f85 +23,031, 137 514 px = Tahap 1 |
+  | contoh SALAH (titik T-608 run 1, 67 / 47 / 47 kanan) | rc 0; skor −3,911 / −0,908 / −0,637 (= skor GPU run 1 T-608 persis), masker 0 px; PERINGATAN klik kanan + masker kosong; PNG tetap dibuat |
+  | multi-target SINTETIS (klip3 f85: target 1 Rio + target 2 komputer) | rc 0, 14,0 s; target 1 1,96 s (sama dengan satu target), target 2 1,91 s per (frame, target), 112 108 px (12,2%), 1 komponen; 2 PNG |
+  | `--mask-preview --frame 0` | rc 2 |
+  | `pick … --frame 0 --dry-run` (SALAH, 67 kanan) | panel muat: teks terlebar 368 / 372 px, bawah y 551 / 668 |
+  | `isolate --dry-run` (SALAH) / tanpa `--yes` (SALAH, klip3) | rc 0 / 1 / 1; PERINGATAN klik kanan (SALAH); pesan butuh GPU tanpa `run` |
+
+  Target 2 SINTETIS = komponen latar-depan terbesar seg [2] di luar masker [1b] target 1 di f85 (113 229 px; kotak x 461–719, y 286–1146;
+  5 klik kiri di puncak jarak-tepi + 2 klik kanan di target 1), `tool` = "SINTETIS …" (`work/t609/tahap3_siapkan.json`).
+  `points.json` produksi tidak berubah; produksi tanpa `target/pratinjau/`.
+- **Bahan uji Rio:** `work/t609/PANDUAN_UJI.md` (U1 pick di scratch `pick/`, U2 pratinjau scratch utama + `salah/` + `multi/`, U3 pesan
+  isolate; template + contoh isian); salinan PNG + `pratinjau.json` di `work/t609/nilai/` (klip5, klip3, salah_klip5,
+  multi_klip3_SINTETIS). Scratch: `work/t609_scratch/` (utama), `salah/`, `multi/`, `pick/`.
+- **F1:** `f1_sesudah_tahap2` vs `f1_sebelum_tahap2`: 11 332 / 11 332 identik.
+- **Usulan nama lain key (diminta keputusan no. 1):** `neg_points_warn_max` dipertahankan (sama dengan istilah "points" di
+  `points.json`); alternatif `neg_clicks_warn_max` bila Rio lebih suka kata "klik".
+
+### Tanggapan Rio atas laporan T-609 Tahap 2–3 (2026-10-29)
+
+Dicatat SEBELUM kode diubah.
+1. **Penyimpangan no. 2 DITOLAK:** `run_gpu_stage` dan seluruh jalur GPU `run` dikembalikan PERSIS seperti di commit `1a0cc70`
+   (dibuktikan dengan `git diff` terhadap `1a0cc70` untuk bagian itu). `mask_preview` memakai helper proses anaknya sendiri. Alasan:
+   lingkup T-609 tidak menyentuh jalur GPU, dan perilaku Ctrl+C di konsol Windows hanya bisa dibuktikan dengan uji nyata (pelajaran
+   T-603). Bila pengembalian tidak mungkin tanpa merusak `mask_preview` → BERHENTI dan jelaskan sebelum mengubah apa pun.
+2. **Penyimpangan no. 1, 3, 4, 5 DITERIMA** (`--dry-run` memperingatkan juga saat up-to-date; default argparse `--frame` = `None`;
+   validasi key hanya di komentar baris YAML; draf). `work/t609/PANDUAN_UJI_draf.md` dihapus di Tahap 4.
+3. **Kegagalan sesaat test_34 / test_47 / test_m5** di putaran mutasi pertama: diperiksa apakah terkait backlog "Basi hilir berbasis
+   `created_utc` beresolusi detik" (test_34 pernah tidak stabil di T-606). Kode [3] / [4] TIDAK diubah. Temuan dilaporkan dan dicatat
+   di backlog docs/05 sebagai terbukti atau dugaan.
+4. **Sesudah no. 1:** jalankan ulang (berurutan, per berkas) test_cli, test_interrupt, test_mask_preview, test_pick, test_isolate, dan
+   semua berkas test lain yang memakai `run_gpu_stage`; jalankan ulang mutan yang menyentuh kode yang berubah; snapshot F1 nama baru
+   (harus identik); perbarui `work/t609/PANDUAN_UJI.md` bila ada perintah yang berubah.
+5. **Laporan berikut** menulis ulang lengkap: semua pembaca `target/` (termasuk `points.prev.json`), log docs/05, dan hasil "Pratinjau
+   klip3" (laporan sebelumnya terpotong saat ditempel); tabel ditulis sebagai daftar.
+
+**Pelaksanaan tanggapan (2026-10-29)** (CPU; kode [3] / [4] tidak diubah; tanpa commit):
+- **No. 1 — `run_gpu_stage` dikembalikan:** pengembalian mungkin tanpa merusak `mask_preview`, jadi tidak berhenti.
+  - `cli.run_gpu_stage` kembali ke teks `1a0cc70`; `_run_child` dihapus. Pratinjau kini memakai helper sendiri `cli.run_mask_preview`
+    (diletakkan sesudah `cmd_mask_preview`, bersama `MASK_PREVIEW_MODULE` / `MASK_PREVIEW_CPU_ENV`). Helper itu memakai seam `_popen`,
+    `_stop`, dan `TERMINATE_TIMEOUT_S` yang ada (tidak diubah).
+  - Bukti: `git diff 1a0cc70 -U0 -- src/rotoscope/cli.py` hanya punya hunk di docstring modul (baris 8, 23), `cmd_pick` (747–), fungsi
+    baru `cmd_mask_preview` / `run_mask_preview`, dan parser `pick` (868–872). Perbandingan AST per fungsi terhadap `1a0cc70`:
+    `run_gpu_stage`, `_stop`, `run_stage`, `run_cpu_stage`, `stage_args`, `ingest_args`, `cmd_run`, `cmd_stage`, `cmd_download`,
+    `require_yes`, `deletion_preview`, `_targets`, `_tree_stats`, `_resume_hint`, `check_gpu_inputs`, `main` = SAMA; yang berubah hanya
+    `build_parser` (subparser `pick`) + `cmd_pick`; konstanta lama tidak berubah.
+  - Tambahan kecil (bukan jalur GPU): `cmd_mask_preview` menangkap `KeyboardInterrupt` → exit 130 tanpa baris `ERROR` kedua (satu baris
+    dicetak anak, atau `run_mask_preview` bila anak dimatikan). Test baru `test_t609_mask_preview_helper_ctrl_c_one_line` (anak keluar
+    130 sendiri → induk diam; anak tidak selesai → dihentikan + satu baris; galat lain → dihentikan; lewat cli → 130, satu baris, tanpa
+    Traceback / ERROR). Uji Ctrl+C NYATA di konsol Windows = U4 baru di `work/t609/PANDUAN_UJI.md` (pelajaran T-603).
+- **No. 3 — kegagalan sesaat test_34 / test_47 / test_m5** (`scripts/t609_flaky.py` → `work/t609/flaky_{beku,kunci00,kunci02}.json`):
+  - **Tidak terkait `created_utc` beresolusi detik — TERBUKTI:** mode `beku` (10 fungsi `utc_now` di `rotoscope.*` mengembalikan SATU
+    nilai) → ketiga test lolos. test_34 menghapus `stable/` / `contours/` / `strokes/` / `out/` tiap kali [3] dihitung ulang (perbaikan
+    T-606); test_47 tidak pernah menghitung ulang [3]; test_m5 tidak memakai rantai stage.
+  - **Penyebab = kunci berkas sesaat + jeda retry 0 di fixture — DUGAAN** (mekanisme direproduksi; kejadian asli tidak terekam karena
+    putaran pertama memakai `--tb=no`): simulasi `os.replace` → `PermissionError` selama 0,15 s pada tiap tujuan ke-7: jeda 0 (nilai
+    fixture test_isolate dkk.) → ketiga test GAGAL dengan "gagal mengganti … setelah 5 percobaan" (38 panggilan, 15 penolakan); jeda asli
+    0,2 s → ketiganya lolos (193 panggilan, 14 penolakan, semua pulih di percobaan kedua). Saat putaran pertama, fixture test_mask_preview
+    masih memasang jeda 0 (dibuang sebelum potongan 3).
+  - Dicatat di backlog docs/05: catatan pada "Basi hilir berbasis `created_utc` beresolusi detik" (TERBUKTI tidak terkait) + butir baru
+    "Fixture test `REPLACE_DELAY_S = 0` rentan kunci berkas Windows sesaat" (DUGAAN).
+- **No. 4 — ulang test + mutan + F1:**
+  - test (per berkas, berurutan): test_cli 96, test_interrupt 7, test_mask_preview 19 (+1 skip), test_pick 91, test_isolate 51 (+2 skip),
+    serta berkas lain yang lewat jalur `run` / `_popen`: test_batch 51, test_clip_identity 44, test_config 196, test_presets 33,
+    test_preview 27, test_stabilize 45, test_stabilize_temporal 55 — semua lolos, 0 gagal.
+  - mutan yang menyentuh kode cli yang berubah (`--pilih … --simpan cli2` → `work/t609/mutations_cli2.json`): kontrol lolos (357); 3 mutan
+    cli lama + 5 mutan baru untuk helper pratinjau (anak tidak diberi waktu; anak tidak selesai tidak dihentikan; galat lain tidak
+    menghentikan anak; baris "dihentikan" tidak dicetak; cli tidak menangkap Ctrl+C) = 8 / 8 tertangkap. Total daftar mutasi T-609 kini
+    44 + kontrol.
+  - uji nyata CPU sesudah perubahan: `pick samples\klip3.mp4 --mask-preview --config work\t609_scratch\config.yaml` → rc 0, 15 s,
+    f85 skor +23,031, 137 514 px, 10 komponen, `cuda_initialized` false (= sebelumnya).
+  - F1 `f1_sesudah_tanggapan` vs `f1_sebelum_tahap2`: 11 332 / 11 332 identik.
+  - `work/t609/PANDUAN_UJI.md`: perintah U1–U3 tidak berubah; ditambah U4 (Ctrl+C nyata) + baris template.
+
+### Penilaian Rio T-609 (2026-11-02) — semua lolos
+
+Pesan Rio: "Uji Rio T-609 selesai (2026-11-02): semua lolos." Isian = blok "Template jawaban" di `work/t609/PANDUAN_UJI.md` (11 450 B,
+sha256 `ead26208ac8bcf19…8baaa8`, baris 206–233), disalin VERBATIM ke `scripts/t609_penilaian.json` (`verbatim` + `jawaban` per baris).
+Blok "Contoh isian" di bawahnya = contoh asli panduan, BUKAN jawaban Rio (diabaikan). Isian U4 "tulis baris yang muncul" dan "angka"
+dibiarkan kosong oleh Rio; jawaban "ya" berlaku dan dicatat apa adanya.
+- **U1** (peringatan klik kanan di jendela pick, scratch `pick/`): langkah 1–9 = ya; teks saran + tulisan kuning mudah dimengerti = ya.
+- **U2** (pratinjau): klip5 f0 / f22 / f40 dan klip3 f85: gambar jelas = ya, masker = benar; contoh SALAH f0 / f22 / f40 terlihat salah =
+  ya; (pilihan) dua target, gambar per target jelas = ya; pesan "Buka setiap PNG dan cek" mudah dimengerti = ya.
+- **U3** (pesan isolate): langkah 1 (tanpa saran `run … --yes`) = ya; langkah 2 (PERINGATAN klik kanan di rencana) = ya.
+- **U4** (Ctrl+C nyata saat pratinjau): langkah 2 (satu baris "dihentikan", tanpa Traceback / ERROR) = ya; langkah 3 (`$LASTEXITCODE` =
+  130) = ya; langkah 4 (PNG lama masih ada) = ya; langkah 5 (jalan ulang normal) = ya.
+
+**Kriteria sukses (dikunci 2026-10-29) — SEMUA LOLOS:**
+- **K1 lolos.** Bukti: test_pick `test_t609_over_negative_per_target_and_strict_threshold`, `…_panel_mark_and_yellow_block_only_above_
+  threshold`, `…_terminal_warning_after_save_not_blocking`, `…_loaded_points_over_threshold_marked_at_open` (10 = tanpa tanda /
+  PERINGATAN; 11 = tanda + blok + PERINGATAN; ambang dari YAML) + uji Rio U1 langkah 3–9 = ya.
+- **K2 lolos.** Bukti: aturan keluar no. 3 tidak memicu (median 1,937 s ≤ 15 s; RAM 1 247,2 MiB ≤ 4 096 MiB; tanpa CUDA); satu perintah
+  CPU per klip (`pick --mask-preview`) → PNG klip5@0-2.25 f0 / f22 / f40 dan klip3 f85, `cuda_initialized` false; uji Rio U2 "gambar
+  jelas" = ya di keempat frame + contoh SALAH terlihat salah = ya.
+- **K3 lolos.** Bukti: `test_isolate::test_44_neg_warning_before_gpu_and_message_without_run` + mutan "pesan butuh GPU menyarankan lagi
+  `run --yes`" tertangkap + uji Rio U3 langkah 1 = ya.
+- **K4 lolos.** Bukti: F1 setiap snapshot identik (11 332 berkas; terakhir `f1_sesudah_tahap4` vs `f1_sebelum_tahap1`); suite Tahap 4
+  38 berkas 1 751 lolos / 5 skip / 0 gagal; mutasi 44 / 44 tertangkap + kontrol lolos.
+
+### Penutupan T-609 (2026-11-02) — **DONE**
+
+Tahap 4 (CPU; tanpa GPU / unduhan / commit; PNG tidak dibuka). `T609-prompt.md` + semua entri T-609 di atas dibaca ulang lebih dulu.
+- **Penilaian:** `scripts/t609_penilaian.json` (4 874 B, sha256 `b0105832…`) = keluaran `scripts/t609_tahap4.py penilaian` (isian Rio
+  VERBATIM + sumber + sha256 + K1–K4 dengan bukti).
+- **Data:** `scripts/t609_data.json` (31 187 B, sha256 `2ddefc62…`) = keluaran `scripts/t609_tahap4.py data`, ditulis SEBELUM F4. Isi:
+  ukur Tahap 1 (salinan, waktu, RAM, putaran 1 + 2, banding produksi / T-608, putusan aturan keluar), uji nyata Tahap 3 (siapkan scratch
+  `salah` / `multi` termasuk target 2 SINTETIS, 11 perintah CLI + rc, banding Tahap 1, ringkasan `pratinjau.json` klip5 / klip3 / SALAH /
+  multi, cek produksi), bukti kunci / hash (`t609_kunci.py`, 7 klip × nilai 10 / 0 / 1000), mutasi (44 + kontrol; `mutations_1..4` +
+  `mutations_cli2`), kegagalan sesaat (`t609_flaky.py` beku / kunci 0 / kunci 0,2), F1 (5 snapshot sebelum data), status skrip.
+  `scripts/t609_tahap4.py cek` (bangun ulang di memori): kedua berkas **byte-identik**, sebelum DAN sesudah F4.
+- **Skrip F3 yang tidak bisa dijalankan ulang langsung sesudah scratch dihapus:** `t609_ukur.py` (`ukur` / `putusan` butuh scratch →
+  `siapkan` dulu, membuat ulang `work/t609_scratch/` dari produksi; menimpa `work/t609/ukur_*.json`) dan `t609_tahap3.py` (`jalan` /
+  `bahan` butuh scratch dari `t609_ukur.py siapkan` + `t609_tahap3.py siapkan`; `bahan` menolak karena `work/t609/nilai/` ada; titik U1
+  Rio di scratch `pick/` hilang). Mandiri: `t609_hash.py`, `t609_kunci.py`, `t609_mutations.py`, `t609_flaky.py`, `t609_tahap4.py`
+  (selama `work/t609/` ada).
+- **Docs final:** docs/01 diperiksa terhadap kode final (`--mask-preview`, `isolate.neg_points_warn_max`, keluaran, exit code) + satu
+  tambahan: helper proses anak sendiri `cli.run_mask_preview` dan perilaku Ctrl+C (uji Rio U4). docs/02 = kode (1 baris key, dicek
+  `test_config`). CLAUDE.md: baris [1b] (T-609 DONE: peringatan, pesan, pratinjau), bagian "Pilih target" (`--mask-preview`, peringatan
+  klik kanan, key YAML, `target/pratinjau/`), baris [3] (T-305e SKIP). docs/05: T-609 `DONE` + log; backlog "pick: peringatan …" dan
+  "Pesan error `isolate` …" dicoret (selesai di T-609); papan via `scripts/t305tutup.py papan` (baca-saja): **44/52, Phase 7 7/7,
+  Phase 3 7/11** = harapan.
+- **F4:** dihapus `T609-prompt.md` (8 556 B, tidak ter-track), `work/t609_scratch/` (691 berkas, 480 449 528 B: `work/` 246, `multi/`
+  188, `pick/` 186, `salah/` 62, `ukur/` 8) dan `work/t609/PANDUAN_UJI_draf.md` (5 261 B). `work/t609/` dipertahankan (PANDUAN_UJI.md
+  berisi isian Rio, `nilai/`, F1, ukur / tahap3 / kunci / flaky / mutasi JSON, `t609_*.json`).
+- **F1:** `f1_sesudah_tahap4` vs `f1_sebelum_tahap1`: 11 332 / 11 332 identik (hilang 0, berubah 0, tambahan 0). Produksi tanpa
+  `target/pratinjau/` (0 folder di `work/clips/`, 0 baris di daftar F1).
+- **Test** (cli.py berubah sesudah suite lengkap terakhir → SELURUH suite, per berkas, berurutan, foreground, setiap potongan < 8
+  menit): **38 berkas, 1 751 lolos, 5 skip, 0 gagal** (skip = test GPU / bobot asli opt-in: test_depth 1, test_isolate 2,
+  test_mask_preview 1, test_segment 1).
+- **Status T-609: DONE.** Batas yang diketahui: pratinjau = masker [1b] di frame KLIK saja (bukan pelacakan); ambang 10 berdasar data
+  T-608 (11–29 belum diukur); dugaan kunci berkas sesaat pada fixture `REPLACE_DELAY_S = 0` (backlog docs/05).
+
 ## Pitfall yang sudah diketahui
 
 ### P-001 — Temporal flicker / boiling 🔴 RISIKO TERTINGGI

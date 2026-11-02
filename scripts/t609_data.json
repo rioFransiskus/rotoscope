@@ -1,0 +1,1269 @@
+{
+ "format": "t609-data/1",
+ "catatan": "Ringkasan data T-609 (docs/04 entri T-609). Sumber: work/t609/*.json (dipertahankan); scratch work/t609_scratch/ dihapus di F4 Tahap 4.",
+ "tahap1_ukur": {
+  "salinan": {
+   "klip5@0-2.25": {
+    "berkas": 56,
+    "bytes": 17370684,
+    "sha256_beda": [],
+    "hard_link_atau_sama": []
+   },
+   "klip3": {
+    "berkas": 184,
+    "bytes": 144298724,
+    "sha256_beda": [],
+    "hard_link_atau_sama": []
+   }
+  },
+  "klip5@0-2.25": {
+   "threads": 6,
+   "import_s": 7.39,
+   "describe_s": 6.28,
+   "open_s": 0.75,
+   "proses_s": 25.91,
+   "torch": "2.7.1+cu118",
+   "transformers": "5.17.0",
+   "model": {
+    "id": "facebook/sam2.1-hiera-tiny",
+    "revision": "de431c4043854a71d8101e17995dfe596bf101a5",
+    "license": "apache-2.0",
+    "precision": "fp32"
+   },
+   "cuda_available": false,
+   "cuda_initialized": false,
+   "mem_mib": {
+    "awal": {
+     "ws": 48.8,
+     "ws_peak": 51.5,
+     "private": 453.5,
+     "private_peak": 456.2
+    },
+    "sesudah_muat": {
+     "ws": 665.0,
+     "ws_peak": 681.0,
+     "private": 1628.3,
+     "private_peak": 1641.1
+    },
+    "akhir": {
+     "ws": 1094.4,
+     "ws_peak": 1247.2,
+     "private": 2200.9,
+     "private_peak": 2417.5
+    }
+   },
+   "putaran": [
+    {
+     "putaran": 1,
+     "median_total_s": 1.857,
+     "median_infer_s": 1.692,
+     "frame": [
+      {
+       "frame": 0,
+       "target": 1,
+       "kiri": 8,
+       "kanan": 10,
+       "kotak": true,
+       "skor_objek": 18.397,
+       "luas_px": 84783,
+       "porsi_frame": 0.1763,
+       "komponen_8arah": 35,
+       "porsi_komponen_terbesar": 0.979,
+       "infer_s": 1.933,
+       "total_s": 2.211,
+       "masker_sama_putaran1": null
+      },
+      {
+       "frame": 22,
+       "target": 1,
+       "kiri": 8,
+       "kanan": 10,
+       "kotak": true,
+       "skor_objek": 18.169,
+       "luas_px": 79520,
+       "porsi_frame": 0.1653,
+       "komponen_8arah": 13,
+       "porsi_komponen_terbesar": 0.9994,
+       "infer_s": 1.633,
+       "total_s": 1.809,
+       "masker_sama_putaran1": null
+      },
+      {
+       "frame": 40,
+       "target": 1,
+       "kiri": 8,
+       "kanan": 10,
+       "kotak": true,
+       "skor_objek": 17.079,
+       "luas_px": 78587,
+       "porsi_frame": 0.1634,
+       "komponen_8arah": 21,
+       "porsi_komponen_terbesar": 0.996,
+       "infer_s": 1.692,
+       "total_s": 1.857,
+       "masker_sama_putaran1": null
+      }
+     ]
+    },
+    {
+     "putaran": 2,
+     "median_total_s": 1.756,
+     "median_infer_s": 1.59,
+     "frame": [
+      {
+       "frame": 0,
+       "target": 1,
+       "kiri": 8,
+       "kanan": 10,
+       "kotak": true,
+       "skor_objek": 18.397,
+       "luas_px": 84783,
+       "porsi_frame": 0.1763,
+       "komponen_8arah": 35,
+       "porsi_komponen_terbesar": 0.979,
+       "infer_s": 1.628,
+       "total_s": 1.8,
+       "masker_sama_putaran1": true
+      },
+      {
+       "frame": 22,
+       "target": 1,
+       "kiri": 8,
+       "kanan": 10,
+       "kotak": true,
+       "skor_objek": 18.169,
+       "luas_px": 79520,
+       "porsi_frame": 0.1653,
+       "komponen_8arah": 13,
+       "porsi_komponen_terbesar": 0.9994,
+       "infer_s": 1.59,
+       "total_s": 1.756,
+       "masker_sama_putaran1": true
+      },
+      {
+       "frame": 40,
+       "target": 1,
+       "kiri": 8,
+       "kanan": 10,
+       "kotak": true,
+       "skor_objek": 17.079,
+       "luas_px": 78587,
+       "porsi_frame": 0.1634,
+       "komponen_8arah": 21,
+       "porsi_komponen_terbesar": 0.996,
+       "infer_s": 1.573,
+       "total_s": 1.737,
+       "masker_sama_putaran1": true
+      }
+     ]
+    }
+   ],
+   "produksi_klik": {
+    "kunci_points_sama": true,
+    "device": "cuda",
+    "klik": {
+     "0": {
+      "1": {
+       "kind": "klik",
+       "area_px": 84783,
+       "score_logit": 18.397
+      }
+     },
+     "22": {
+      "1": {
+       "kind": "klik",
+       "area_px": 79520,
+       "score_logit": 18.169
+      }
+     },
+     "40": {
+      "1": {
+       "kind": "klik",
+       "area_px": 78587,
+       "score_logit": 17.079
+      }
+     }
+    }
+   }
+  },
+  "klip3": {
+   "threads": 6,
+   "import_s": 3.15,
+   "describe_s": 4.07,
+   "open_s": 0.4,
+   "proses_s": 11.62,
+   "torch": "2.7.1+cu118",
+   "transformers": "5.17.0",
+   "model": {
+    "id": "facebook/sam2.1-hiera-tiny",
+    "revision": "de431c4043854a71d8101e17995dfe596bf101a5",
+    "license": "apache-2.0",
+    "precision": "fp32"
+   },
+   "cuda_available": false,
+   "cuda_initialized": false,
+   "mem_mib": {
+    "awal": {
+     "ws": 49.3,
+     "ws_peak": 54.6,
+     "private": 454.2,
+     "private_peak": 459.5
+    },
+    "sesudah_muat": {
+     "ws": 663.9,
+     "ws_peak": 679.9,
+     "private": 1629.2,
+     "private_peak": 1641.9
+    },
+    "akhir": {
+     "ws": 1029.4,
+     "ws_peak": 1194.9,
+     "private": 2135.8,
+     "private_peak": 2379.5
+    }
+   },
+   "putaran": [
+    {
+     "putaran": 1,
+     "median_total_s": 2.016,
+     "median_infer_s": 1.788,
+     "frame": [
+      {
+       "frame": 85,
+       "target": 1,
+       "kiri": 16,
+       "kanan": 0,
+       "kotak": false,
+       "skor_objek": 23.031,
+       "luas_px": 137514,
+       "porsi_frame": 0.1492,
+       "komponen_8arah": 10,
+       "porsi_komponen_terbesar": 0.9984,
+       "infer_s": 1.788,
+       "total_s": 2.016,
+       "masker_sama_putaran1": null
+      }
+     ]
+    },
+    {
+     "putaran": 2,
+     "median_total_s": 1.805,
+     "median_infer_s": 1.603,
+     "frame": [
+      {
+       "frame": 85,
+       "target": 1,
+       "kiri": 16,
+       "kanan": 0,
+       "kotak": false,
+       "skor_objek": 23.031,
+       "luas_px": 137514,
+       "porsi_frame": 0.1492,
+       "komponen_8arah": 10,
+       "porsi_komponen_terbesar": 0.9984,
+       "infer_s": 1.603,
+       "total_s": 1.805,
+       "masker_sama_putaran1": true
+      }
+     ]
+    }
+   ],
+   "produksi_klik": {
+    "kunci_points_sama": true,
+    "device": "cuda",
+    "klik": {
+     "85": {
+      "1": {
+       "kind": "klik",
+       "area_px": 137514,
+       "score_logit": 23.031
+      }
+     }
+    }
+   }
+  },
+  "putusan": {
+   "aturan_keluar": {
+    "median_total_s_p1": 1.937,
+    "median_infer_s_p1": 1.74,
+    "n_frame_klik": 4,
+    "puncak_ram_ws_mib": 1247.2,
+    "tanpa_cuda": true,
+    "lolos_waktu": true,
+    "lolos_ram": true,
+    "aturan": {
+     "median_s_max": 15.0,
+     "peak_ram_mib_max": 4096.0
+    },
+    "bagian_b": "DIPERTAHANKAN"
+   },
+   "pembanding": {
+    "klip5@0-2.25 f0 t1": {
+     "cpu_skor": 18.397,
+     "cpu_luas": 84783,
+     "produksi_gpu_skor": 18.397,
+     "produksi_gpu_luas": 84783,
+     "produksi_kunci_points_sama": true,
+     "t608_skor": 18.397,
+     "t608_luas": 84783,
+     "t608_komponen": 35,
+     "cpu_komponen": 35,
+     "masker_p2_sama": true
+    },
+    "klip5@0-2.25 f22 t1": {
+     "cpu_skor": 18.169,
+     "cpu_luas": 79520,
+     "produksi_gpu_skor": 18.169,
+     "produksi_gpu_luas": 79520,
+     "produksi_kunci_points_sama": true,
+     "t608_skor": 18.169,
+     "t608_luas": 79520,
+     "t608_komponen": 13,
+     "cpu_komponen": 13,
+     "masker_p2_sama": true
+    },
+    "klip5@0-2.25 f40 t1": {
+     "cpu_skor": 17.079,
+     "cpu_luas": 78587,
+     "produksi_gpu_skor": 17.079,
+     "produksi_gpu_luas": 78587,
+     "produksi_kunci_points_sama": true,
+     "t608_skor": 17.079,
+     "t608_luas": 78587,
+     "t608_komponen": 21,
+     "cpu_komponen": 21,
+     "masker_p2_sama": true
+    },
+    "klip3 f85 t1": {
+     "cpu_skor": 23.031,
+     "cpu_luas": 137514,
+     "produksi_gpu_skor": 23.031,
+     "produksi_gpu_luas": 137514,
+     "produksi_kunci_points_sama": true,
+     "t608_skor": null,
+     "t608_luas": null,
+     "t608_komponen": null,
+     "cpu_komponen": 10,
+     "masker_p2_sama": true
+    }
+   }
+  }
+ },
+ "tahap3_uji_nyata": {
+  "siapkan": {
+   "salah": {
+    "klip": "klip5@0-2.25",
+    "berkas": 56,
+    "bytes": 17387626,
+    "config": "work/t609_scratch/salah/config.yaml"
+   },
+   "multi": {
+    "klip": "klip3",
+    "berkas": 183,
+    "bytes": 144295794,
+    "config": "work/t609_scratch/multi/config.yaml",
+    "target2_sintetis": {
+     "komponen_px": 113229,
+     "komponen_lain": 16,
+     "latar_depan_di_luar_target1_px": 211032,
+     "target1_px": 137514,
+     "porsi_frame": 0.1229,
+     "kiri": 5,
+     "kanan": 2,
+     "box": [
+      461.0,
+      286.0,
+      719.0,
+      1146.0
+     ],
+     "points": [
+      {
+       "x": 719.0,
+       "y": 634.0,
+       "label": 1
+      },
+      {
+       "x": 719.0,
+       "y": 594.0,
+       "label": 1
+      },
+      {
+       "x": 716.0,
+       "y": 554.0,
+       "label": 1
+      },
+      {
+       "x": 687.0,
+       "y": 659.0,
+       "label": 1
+      },
+      {
+       "x": 684.0,
+       "y": 614.0,
+       "label": 1
+      },
+      {
+       "x": 472.0,
+       "y": 443.0,
+       "label": 0
+      },
+      {
+       "x": 487.0,
+       "y": 481.0,
+       "label": 0
+      }
+     ],
+     "sumber": [
+      "seg/classmap f85 (produksi, dibaca)",
+      "isolate/labels f85 (produksi, dibaca)"
+     ]
+    }
+   },
+   "pick": {
+    "klip": "klip3",
+    "berkas": 184,
+    "bytes": 144298724,
+    "config": "work/t609_scratch/pick/config.yaml"
+   }
+  },
+  "runs": {
+   "pratinjau_klip5": {
+    "cmd": "python -m rotoscope pick samples\\klip5.mp4 --end 2.25 --mask-preview --config work\\t609_scratch\\config.yaml",
+    "rc": 0,
+    "rc_harapan": 0,
+    "s": 18.8
+   },
+   "pratinjau_klip3": {
+    "cmd": "python -m rotoscope pick samples\\klip3.mp4 --mask-preview --config work\\t609_scratch\\config.yaml",
+    "rc": 0,
+    "rc_harapan": 0,
+    "s": 11.9
+   },
+   "pratinjau_salah": {
+    "cmd": "python -m rotoscope pick samples\\klip5.mp4 --end 2.25 --mask-preview --config work\\t609_scratch\\salah\\config.yaml",
+    "rc": 0,
+    "rc_harapan": 0,
+    "s": 15.8
+   },
+   "pratinjau_multi": {
+    "cmd": "python -m rotoscope pick samples\\klip3.mp4 --mask-preview --config work\\t609_scratch\\multi\\config.yaml",
+    "rc": 0,
+    "rc_harapan": 0,
+    "s": 14.0
+   },
+   "pratinjau_ulang_klip5": {
+    "cmd": "python -m rotoscope pick samples\\klip5.mp4 --end 2.25 --mask-preview --config work\\t609_scratch\\config.yaml",
+    "rc": 0,
+    "rc_harapan": 0,
+    "s": 15.9
+   },
+   "pratinjau_dengan_frame": {
+    "cmd": "python -m rotoscope pick samples\\klip5.mp4 --end 2.25 --mask-preview --frame 0 --config work\\t609_scratch\\config.yaml",
+    "rc": 2,
+    "rc_harapan": 2,
+    "s": 0.9
+   },
+   "pick_dryrun_salah_f0": {
+    "cmd": "python -m rotoscope pick samples\\klip5.mp4 --end 2.25 --frame 0 --dry-run --config work\\t609_scratch\\salah\\config.yaml",
+    "rc": 0,
+    "rc_harapan": 0,
+    "s": 1.1
+   },
+   "isolate_dryrun_salah": {
+    "cmd": "python -m rotoscope isolate samples\\klip5.mp4 --end 2.25 --dry-run --config work\\t609_scratch\\salah\\config.yaml",
+    "rc": 0,
+    "rc_harapan": 0,
+    "s": 2.4
+   },
+   "isolate_tanpa_yes_salah": {
+    "cmd": "python -m rotoscope isolate samples\\klip5.mp4 --end 2.25 --config work\\t609_scratch\\salah\\config.yaml",
+    "rc": 1,
+    "rc_harapan": 1,
+    "s": 2.4
+   },
+   "isolate_tanpa_yes_klip3": {
+    "cmd": "python -m rotoscope isolate samples\\klip3.mp4 --config work\\t609_scratch\\config.yaml",
+    "rc": 1,
+    "rc_harapan": 1,
+    "s": 9.9
+   },
+   "isolate_dryrun_klip5": {
+    "cmd": "python -m rotoscope isolate samples\\klip5.mp4 --end 2.25 --dry-run --config work\\t609_scratch\\config.yaml",
+    "rc": 0,
+    "rc_harapan": 0,
+    "s": 2.5
+   }
+  },
+  "banding_tahap1": {
+   "klip5@0-2.25 f0": {
+    "skor": 18.397,
+    "luas": 84783,
+    "komponen": 35,
+    "terbesar": 0.979,
+    "waktu_s": 2.027,
+    "sama_tahap1": true
+   },
+   "klip5@0-2.25 f22": {
+    "skor": 18.169,
+    "luas": 79520,
+    "komponen": 13,
+    "terbesar": 0.9994,
+    "waktu_s": 1.802,
+    "sama_tahap1": true
+   },
+   "klip5@0-2.25 f40": {
+    "skor": 17.079,
+    "luas": 78587,
+    "komponen": 21,
+    "terbesar": 0.996,
+    "waktu_s": 1.924,
+    "sama_tahap1": true
+   },
+   "klip3 f85": {
+    "skor": 23.031,
+    "luas": 137514,
+    "komponen": 10,
+    "terbesar": 0.9984,
+    "waktu_s": 1.972,
+    "sama_tahap1": true
+   }
+  },
+  "pratinjau": {
+   "pratinjau_klip5@0-2.25": {
+    "run": {
+     "started_utc": "2026-10-29T06:08:17+00:00",
+     "load_s": 7.97,
+     "wall_s": 13.87,
+     "threads": 6,
+     "ram_free_before_mib": 5493.5,
+     "peak_process_mib": 1231.8,
+     "cuda_initialized": false
+    },
+    "peringatan": []
+   },
+   "pratinjau_klip3": {
+    "run": {
+     "started_utc": "2026-10-29T06:07:35+00:00",
+     "load_s": 7.7,
+     "wall_s": 9.78,
+     "threads": 6,
+     "ram_free_before_mib": 5421.4,
+     "peak_process_mib": 1160.5,
+     "cuda_initialized": false
+    },
+    "peringatan": []
+   },
+   "pratinjau_salah": {
+    "run": {
+     "started_utc": "2026-10-29T06:07:47+00:00",
+     "load_s": 7.88,
+     "wall_s": 13.6,
+     "threads": 6,
+     "ram_free_before_mib": 5442.8,
+     "peak_process_mib": 1205.9,
+     "cuda_initialized": false
+    },
+    "peringatan": [
+     "f0 target 1: masker kosong / skor objek tidak positif (skor -3,91, 0 px)",
+     "f0 target 1: klik kanan > 10",
+     "f22 target 1: masker kosong / skor objek tidak positif (skor -0,91, 0 px)",
+     "f22 target 1: klik kanan > 10",
+     "f40 target 1: masker kosong / skor objek tidak positif (skor -0,64, 0 px)",
+     "f40 target 1: klik kanan > 10"
+    ],
+    "frames": [
+     {
+      "frame": 0,
+      "targets": [
+       {
+        "id": 1,
+        "kiri": 14,
+        "kanan": 67,
+        "kotak": true,
+        "skor_objek": -3.911,
+        "luas_px": 0,
+        "porsi_frame": 0.0,
+        "komponen_8arah": 0,
+        "porsi_komponen_terbesar": 0.0,
+        "waktu_s": 1.962,
+        "png": "klik_f00000_t1.png",
+        "peringatan": [
+         "masker kosong / skor objek tidak positif (skor -3,91, 0 px)",
+         "klik kanan > 10"
+        ]
+       }
+      ]
+     },
+     {
+      "frame": 22,
+      "targets": [
+       {
+        "id": 1,
+        "kiri": 20,
+        "kanan": 47,
+        "kotak": true,
+        "skor_objek": -0.908,
+        "luas_px": 0,
+        "porsi_frame": 0.0,
+        "komponen_8arah": 0,
+        "porsi_komponen_terbesar": 0.0,
+        "waktu_s": 1.91,
+        "png": "klik_f00022_t1.png",
+        "peringatan": [
+         "masker kosong / skor objek tidak positif (skor -0,91, 0 px)",
+         "klik kanan > 10"
+        ]
+       }
+      ]
+     },
+     {
+      "frame": 40,
+      "targets": [
+       {
+        "id": 1,
+        "kiri": 19,
+        "kanan": 47,
+        "kotak": true,
+        "skor_objek": -0.637,
+        "luas_px": 0,
+        "porsi_frame": 0.0,
+        "komponen_8arah": 0,
+        "porsi_komponen_terbesar": 0.0,
+        "waktu_s": 1.709,
+        "png": "klik_f00040_t1.png",
+        "peringatan": [
+         "masker kosong / skor objek tidak positif (skor -0,64, 0 px)",
+         "klik kanan > 10"
+        ]
+       }
+      ]
+     }
+    ]
+   },
+   "pratinjau_multi": {
+    "run": {
+     "started_utc": "2026-10-29T06:08:03+00:00",
+     "load_s": 7.96,
+     "wall_s": 11.95,
+     "threads": 6,
+     "ram_free_before_mib": 5465.0,
+     "peak_process_mib": 1180.7,
+     "cuda_initialized": false
+    },
+    "peringatan": [],
+    "frames": [
+     {
+      "frame": 85,
+      "targets": [
+       {
+        "id": 1,
+        "kiri": 16,
+        "kanan": 0,
+        "kotak": false,
+        "skor_objek": 23.031,
+        "luas_px": 137514,
+        "porsi_frame": 0.1492,
+        "komponen_8arah": 10,
+        "porsi_komponen_terbesar": 0.9984,
+        "waktu_s": 1.963,
+        "png": "klik_f00085_t1.png",
+        "peringatan": []
+       },
+       {
+        "id": 2,
+        "kiri": 5,
+        "kanan": 2,
+        "kotak": true,
+        "skor_objek": 22.563,
+        "luas_px": 112108,
+        "porsi_frame": 0.1216,
+        "komponen_8arah": 1,
+        "porsi_komponen_terbesar": 1.0,
+        "waktu_s": 1.909,
+        "png": "klik_f00085_t2.png",
+        "peringatan": []
+       }
+      ]
+     }
+    ]
+   }
+  },
+  "points_produksi_tidak_berubah": {
+   "klip5@0-2.25": true,
+   "klip3": true
+  },
+  "produksi_tanpa_pratinjau": {
+   "klip5@0-2.25": true,
+   "klip3": true
+  },
+  "bahan_nilai": {
+   "klip5": [
+    "klik_f00000_t1.png",
+    "klik_f00022_t1.png",
+    "klik_f00040_t1.png",
+    "pratinjau.json"
+   ],
+   "klip3": [
+    "klik_f00085_t1.png",
+    "pratinjau.json"
+   ],
+   "salah_klip5": [
+    "klik_f00000_t1.png",
+    "klik_f00022_t1.png",
+    "klik_f00040_t1.png",
+    "pratinjau.json"
+   ],
+   "multi_klip3_SINTETIS": [
+    "klik_f00085_t1.png",
+    "klik_f00085_t2.png",
+    "pratinjau.json"
+   ]
+  }
+ },
+ "kunci_bukti": {
+  "nilai": [
+   10,
+   0,
+   1000
+  ],
+  "klip": {
+   "Klip2": {
+    "[2] qc_hash": true,
+    "[3] stabilize_hash": true,
+    "[3] groups_hash": true,
+    "[4] vectorize_hash": true,
+    "[5] style_hash": true,
+    "[6] export_hash": true
+   },
+   "klip3": {
+    "[2] qc_hash": true,
+    "[3] stabilize_hash": true,
+    "[3] groups_hash": true,
+    "[3] isolate.target_mask_hash": true,
+    "[4] vectorize_hash": true,
+    "[5] style_hash": true,
+    "[6] export_hash": true,
+    "[1b] key_sha256": true,
+    "[1b] run_isolate --dry-run": {
+     "10": "up-to-date",
+     "0": "up-to-date",
+     "1000": "up-to-date"
+    }
+   },
+   "klip4": {
+    "[2] qc_hash": true,
+    "[3] stabilize_hash": true,
+    "[3] groups_hash": true,
+    "[4] vectorize_hash": true,
+    "[5] style_hash": true,
+    "[6] export_hash": true
+   },
+   "klip5": {
+    "[2] qc_hash": true,
+    "[3] stabilize_hash": true,
+    "[3] groups_hash": true,
+    "[4] vectorize_hash": true,
+    "[5] style_hash": true,
+    "[6] export_hash": true
+   },
+   "klip5@0-2.25": {
+    "[2] qc_hash": true,
+    "[3] stabilize_hash": true,
+    "[3] groups_hash": true,
+    "[3] isolate.target_mask_hash": true,
+    "[4] vectorize_hash": true,
+    "[5] style_hash": true,
+    "[6] export_hash": true,
+    "[1b] key_sha256": true,
+    "[1b] run_isolate --dry-run": {
+     "10": "up-to-date",
+     "0": "up-to-date",
+     "1000": "up-to-date"
+    }
+   },
+   "test": {
+    "[2] qc_hash": true,
+    "[3] stabilize_hash": true,
+    "[3] groups_hash": true,
+    "[4] vectorize_hash": true,
+    "[5] style_hash": true,
+    "[6] export_hash": true
+   },
+   "test_short": {
+    "[2] qc_hash": true,
+    "[3] stabilize_hash": true,
+    "[3] groups_hash": true,
+    "[4] vectorize_hash": true,
+    "[5] style_hash": true,
+    "[6] export_hash": true
+   }
+  },
+  "semua_sama_dan_up_to_date": true
+ },
+ "mutasi": {
+  "sumber": [
+   "work/t609/mutations_1..4.json (putaran final kode Tahap 2-3)",
+   "work/t609/mutations_cli2.json (mutan cli, sesudah run_gpu_stage dikembalikan; menimpa entri sama)"
+  ],
+  "kontrol_lolos": true,
+  "tertangkap": 44,
+  "jumlah": 44,
+  "mutan": {
+   "kontrol (sumber asli semua modul di-exec; harus LOLOS)": {
+    "rc": 0,
+    "n_gagal": 0,
+    "gagal": []
+   },
+   "tanda (>N) di baris panel hilang": {
+    "rc": 1,
+    "n_gagal": 2,
+    "gagal": [
+     "test_t609_panel_mark_and_yellow_block_only_above_threshold",
+     "test_t609_loaded_points_over_threshold_marked_at_open"
+    ]
+   },
+   "simpan diblokir bila klik kanan berlebih": {
+    "rc": 1,
+    "n_gagal": 1,
+    "gagal": [
+     "test_t609_terminal_warning_after_save_not_blocking"
+    ]
+   },
+   "pick menghapus folder lain (pick_dryrun/) alih-alih pratinjau/": {
+    "rc": 1,
+    "n_gagal": 1,
+    "gagal": [
+     "test_t609_save_removes_only_target_pratinjau"
+    ]
+   },
+   "isolate run biasa up-to-date ikut memperingatkan": {
+    "rc": 1,
+    "n_gagal": 1,
+    "gagal": [
+     "test_44_neg_warning_before_gpu_and_message_without_run"
+    ]
+   },
+   "key YAML masuk kunci basi [1b]": {
+    "rc": 1,
+    "n_gagal": 2,
+    "gagal": [
+     "test_45_neg_threshold_not_in_key_manifest_or_any_hash",
+     "test_47_real_cpu_chain_unchanged_when_neg_threshold_changes"
+    ]
+   },
+   "default kode key YAML berubah (11)": {
+    "rc": 1,
+    "n_gagal": 9,
+    "gagal": [
+     "test_t609_cli_pick_reads_yaml_threshold",
+     "test_43_neg_warning_in_dry_run_strict_threshold_from_yaml",
+     "test_44_neg_warning_before_gpu_and_message_without_run",
+     "test_45_neg_threshold_not_in_key_manifest_or_any_hash",
+     "test_47_real_cpu_chain_unchanged_when_neg_threshold_changes",
+     "test_m1_png_per_frame_target_and_summary",
+     "test_m11_neg_points_warning_uses_yaml_key",
+     "test_m15_main_exit_codes",
+     "test_code_defaults_match_config_files_and_docs[PipelineConfig-##"
+    ]
+   },
+   "device cuda": {
+    "rc": 1,
+    "n_gagal": 11,
+    "gagal": [
+     "test_m1_png_per_frame_target_and_summary",
+     "test_m3c_cpu_backend_and_device_guard",
+     "test_m4_cuda_initialized_keeps_old_folder",
+     "test_m5_folder_replaced_whole_and_interrupt_keeps_old",
+     "test_m8_isolate_points_and_key_untouched",
+     "test_m9_seconds_use_trim_start",
+     "test_m10_empty_mask_warned_png_still_written",
+     "test_m11_neg_points_warning_uses_yaml_key",
+     "test_m12_one_session_per_frame_target_with_own_prompt",
+     "test_m13_low_ram_stops_before_model",
+     "test_m15_main_exit_codes"
+    ]
+   },
+   "komponen 4-arah": {
+    "rc": 1,
+    "n_gagal": 1,
+    "gagal": [
+     "test_m2_components_8_connected_largest_share_of_mask"
+    ]
+   },
+   "detik tanpa awal trim": {
+    "rc": 1,
+    "n_gagal": 1,
+    "gagal": [
+     "test_m9_seconds_use_trim_start"
+    ]
+   },
+   "ambang >= (10 ikut diperingatkan)": {
+    "rc": 1,
+    "n_gagal": 4,
+    "gagal": [
+     "test_t609_over_negative_per_target_and_strict_threshold",
+     "test_t609_panel_mark_and_yellow_block_only_above_threshold",
+     "test_t609_terminal_warning_after_save_not_blocking",
+     "test_43_neg_warning_in_dry_run_strict_threshold_from_yaml"
+    ]
+   },
+   "blok kuning panel hilang": {
+    "rc": 1,
+    "n_gagal": 1,
+    "gagal": [
+     "test_t609_panel_mark_and_yellow_block_only_above_threshold"
+    ]
+   },
+   "frame lain dengan klik kanan berlebih tidak dicantumkan": {
+    "rc": 1,
+    "n_gagal": 1,
+    "gagal": [
+     "test_t609_terminal_warning_after_save_not_blocking"
+    ]
+   },
+   "pratinjau dihapus juga saat Esc (titik tidak berubah)": {
+    "rc": 1,
+    "n_gagal": 1,
+    "gagal": [
+     "test_t609_save_removes_only_target_pratinjau"
+    ]
+   },
+   "isolate sebelum GPU tanpa peringatan": {
+    "rc": 1,
+    "n_gagal": 2,
+    "gagal": [
+     "test_44_neg_warning_before_gpu_and_message_without_run",
+     "test_47_real_cpu_chain_unchanged_when_neg_threshold_changes"
+    ]
+   },
+   "cli pick mengabaikan YAML (ambang default)": {
+    "rc": 1,
+    "n_gagal": 1,
+    "gagal": [
+     "test_t609_cli_pick_reads_yaml_threshold"
+    ]
+   },
+   "cli pratinjau tanpa env CPU": {
+    "rc": 1,
+    "n_gagal": 1,
+    "gagal": [
+     "test_t609_cli_mask_preview_subprocess_cpu_env"
+    ]
+   },
+   "penjaga cuda_initialized dibuang": {
+    "rc": 1,
+    "n_gagal": 1,
+    "gagal": [
+     "test_m4_cuda_initialized_keeps_old_folder"
+    ]
+   },
+   "porsi komponen terbesar terhadap luas frame": {
+    "rc": 1,
+    "n_gagal": 2,
+    "gagal": [
+     "test_m1_png_per_frame_target_and_summary",
+     "test_m2_components_8_connected_largest_share_of_mask"
+    ]
+   },
+   "peringatan masker kosong hilang": {
+    "rc": 1,
+    "n_gagal": 1,
+    "gagal": [
+     "test_m10_empty_mask_warned_png_still_written"
+    ]
+   },
+   "hitungan per frame (jumlah semua target)": {
+    "rc": 1,
+    "n_gagal": 2,
+    "gagal": [
+     "test_t609_over_negative_per_target_and_strict_threshold",
+     "test_43_neg_warning_in_dry_run_strict_threshold_from_yaml"
+    ]
+   },
+   "panel memakai default kode, bukan nilai YAML": {
+    "rc": 1,
+    "n_gagal": 1,
+    "gagal": [
+     "test_t609_panel_mark_and_yellow_block_only_above_threshold"
+    ]
+   },
+   "teks saran lama (3-5 klik kiri)": {
+    "rc": 1,
+    "n_gagal": 1,
+    "gagal": [
+     "test_t609_tips_text_new_rule_no_many_right_clicks"
+    ]
+   },
+   "isolate --dry-run tanpa peringatan": {
+    "rc": 1,
+    "n_gagal": 1,
+    "gagal": [
+     "test_43_neg_warning_in_dry_run_strict_threshold_from_yaml"
+    ]
+   },
+   "pesan butuh GPU menyarankan lagi run --yes": {
+    "rc": 1,
+    "n_gagal": 1,
+    "gagal": [
+     "test_44_neg_warning_before_gpu_and_message_without_run"
+    ]
+   },
+   "pratinjau mengabaikan YAML (ambang default)": {
+    "rc": 1,
+    "n_gagal": 1,
+    "gagal": [
+     "test_m11_neg_points_warning_uses_yaml_key"
+    ]
+   },
+   "cli pratinjau menerima --frame": {
+    "rc": 1,
+    "n_gagal": 1,
+    "gagal": [
+     "test_t609_cli_mask_preview_subprocess_cpu_env"
+    ]
+   },
+   "pratinjau ditulis ke isolate/": {
+    "rc": 1,
+    "n_gagal": 6,
+    "gagal": [
+     "test_m1_png_per_frame_target_and_summary",
+     "test_m5_folder_replaced_whole_and_interrupt_keeps_old",
+     "test_m8_isolate_points_and_key_untouched",
+     "test_m10_empty_mask_warned_png_still_written",
+     "test_m13_low_ram_stops_before_model",
+     "test_m15_main_exit_codes"
+    ]
+   },
+   "prompt target pertama dipakai untuk semua target": {
+    "rc": 1,
+    "n_gagal": 1,
+    "gagal": [
+     "test_m12_one_session_per_frame_target_with_own_prompt"
+    ]
+   },
+   "status frame klik tidak dicek": {
+    "rc": 1,
+    "n_gagal": 1,
+    "gagal": [
+     "test_m6_stale_frame_refused_nothing_written"
+    ]
+   },
+   "menghitung klik kiri, bukan kanan": {
+    "rc": 1,
+    "n_gagal": 8,
+    "gagal": [
+     "test_t609_over_negative_per_target_and_strict_threshold",
+     "test_t609_panel_mark_and_yellow_block_only_above_threshold",
+     "test_t609_terminal_warning_after_save_not_blocking",
+     "test_t609_loaded_points_over_threshold_marked_at_open",
+     "test_43_neg_warning_in_dry_run_strict_threshold_from_yaml",
+     "test_44_neg_warning_before_gpu_and_message_without_run",
+     "test_47_real_cpu_chain_unchanged_when_neg_threshold_changes",
+     "test_m11_neg_points_warning_uses_yaml_key"
+    ]
+   },
+   "peringatan terminal sesudah simpan hilang": {
+    "rc": 1,
+    "n_gagal": 1,
+    "gagal": [
+     "test_t609_terminal_warning_after_save_not_blocking"
+    ]
+   },
+   "pick tidak menghapus pratinjau saat simpan": {
+    "rc": 1,
+    "n_gagal": 1,
+    "gagal": [
+     "test_t609_save_removes_only_target_pratinjau"
+    ]
+   },
+   "isolate --dry-run up-to-date tanpa peringatan": {
+    "rc": 1,
+    "n_gagal": 1,
+    "gagal": [
+     "test_43_neg_warning_in_dry_run_strict_threshold_from_yaml"
+    ]
+   },
+   "isolate mengabaikan YAML (ambang tetap default)": {
+    "rc": 1,
+    "n_gagal": 1,
+    "gagal": [
+     "test_43_neg_warning_in_dry_run_strict_threshold_from_yaml"
+    ]
+   },
+   "validasi key YAML dibuang": {
+    "rc": 1,
+    "n_gagal": 2,
+    "gagal": [
+     "test_m15_main_exit_codes",
+     "test_pipeline_validation_rejects[overrides12-isolate\\\\.neg_points_warn_max.*\\u2265"
+    ]
+   },
+   "penjaga env CPU dibuang": {
+    "rc": 1,
+    "n_gagal": 3,
+    "gagal": [
+     "test_m3_refuses_without_cpu_env_before_backend[0]",
+     "test_m3_refuses_without_cpu_env_before_backend[None]",
+     "test_m3_refuses_without_cpu_env_before_backend[]"
+    ]
+   },
+   "tanpa tukar folder (PNG basi tertinggal)": {
+    "rc": 1,
+    "n_gagal": 1,
+    "gagal": [
+     "test_m5_folder_replaced_whole_and_interrupt_keeps_old"
+    ]
+   },
+   "obj_id sesi selalu 1": {
+    "rc": 1,
+    "n_gagal": 1,
+    "gagal": [
+     "test_m12_one_session_per_frame_target_with_own_prompt"
+    ]
+   },
+   "cek RAM dilewati": {
+    "rc": 1,
+    "n_gagal": 2,
+    "gagal": [
+     "test_m13_low_ram_stops_before_model",
+     "test_m15_main_exit_codes"
+    ]
+   },
+   "pratinjau Ctrl+C: anak tidak diberi waktu selesai sendiri": {
+    "rc": 1,
+    "n_gagal": 1,
+    "gagal": [
+     "test_t609_mask_preview_helper_ctrl_c_one_line"
+    ]
+   },
+   "pratinjau Ctrl+C: anak yang tidak selesai tidak dihentikan": {
+    "rc": 1,
+    "n_gagal": 1,
+    "gagal": [
+     "test_t609_mask_preview_helper_ctrl_c_one_line"
+    ]
+   },
+   "pratinjau: galat lain tidak menghentikan anak": {
+    "rc": 1,
+    "n_gagal": 1,
+    "gagal": [
+     "test_t609_mask_preview_helper_ctrl_c_one_line"
+    ]
+   },
+   "pratinjau Ctrl+C: baris dihentikan tidak dicetak saat anak dimatikan": {
+    "rc": 1,
+    "n_gagal": 1,
+    "gagal": [
+     "test_t609_mask_preview_helper_ctrl_c_one_line"
+    ]
+   },
+   "pratinjau Ctrl+C: cli tidak menangkap (dua baris + ERROR)": {
+    "rc": 1,
+    "n_gagal": 1,
+    "gagal": [
+     "test_t609_mask_preview_helper_ctrl_c_one_line"
+    ]
+   }
+  }
+ },
+ "kegagalan_sesaat": {
+  "beku": {
+   "jeda_retry_s": null,
+   "rc": 0,
+   "test": {
+    "test_34_real_cpu_chain_byte_identical_with_points_and_isolate": "passed",
+    "test_47_real_cpu_chain_unchanged_when_neg_threshold_changes": "passed",
+    "test_m5_folder_replaced_whole_and_interrupt_keeps_old": "passed"
+   },
+   "statistik": {
+    "fungsi_dibekukan": 10
+   }
+  },
+  "kunci00": {
+   "jeda_retry_s": 0.0,
+   "rc": 1,
+   "test": {
+    "test_34_real_cpu_chain_byte_identical_with_points_and_isolate": "failed",
+    "test_47_real_cpu_chain_unchanged_when_neg_threshold_changes": "failed",
+    "test_m5_folder_replaced_whole_and_interrupt_keeps_old": "failed"
+   },
+   "statistik": {
+    "replace": 38,
+    "tujuan_dikunci": 3,
+    "ditolak": 15
+   }
+  },
+  "kunci02": {
+   "jeda_retry_s": 0.2,
+   "rc": 0,
+   "test": {
+    "test_34_real_cpu_chain_byte_identical_with_points_and_isolate": "passed",
+    "test_47_real_cpu_chain_unchanged_when_neg_threshold_changes": "passed",
+    "test_m5_folder_replaced_whole_and_interrupt_keeps_old": "passed"
+   },
+   "statistik": {
+    "replace": 193,
+    "tujuan_dikunci": 14,
+    "ditolak": 14
+   }
+  },
+  "kesimpulan": {
+   "created_utc": "TIDAK terkait - terbukti (mode beku: 3 / 3 lolos)",
+   "kunci_berkas": "dugaan - mekanisme direproduksi (jeda 0: 3 / 3 gagal; jeda 0,2 s: 3 / 3 lolos)"
+  }
+ },
+ "f1": [
+  {
+   "label": "sebelum_tahap1",
+   "n": 11332,
+   "list_sha256": "7648a37a31f3a42e2b23f566fbf74d48341415abe324ecd6a523edc36fd74d87"
+  },
+  {
+   "label": "sesudah_tahap1",
+   "n": 11332,
+   "list_sha256": "7648a37a31f3a42e2b23f566fbf74d48341415abe324ecd6a523edc36fd74d87",
+   "vs_sebelum_tahap1": {
+    "identik": true,
+    "hilang": 0,
+    "berubah": 0,
+    "tambahan": 0
+   }
+  },
+  {
+   "label": "sebelum_tahap2",
+   "n": 11332,
+   "list_sha256": "7648a37a31f3a42e2b23f566fbf74d48341415abe324ecd6a523edc36fd74d87"
+  },
+  {
+   "label": "sesudah_tahap2",
+   "n": 11332,
+   "list_sha256": "7648a37a31f3a42e2b23f566fbf74d48341415abe324ecd6a523edc36fd74d87",
+   "vs_sebelum_tahap2": {
+    "identik": true,
+    "hilang": 0,
+    "berubah": 0,
+    "tambahan": 0
+   }
+  },
+  {
+   "label": "sesudah_tanggapan",
+   "n": 11332,
+   "list_sha256": "7648a37a31f3a42e2b23f566fbf74d48341415abe324ecd6a523edc36fd74d87",
+   "vs_sebelum_tahap2": {
+    "identik": true,
+    "hilang": 0,
+    "berubah": 0,
+    "tambahan": 0
+   }
+  }
+ ],
+ "skrip": {
+  "t609_hash.py": "mandiri (membaca produksi)",
+  "t609_kunci.py": "mandiri (baca-saja produksi; menimpa work/t609/kunci_bukti.json)",
+  "t609_mutations.py": "mandiri (tests/)",
+  "t609_flaky.py": "mandiri (tests/)",
+  "t609_tahap4.py": "mandiri selama work/t609/ ada",
+  "t609_ukur.py": "TIDAK langsung: ukur / putusan butuh scratch; jalankan `siapkan` dulu (membuat ulang work/t609_scratch/ dari produksi) - menimpa work/t609/ukur_*.json",
+  "t609_tahap3.py": "TIDAK langsung: jalan / bahan butuh scratch (t609_ukur.py siapkan + t609_tahap3.py siapkan); bahan menolak bila work/t609/nilai/ ada; titik U1 Rio di scratch pick/ hilang"
+ }
+}

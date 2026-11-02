@@ -36,7 +36,8 @@ Path stage di bawah (`frames/`, `seg/`, `depth/`, `stable/`, …) relatif terhad
 dan `out/` = `paths.out_dir` (default `out/`, tidak per klip). `paths.work_dir` boleh diarahkan ke drive lain —
 data antara ±1–5 GB per klip (lihat anggaran disk).
 Di luar pipeline: `python -m rotoscope pick` (T-604, BUKAN stage) menulis `target/points.json` (+ `target/points.prev.json`,
-`target/pick_dryrun/`) di folder kerja klip; dibaca stage [1b] isolate (T-605, lihat "`pick.py`" dan "[1b] `isolate.py`").
+`target/pick_dryrun/`, `target/pratinjau/` dari `--mask-preview` T-609) di folder kerja klip; hanya `points.json` dibaca stage [1b]
+isolate (T-605, lihat "`pick.py`" dan "[1b] `isolate.py`").
 `isolate/` (T-605) dibaca stage [3] (T-606, D-012) — hanya bila masker berlaku (kunci [1b] = titik + frame sekarang); [2] / [2c]
 tidak membacanya.
 `python -m rotoscope crop` (T-607, D-013; BUKAN stage) menulis keputusan kotak crop `<paths.work_dir>/crop/<nama>/kotak.json` per
@@ -132,7 +133,7 @@ internal yang dipanggil cli, bukan cara pakai utama.
 | `isolate <video> [--config P] [--yes] [--restart] [--dry-run]` | **T-605:** stage [1b] sendiri (subprocess); `--yes` wajib bila GPU dipakai (hitung baru / basi); `--restart` butuh `--yes`; `--dry-run` = status + adegan + job + perkiraan tanpa GPU / tulis. Lihat "[1b] `isolate.py`" |
 | `ingest\|segment\|depth\|stabilize\|vectorize\|stylize\|export <video> [flag stage]` | satu stage; sisa argumen diteruskan apa adanya ke `main(argv)` stage (flag stage tidak diparse ulang di cli). `vectorize` (T-201a, T-201b): flag `--restart --limit` (`--limit N` tetap membaca SEMUA frame untuk ambang per klip, `clip_stats.json`), CPU in-process, `--restart` tanpa `--yes`. `stylize` (T-203a; `--from` T-204): flag `--style PATH --restart --limit [--from K]`, CPU in-process, `--restart` tanpa `--yes` (hanya menghapus `strokes/`). Keduanya (dan `export`) juga bagian urutan `run` sejak T-203b. **T-607:** `--start S --end E` di semua subperintah ini (dan `isolate`) memilih folder `<stem>@S-E` (ingest: juga memotong); `--work-dir` / `--crop-dir` ditentukan cli (exit 2) |
 | `download [--config P] [--seg-model 0.8b\|0.4b]` | unduh checkpoint (online, sekali jalan): Sapiens2-seg (default **0.8b**; `--seg-model 0.4b` = fallback), Depth Anything V2 Small, **dan** SAM 2.1 hiera tiny ([1b], T-605; 6 berkas jalur `transformers`) + model card. Subprocess mewarisi environment; **tidak** memaksa `HF_HUB_OFFLINE=1` (run biasa offline) |
-| `pick <video> [--frame N] [--config P] [--start S --end E] [--dry-run]` | **T-604:** jendela klik target (BUKAN stage, tidak masuk urutan `run`) → `target/points.json`. `meta.json` belum ada → [1] ingest dulu (CPU, argumen sama dengan `run`); sudah ada → `frames/` tidak disentuh. Lihat "`pick.py`" di bawah |
+| `pick <video> [--frame N] [--config P] [--start S --end E] [--dry-run \| --mask-preview]` | **T-604:** jendela klik target (BUKAN stage, tidak masuk urutan `run`) → `target/points.json`. `meta.json` belum ada → [1] ingest dulu (CPU, argumen sama dengan `run`); sudah ada → `frames/` tidak disentuh. **T-609:** `--mask-preview` = pratinjau masker SAM di CPU (proses sendiri, tanpa jendela, tanpa ingest) per frame berklik → `target/pratinjau/`. Lihat "`pick.py`" di bawah |
 | `crop <video> [--accept \| --box X Y W H \| --none \| --clear] [--config P]` | **T-607 (D-013):** keputusan kotak crop per SUMBER video (BUKAN stage, CPU) → `<paths.work_dir>/crop/<nama>/kotak.json`; tanpa aksi = status. `--start` / `--end` ditolak (exit 2: kotak berlaku untuk semua folder `<nama>@…`). Lihat "`crop.py`" di bawah |
 | `batch <video\|folder> ... [--list BERKAS] [--yes] [--skip-pending] [--config P] [--style P] [--seg-model 0.8b\|0.4b]` | **T-603 (BUKAN stage):** banyak klip → proses `run <video> … --yes` berurutan (satu proses per klip). Tanpa `--yes` = RENCANA: CPU saja, ingest + status crop / target / identitas / stage GPU + estimasi GPU dan disk; tidak memanggil stage GPU dan tidak menghapus apa pun. Dengan `--yes` = JALAN. Flag `--restart-from --preview --from --adopt --qc-only --limit` DILARANG (exit 1). Lihat "`batch.py`" di bawah |
 
@@ -353,6 +354,10 @@ diukur saat implementasi.
   per field dicetak). `vram_min_free_mib` / `ram_min_free_mib` bukan kunci. **`--yes` wajib setiap kali GPU dipakai** (hitung baru
   maupun basi): tanpa `--yes` → exit 1 + pesan (perintah `--yes` + `--dry-run`), tidak ada yang dihitung / dihapus; dengan `--yes` →
   seluruh klip dihitung ulang tanpa `--restart`. `frames: []` → hasil tanpa GPU (semua `tanpa_prompt`, tanpa `--yes`).
+- **Peringatan klik kanan > `isolate.neg_points_warn_max`** (T-609; per target per frame): dicetak di `--dry-run` (juga saat
+  up-to-date) dan sebelum GPU (dengan / tanpa `--yes`); tidak memblokir; BUKAN kunci, tidak masuk manifest / hash mana pun; `run`
+  biasa yang up-to-date tanpa peringatan. Pesan "butuh GPU" (tanpa `--yes`) hanya menyarankan `isolate … --yes`, `--dry-run`, dan
+  `pick … --mask-preview` (tanpa `run … --yes`: `run` = ingest + SEMUA stage).
 - **Tulis atomik per klip:** semua berkas ke `isolate.partial/`; selesai → `isolate/` → `isolate.old/`, `isolate.partial/` →
   `isolate/`, `isolate.old/` dihapus. Terputus (Ctrl+C / OOM / galat) → `isolate/` lama utuh; sisa dihapus di awal run berikutnya.
 - **CLI:** `python -m rotoscope isolate <video> [--config P] [--yes] [--restart] [--dry-run]` (`--restart` tanpa `--yes` → exit 1);
@@ -1228,9 +1233,11 @@ dengan aturan tetap)*:
   untuk GPU); keluaran [2]–[6] tetap byte-identik dengan atau tanpa `target/` (test).
 - **In:** `meta.json` + `frames/frame_%05d.png`. `meta.json` belum ada → cli menjalankan [1] ingest dulu (argumen sama dengan
   `run`); sudah ada → `frames/` / `meta.json` tidak disentuh. **Out:** `target/points.json` (+ `target/points.prev.json` = isi
-  sebelum simpan terakhir, cadangan satu tingkat); `--dry-run` → `target/pick_dryrun/frame_%05d.png` (kanvas yang akan tampil).
-- **CLI:** `python -m rotoscope pick <video> [--frame N] [--config P] [--start S --end E] [--dry-run]` (T-607: trim memilih folder
-  `<stem>@S-E`); `--frame` = angka di `frame_%05d.png`
+  sebelum simpan terakhir, cadangan satu tingkat); `--dry-run` → `target/pick_dryrun/frame_%05d.png` (kanvas yang akan tampil);
+  `--mask-preview` (T-609) → `target/pratinjau/klik_f%05d_t%d.png` + `pratinjau.json` (dihapus pick saat simpan yang mengubah
+  `points.json`).
+- **CLI:** `python -m rotoscope pick <video> [--frame N] [--config P] [--start S --end E] [--dry-run | --mask-preview]` (T-607: trim
+  memilih folder `<stem>@S-E`); `--frame` = angka di `frame_%05d.png`
   (default 0), harus di rentang klip. Satu sesi = satu frame; beberapa frame = beberapa sesi ke berkas yang sama. Exit 0
   (tersimpan / tanpa perubahan / dibatalkan / dry-run) | 1 (prasyarat: video, klip lain, ingest gagal, frame di luar klip / hilang,
   `points.json` rusak / milik klip lain / ukuran frame lain, jendela diskalakan sistem, OpenCV tanpa jendela, frame berubah selama
@@ -1246,9 +1253,32 @@ dengan aturan tetap)*:
   - **Enter / S** = simpan + tutup. Target hanya klik kanan tanpa kotak → ditolak (jendela tetap terbuka); frame kosong + entri lama
     → konfirmasi (Enter / S lagi = hapus entri frame itu; tombol lain = batal); tanpa perubahan → tutup tanpa menulis. Target tanpa
     titik dan tanpa kotak tidak disimpan. Target tanpa klik kanan → `(!)` di panel + PERINGATAN di terminal setelah simpan (tidak
-    memblokir).
+    memblokir). Target dengan klik kanan **> `isolate.neg_points_warn_max`** (YAML, default 10; per target per frame; T-609, data
+    docs/04 "Hasil T-608 1b-2 langkah 1") → `(>10)` di baris target + blok kuning di panel selama mengklik, PERINGATAN di terminal
+    sesudah simpan (frame ini + frame lain di berkas); tidak memblokir. Simpan yang berhasil (termasuk hapus entri) menghapus
+    `target/pratinjau/` — HANYA folder itu — lalu mencetak perintah `--mask-preview`. Teks saran panel: kotak di sekitar target +
+    4–8 klik kiri + klik kanan paling banyak 10 (= nilai YAML), hanya di bagian orang lain yang menempel target.
   - **Esc / tombol X jendela**: tanpa perubahan → keluar; dengan perubahan belum disimpan → konfirmasi (Esc / X kedua = keluar tanpa
     simpan; Enter / S = simpan; tombol lain = lanjut; setelah X jendela dibuka lagi untuk konfirmasi).
+- **Pratinjau masker (T-609; `--mask-preview`)** — tanpa jendela, CPU: proses sendiri `python -m rotoscope.mask_preview --work-dir
+  … [--config]` (cli memasang `CUDA_VISIBLE_DEVICES=-1`; modul MENOLAK berjalan tanpa itu, dicek sebelum torch di-import; sesudah
+  inferensi `torch.cuda` harus belum terinisialisasi, kalau tidak hasil tidak dipakai). Model = `isolate.model_id` / `revision`
+  dari cache HF (offline, tanpa unduhan; tidak di cache → perintah `download`), `isolate.mask_threshold`; cek RAM
+  `isolate.ram_min_free_mib`. Untuk SETIAP frame berklik × target: sesi SAM 1 frame, prompt apa adanya (= cara [1b] menghitung frame
+  klik → **sama dengan masker [1b] di frame klik**; T-609: skor + luas 4 / 4); BUKAN hasil pelacakan (frame lain tidak diperiksa).
+  Prasyarat (exit 1, tanpa tulis): `meta.json` + `points.json` ada (pratinjau tidak menjalankan ingest), titik valid + frame klik
+  `ok` (pesan `isolate.load_valid_points`). `--mask-preview` + `--dry-run` / `--frame` → exit 2. Keluaran: `klik_f%05d_t%d.png` (bar
+  teks frame / detik video sumber / target / skor objek / porsi masker, desimal koma + FOTO + masker biru transparan α 0,45 + garis
+  tepi + kotak kuning + titik kiri hijau / kanan merah; W × (H + 44)) + `pratinjau.json` (`rotoscope-mask-preview/1`: identitas klip,
+  sha256 `points.json`, model, device `cpu`, `mask_threshold`, `neg_points_warn_max`, versi lib, per frame sidik piksel + detik + per
+  target kiri / kanan / kotak / skor / luas / porsi / komponen 8-arah / porsi komponen terbesar / waktu / PNG / peringatan, `run`).
+  Selalu SEMUA frame berklik; ditulis ke `target/pratinjau.partial/` lalu ditukar (terputus → folder lama utuh; sisa dihapus run
+  berikutnya). PERINGATAN: skor objek ≤ 0 / masker kosong; klik kanan > ambang. Terminal: daftar "yang harus dicek" (biru menutup
+  target SAJA; bagian penting tidak bolong; skor positif) + perintah pick ulang. Tidak dibaca stage mana pun; tidak masuk kunci [1b].
+  Terukur CPU 6 thread (T-609): 1,8–2,2 s per (frame, target), proses 12–26 s, RAM working set ≤ 1,25 GiB. Exit 0 | 1 | 2 | 130.
+  Proses anak dijalankan helper sendiri `cli.run_mask_preview` (BUKAN `run_gpu_stage`; jalur GPU `run` tidak disentuh, keputusan Rio
+  T-609): Ctrl+C → anak diberi waktu `TERMINATE_TIMEOUT_S` untuk selesai sendiri (satu baris "dihentikan (Ctrl+C) di pratinjau
+  masker …; target/pratinjau/ lama utuh"), lalu dihentikan; induk keluar 130 tanpa baris `ERROR` (uji Rio U4 lolos).
 - **Format `points.json` = `rotoscope-target-points/1`** (tulis atomik, `indent` 2):
 
   ```json
@@ -1463,6 +1493,7 @@ rotoscope/
 │   ├── stabilize.py  vectorize.py  stylize.py  export.py
 │   ├── config.py  cli.py  __main__.py   # python -m rotoscope (T-104b)
 │   ├── pick.py           # `pick` (T-604): jendela klik target → <klip>/target/points.json (bukan stage)
+│   ├── mask_preview.py   # `pick --mask-preview` (T-609): pratinjau masker SAM di CPU → <klip>/target/pratinjau/ (bukan stage)
 │   ├── crop.py           # [1] saran crop R2 beku + alat `crop` (T-607): <work_dir>/crop/<nama>/kotak.json (bukan stage)
 │   ├── stage_common.py   # helper bersama stage: tulis atomik + retry, frames.jsonl, daftar frame,
 │   │                     # error/exit code; khusus GPU: offline/revision/cache HF, VRAM, OOM (T-105)

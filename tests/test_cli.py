@@ -891,7 +891,8 @@ def test_preview_does_not_stop_on_undecided_saran(rec, tmp_path, monkeypatch):
 def test_pick_uses_trim_folder(rec, tmp_path, monkeypatch):
     video = make_video(tmp_path)
     seen = {}
-    monkeypatch.setattr(cli.pick_mod, "run_pick", lambda work_dir, frame, video, dry_run_only: seen.setdefault("wd", work_dir) and 0)
+    monkeypatch.setattr(cli.pick_mod, "run_pick",                     # T-609: + neg_max (YAML isolate.neg_points_warn_max)
+                        lambda work_dir, frame, video, dry_run_only, neg_max: seen.setdefault("wd", work_dir) and 0)
     assert run_cli("pick", str(video), "--start", "0.5", "--end", "1", "--dry-run") == 0
     assert seen["wd"].name == "clip@0.5-1" and workdir_of(rec.args("ingest")).name == "clip@0.5-1"
 

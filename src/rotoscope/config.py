@@ -177,6 +177,10 @@ class IsolateConfig:
     vram_min_free_mib: int = 2000      # reserved terukur 892 MiB (T-602, 92 frame)
     ram_min_free_mib: int = 4096       # RAM bebas sebelum load (puncak proses T-602 3,7–4,8 GiB)
     mask_threshold: float = 0.0        # logit SAM > ambang = target (konvensi SAM)
+    # T-609: PERINGATAN bila satu target di satu frame punya klik kanan > ambang (pick, isolate --dry-run / sebelum GPU, pratinjau).
+    # Hanya peringatan: BUKAN kunci [1b] (build_key) dan tidak masuk manifest / hash mana pun (keputusan Rio T-609 no. 1).
+    # Data T-608: 10 klik kanan → skor objek +16,8 … +17,4; 30 → +2,7 … +4,3; 47–67 → negatif, masker kosong.
+    neg_points_warn_max: int = 10
 
 
 @dataclass(frozen=True)
@@ -847,6 +851,7 @@ def _validate_pipeline(c: PipelineConfig) -> None:
     _between("isolate.vram_min_free_mib", i.vram_min_free_mib, 0, VRAM_MAX_MIB)
     _between("isolate.ram_min_free_mib", i.ram_min_free_mib, 0, RAM_MAX_MIB)
     _between("isolate.mask_threshold", i.mask_threshold, MASK_THRESHOLD_MIN, MASK_THRESHOLD_MAX)
+    _at_least("isolate.neg_points_warn_max", i.neg_points_warn_max, 0)
 
     q = c.qc
     _unit("qc.area_min", q.area_min)

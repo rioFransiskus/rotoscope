@@ -1,4 +1,5 @@
-"""`python -m rotoscope pick <video> [--frame N] [--config P] [--dry-run]` (T-604): jendela klik target → target/points.json.
+"""`python -m rotoscope pick <video> [--frame N] [--config P] [--dry-run | --mask-preview]` (T-604; T-609): jendela klik target →
+target/points.json. `--mask-preview` = pratinjau masker CPU (modul `mask_preview`, proses sendiri; dipanggil cli).
 
 BUKAN stage pipeline: `run` tidak memanggilnya dan tidak ada stage yang membaca `target/` (konsumen pertama = T-605).
 Bila `meta.json` belum ada, cli menjalankan [1] ingest dulu (CPU); modul ini tidak pernah menulis `frames/` / `meta.json`.
@@ -14,7 +15,12 @@ tiap entri frame terikat `frame_pixel_sha256` = sha256(b"rgb8 <W>x<H>\\n" + piks
 bukan byte PNG (keputusan Rio 2026-10-16): ingest ulang yang hanya mengubah kompresi PNG tidak membuat titik basi.
 
 Konstanta UI (lebar panel, ambang tarik, warna, ...) sengaja konstanta modul, bukan YAML: tidak memengaruhi keluaran
-pipeline (keputusan Rio T-604 setelah Tahap 1 no. 5).
+pipeline (keputusan Rio T-604 setelah Tahap 1 no. 5). Ambang peringatan klik kanan (T-609) = YAML `isolate.neg_points_warn_max`
+(keputusan Rio T-609 no. 1), diteruskan cli lewat `run_pick(neg_max=…)`; default = default kode config.
+
+T-609: target dengan klik kanan > ambang (per target per frame) → `(>N)` + blok kuning di panel, PERINGATAN di terminal sesudah
+simpan; tidak memblokir. Simpan yang berhasil menghapus `target/pratinjau/` (pratinjau masker `--mask-preview`, modul
+`mask_preview`) karena tidak lagi sesuai titik — HANYA folder itu.
 """
 
 from __future__ import annotations
@@ -25,6 +31,8 @@ import json
 import math
 import os
 import re
+import shutil
+import stat
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -33,6 +41,7 @@ from typing import Any
 import cv2
 import numpy as np
 
+from rotoscope.config import IsolateConfig
 from rotoscope.ingest import FRAME_PATTERN, FRAMES_DIRNAME
 from rotoscope.stage_common import (
     EXIT_OK, EXIT_PRECONDITION, StageError, clip_identity, config_flag, load_frame_list, read_rgb, trim_flags, utc_now,
@@ -52,6 +61,9 @@ TARGET_DIRNAME = "target"
 POINTS_FILENAME = "points.json"
 PREV_FILENAME = "points.prev.json"
 DRYRUN_DIRNAME = "pick_dryrun"
+PREVIEW_DIRNAME = "pratinjau"    # T-609: target/pratinjau/ = pratinjau masker CPU (modul mask_preview), dihapus saat titik berubah
+PREVIEW_FLAG = "--mask-preview"
+DEFAULT_NEG_WARN_MAX = IsolateConfig().neg_points_warn_max   # default kode YAML isolate.neg_points_warn_max (T-609)
 TOOL = f"{PROG} pick"
 COORDS_DOC = ("piksel frame kerja frames/ (x ke kanan, y ke bawah; pusat piksel kiri-atas = 0, 0); label 1 = target, "
               "0 = bukan target (konvensi SAM); box = [x0, y0, x1, y1] dengan x0 < x1, y0 < y1")
@@ -269,6 +281,10 @@ class PickState:
         return [tid for tid, t in self.content().items()
                 if t["box"] is None and not any(p["label"] == 1 for p in t["points"])]
 
+    def over_negative(self, limit: int) -> list[tuple[int, int]]:
+        """T-609: (id, jumlah klik kanan) untuk target frame ini dengan klik kanan > limit."""
+        return over_negative([{"id": tid, "points": t["points"]} for tid, t in self.content().items()], limit)
+
     # ── aksi ──
     def add_point(self, dx: int, dy: int, label: int) -> None:
         x, y = self.view.to_frame(dx, dy)
@@ -422,6 +438,22 @@ class PickState:
 
 
 # ── Validasi points.json ───────────────────────────
+def over_negative(targets: list[dict], limit: int) -> list[tuple[int, int]]:
+    """T-609: klik kanan dihitung PER TARGET per frame (SAM menerima prompt per target — satu sesi per target di [1b]).
+    Return (id, jumlah) untuk target dengan klik kanan > limit, urut seperti `targets`."""
+    out = []
+    for t in targets:
+        n = sum(p["label"] == 0 for p in t["points"])
+        if n > limit:
+            out.append((int(t["id"]), n))
+    return out
+
+
+def doc_over_negative(doc: dict | None, limit: int) -> list[tuple[int, int, int]]:
+    """T-609: (frame, id, jumlah klik kanan) di seluruh points.json untuk target dengan klik kanan > limit."""
+    return [(int(e["frame_index"]), tid, n) for e in (doc or {}).get("frames", []) for tid, n in over_negative(e["targets"], limit)]
+
+
 def _is_int(v: Any) -> bool:
     return isinstance(v, int) and not isinstance(v, bool)
 
@@ -608,6 +640,20 @@ def build_entry(frame: int, pixel_sha: str, state: PickState, display: DisplayIn
             "targets": targets_json(state)}
 
 
+def remove_mask_preview(work_dir: Path) -> bool:
+    """T-609 (keputusan Rio no. 4): titik disimpan berubah → <klip>/target/pratinjau/ lama dihapus (tidak sesuai titik lagi).
+    HANYA folder itu; link / junction (reparse point) tidak diikuti dan tidak dihapus. Return True bila dihapus."""
+    d = work_dir / TARGET_DIRNAME / PREVIEW_DIRNAME
+    try:
+        st = os.lstat(d)
+    except FileNotFoundError:
+        return False
+    if not stat.S_ISDIR(st.st_mode) or getattr(st, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0):
+        return False
+    shutil.rmtree(d)
+    return True
+
+
 def write_points(path: Path, doc: dict) -> bool:
     """Tulis atomik; isi lama disalin dulu ke points.prev.json (cadangan satu tingkat). Return True bila ada cadangan."""
     validate_doc(doc)
@@ -657,6 +703,9 @@ class Session:
 
     def pick_cmd(self, frame: int) -> str:
         return f"{PROG} pick {_quote(self.video)}{trim_flags(self.work_dir)}{config_flag()} --frame {frame}"
+
+    def preview_cmd(self) -> str:
+        return f"{PROG} pick {_quote(self.video)}{trim_flags(self.work_dir)}{config_flag()} {PREVIEW_FLAG}"
 
 
 def open_session(work_dir: Path, frame: int, video: str) -> Session:
@@ -716,9 +765,10 @@ def new_state(session: Session, view: View) -> PickState:
     return PickState(view, loaded_targets=loaded, known_other_ids=session.other_ids(), entry_exists=entry is not None)
 
 
-def commit(session: Session, state: PickState, action: str, display: DisplayInfo) -> tuple[dict, bool]:
+def commit(session: Session, state: PickState, action: str, display: DisplayInfo) -> tuple[dict, bool, bool]:
     """Simpan / hapus entri frame ini: points.json DIBACA ULANG dari disk (perubahan sesi lain tetap ada), sidik frame dihitung
-    ulang (berbeda dengan saat dibuka → tidak disimpan). Return (dokumen baru, ada cadangan)."""
+    ulang (berbeda dengan saat dibuka → tidak disimpan). Sesudah tulis berhasil: target/pratinjau/ dihapus (T-609).
+    Return (dokumen baru, ada cadangan, pratinjau lama dihapus)."""
     path = session.points_path
     try:
         disk = load_points(path)
@@ -746,7 +796,12 @@ def commit(session: Session, state: PickState, action: str, display: DisplayInfo
         backed_up = write_points(path, doc)
     except StageError as e:
         raise PickError(f"gagal menulis {path}: {e}") from None
-    return doc, backed_up
+    try:
+        removed = remove_mask_preview(session.work_dir)
+    except OSError as e:
+        raise PickError(f"points.json tersimpan, tetapi pratinjau lama {session.work_dir / TARGET_DIRNAME / PREVIEW_DIRNAME} "
+                        f"tidak bisa dihapus ({e}) - hapus folder itu sebelum memakai pratinjau") from None
+    return doc, backed_up, removed
 
 
 # ── Gambar kanvas ──────────────────────────────────
@@ -758,6 +813,7 @@ class PanelInfo:
     last: int
     other_ids: dict[int, list[int]]
     notes: list[str]
+    neg_max: int = DEFAULT_NEG_WARN_MAX       # T-609: isolate.neg_points_warn_max
 
 
 def _text_w(text: str, scale: float) -> int:
@@ -799,19 +855,24 @@ def panel_lines(state: PickState, info: PanelInfo, *, with_tips: bool = True) ->
         ("R = kosongkan frame ini", TEXT_WHITE, 0.5),
         ("Enter / S = simpan + tutup", TEXT_WHITE, 0.5),
         ("Esc = keluar tanpa simpan", TEXT_WHITE, 0.5), None]
-    if with_tips:
-        out += [("Saran: 3-5 klik kiri tersebar per", TEXT_GREY, 0.45),
-                ("target + klik kanan di orang /", TEXT_GREY, 0.45),
-                ("benda yang menempel ke target.", TEXT_GREY, 0.45), None]
+    if with_tips:                                # T-609: aturan klik T-608 (docs/04 "Keputusan T-608 1b-2" no. 3)
+        tips = (f"Saran: kotak di sekitar target + 4-8 klik kiri + klik kanan paling banyak {info.neg_max}, hanya di "
+                f"bagian orang lain yang menempel target.")
+        out += [*[(ln, TEXT_GREY, 0.45) for ln in wrap_text(tips, 0.45, room)], None]
     out.append(("Frame ini:", TEXT_WHITE, 0.5))
     content = state.content()
+    over = dict(state.over_negative(info.neg_max))
     for tid in sorted(set(content) | {state.active}):
         pos, neg, box = _counts(state.targets.get(tid, {"points": [], "box": None}))
-        mark = "  (!)" if tid in content and neg == 0 else ""
+        mark = "  (!)" if tid in content and neg == 0 else f"  (>{info.neg_max})" if tid in over else ""
         out.append((f" {tid} {target_color_name(tid)}: {pos} kiri, {neg} kanan{', kotak' if box else ''}{mark}",
                     target_color(tid), 0.5))
     if state.no_negative():
         out.append(("(!) = belum ada klik kanan", TEXT_GREY, 0.45))
+    if over:
+        warn = (f"(>{info.neg_max}) = klik kanan lebih dari {info.neg_max}: skor SAM bisa negatif dan masker kosong. "
+                f"Kurangi dengan U (klik terakhir) atau R.")
+        out += [(ln, TEXT_YELLOW, 0.45) for ln in wrap_text(warn, 0.45, room)]
     if info.other_ids:
         text = "Di frame lain: " + "  ".join(f"{tid} (f{', f'.join(map(str, fs))})" for tid, fs in info.other_ids.items())
         out += [(ln, TEXT_WHITE, 0.45) for ln in wrap_text(text, 0.45, room)]
@@ -1019,9 +1080,17 @@ def describe_status(session: Session) -> str:
     return f"{len(session.status)} frame: " + ", ".join(f"{f} ({st})" for f, st in sorted(session.status.items()))
 
 
-def no_negative_warning(ids: list[int]) -> str:
+def no_negative_warning(ids: list[int], limit: int = DEFAULT_NEG_WARN_MAX) -> str:
     return (f"PERINGATAN: target {_ids(ids)} tanpa klik kanan (bukan target) - klik kanan di orang / benda yang menempel "
-            f"membantu SAM memisahkan target (T-602 klip5: 0 klik kanan, masker rusak). Tetap disimpan.")
+            f"(paling banyak {limit} per target) membantu SAM memisahkan target (T-602 klip5: 0 klik kanan, masker rusak). "
+            f"Tetap disimpan.")
+
+
+def over_negative_warning(frame: int, over: list[tuple[int, int]], limit: int, preview_cmd: str) -> str:
+    """T-609: satu baris PERINGATAN untuk target frame ini dengan klik kanan > limit (tidak memblokir)."""
+    who = ", ".join(f"target {tid}: {n} klik kanan" for tid, n in over)
+    return (f"PERINGATAN: frame {frame} {who} (lebih dari {limit}) - skor objek SAM bisa negatif dan masker kosong "
+            f"(T-608: 47-67 klik kanan -> masker kosong; 10 -> baik). Cek dulu: {preview_cmd}. Tetap disimpan.")
 
 
 def print_open(session: Session, view: View, display: DisplayInfo) -> None:
@@ -1102,11 +1171,11 @@ def gui_loop(session: Session, state: PickState, view: View, display: DisplayInf
                 return EXIT_OK
             gui.close_all()
             try:
-                doc, backed_up = commit(session, state, act, display)
+                doc, backed_up, removed = commit(session, state, act, display)
             except PickError as e:
                 print(f"ERROR: {e}", file=sys.stderr)
                 return EXIT_PRECONDITION
-            print_saved(session, state, act, doc, backed_up)
+            print_saved(session, state, act, doc, backed_up, info.neg_max, removed)
             return EXIT_OK
     except KeyboardInterrupt:
         print("Dihentikan (Ctrl+C) - points.json tidak berubah.", file=sys.stderr)
@@ -1115,7 +1184,8 @@ def gui_loop(session: Session, state: PickState, view: View, display: DisplayInf
         gui.close_all()
 
 
-def print_saved(session: Session, state: PickState, act: str, doc: dict, backed_up: bool) -> None:
+def print_saved(session: Session, state: PickState, act: str, doc: dict, backed_up: bool,
+                neg_max: int = DEFAULT_NEG_WARN_MAX, preview_removed: bool = False) -> None:
     others = [e["frame_index"] for e in doc["frames"] if e["frame_index"] != session.frame]
     status = frame_statuses({"frames": [e for e in doc["frames"] if e["frame_index"] != session.frame]},
                             session.work_dir, set(session.indices), {})
@@ -1128,15 +1198,28 @@ def print_saved(session: Session, state: PickState, act: str, doc: dict, backed_
     if backed_up:
         print(f"  isi lama disalin ke {session.points_path.with_name(PREV_FILENAME).name}", flush=True)
     if act != ACT_DELETE and state.no_negative():
-        print(no_negative_warning(state.no_negative()), flush=True)
+        print(no_negative_warning(state.no_negative(), neg_max), flush=True)
+    over = state.over_negative(neg_max) if act != ACT_DELETE else []
+    if over:
+        print(over_negative_warning(session.frame, over, neg_max, session.preview_cmd()), flush=True)
+    over_others = [(f, tid, n) for f, tid, n in doc_over_negative(doc, neg_max) if f != session.frame]
+    if over_others:
+        print(f"PERINGATAN: frame lain dengan klik kanan > {neg_max}: "
+              + ", ".join(f"f{f} (target {tid}: {n})" for f, tid, n in over_others)
+              + f" - pick ulang: {session.pick_cmd(over_others[0][0])}", flush=True)
     stale = [f for f in others if status[f] == STATUS_STALE]
     if stale:
         print(f"PERINGATAN: titik frame {_ids(stale)} basi - pick ulang: {session.pick_cmd(stale[0])}", flush=True)
+    if preview_removed:
+        print(f"  pratinjau masker lama dihapus ({TARGET_DIRNAME}/{PREVIEW_DIRNAME}/ tidak sesuai titik baru)", flush=True)
+    if doc["frames"]:
+        print(f"  Cek masker di frame klik (CPU, tanpa GPU): {session.preview_cmd()}", flush=True)
 
 
 def run_pick(work_dir: Path, frame: int, *, video: str, dry_run_only: bool = False, gui=None,
-             display: DisplayInfo | None = None) -> int:
-    """Pintu masuk dari cli (meta.json sudah ada). Exit 0 (tersimpan / tanpa perubahan / dibatalkan / dry-run) | 1 | 130."""
+             display: DisplayInfo | None = None, neg_max: int = DEFAULT_NEG_WARN_MAX) -> int:
+    """Pintu masuk dari cli (meta.json sudah ada). Exit 0 (tersimpan / tanpa perubahan / dibatalkan / dry-run) | 1 | 130.
+    `neg_max` = YAML isolate.neg_points_warn_max (T-609; dibaca cli)."""
     try:
         session = open_session(work_dir, frame, video)
         display = display or probe_display()
@@ -1146,7 +1229,7 @@ def run_pick(work_dir: Path, frame: int, *, video: str, dry_run_only: bool = Fal
         return EXIT_PRECONDITION
     state = new_state(session, view)
     info = PanelInfo(session.clip, session.frame, session.indices[0], session.indices[-1], session.other_ids(),
-                     list(session.notes))
+                     list(session.notes), neg_max)
     print_open(session, view, display)
     disp = display_image(session.frame_rgb, view)
     if dry_run_only:

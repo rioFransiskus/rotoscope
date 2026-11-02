@@ -40,6 +40,7 @@ isolate:
   vram_min_free_mib: 2000    # reserved terukur 892 MiB (T-602, 92 frame); tumbuh ±2 MiB / frame / target
   ram_min_free_mib: 4096     # RAM bebas sebelum load (puncak proses T-602 3,7–4,8 GiB)
   mask_threshold: 0.0        # logit SAM > ambang = target (konvensi SAM: 0)
+  neg_points_warn_max: 10    # int ≥ 0; PERINGATAN bila 1 target di 1 frame punya klik kanan > ini (pick, isolate, pratinjau); BUKAN kunci / hash (T-609)
 
 # ── SEGMENT [2] — Sapiens2-seg ─────────────────────
 segment:

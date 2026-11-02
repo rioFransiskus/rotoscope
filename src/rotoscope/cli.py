@@ -5,7 +5,7 @@
                                     [--restart-from ingest|isolate|segment|depth|stabilize|vectorize|stylize|export [--yes]]
     python -m rotoscope ingest|isolate|segment|depth|stabilize|vectorize|stylize|export <video> [flag stage ...]
     python -m rotoscope download [--config PATH] [--seg-model 0.8b|0.4b]
-    python -m rotoscope pick <video> [--frame N] [--config PATH] [--dry-run]
+    python -m rotoscope pick <video> [--frame N] [--config PATH] [--dry-run | --mask-preview]
     python -m rotoscope crop <video> [--accept | --box X Y W H | --none | --clear] [--config PATH]
     python -m rotoscope batch <video|folder> ... [--list BERKAS] [--yes] [--skip-pending]   (T-603; batch.py; dispatch di main)
 
@@ -20,6 +20,7 @@ diteruskan apa adanya) dan proses induk TIDAK meng-import torch / menyentuh CUDA
 vectorize, export) dipanggil in-process lewat main(argv) stage-nya, jadi flag stage tidak diparse ulang di sini.
 [4] vectorize dan [5] stylize masuk urutan `run` (T-203b; --style diteruskan ke stylize dan, sejak T-404a, ke export untuk kertas bertekstur).
 `pick` (T-604) BUKAN stage: jendela klik target → <klip>/target/points.json (pick.py); tidak masuk urutan `run`.
+`pick --mask-preview` (T-609): pratinjau masker CPU = proses sendiri `rotoscope.mask_preview` dengan CUDA_VISIBLE_DEVICES=-1.
 [1b] isolate (T-605, D-011) OPT-IN: subprocess hanya bila <klip>/target/points.json ada; tanpa itu `run` tidak membuat
 subprocess dan tidak menulis apa pun (isolate/ lama dihapus in-process dengan pesan). --yes wajib setiap kali [1b] memakai GPU
 (diteruskan ke stage); --limit tidak berlaku untuk [1b].
@@ -744,9 +745,13 @@ def cmd_download(a: argparse.Namespace) -> int:
 
 def cmd_pick(a: argparse.Namespace) -> int:
     """`pick <video> [--frame N] [--dry-run]` (T-604): jendela klik target → <klip>/target/points.json. BUKAN stage; `run`
-    tidak berubah. `meta.json` belum ada → [1] ingest dulu (argumen sama dengan `run`); sudah ada → frames/ tidak disentuh."""
-    if a.frame < 0:
-        raise CliError(f"--frame harus ≥ 0, dapat {a.frame}", EXIT_USAGE)
+    tidak berubah. `meta.json` belum ada → [1] ingest dulu (argumen sama dengan `run`); sudah ada → frames/ tidak disentuh.
+    T-609: ambang peringatan klik kanan = YAML isolate.neg_points_warn_max; `--mask-preview` → cmd_mask_preview."""
+    if a.mask_preview:
+        return cmd_mask_preview(a)
+    frame = 0 if a.frame is None else a.frame
+    if frame < 0:
+        raise CliError(f"--frame harus ≥ 0, dapat {frame}", EXIT_USAGE)
     cfg = load_cfg(a.config)
     trim = requested_trim(a.trim_start, a.trim_end)
     ctx = Ctx(video=a.video, cfg=cfg, work_dir=clip_work_dir(cfg, a.video, trim), config=a.config, trim=trim,
@@ -759,7 +764,59 @@ def cmd_pick(a: argparse.Namespace) -> int:
         if rc != EXIT_OK:
             print(f"ERROR: [1] ingest gagal (exit {rc}) — pick tidak dibuka", file=sys.stderr)
             return rc
-    return pick_mod.run_pick(ctx.work_dir, a.frame, video=str(a.video), dry_run_only=a.dry_run)
+    return pick_mod.run_pick(ctx.work_dir, frame, video=str(a.video), dry_run_only=a.dry_run,
+                             neg_max=cfg.isolate.neg_points_warn_max)
+
+
+def cmd_mask_preview(a: argparse.Namespace) -> int:
+    """`pick <video> --mask-preview` (T-609): pratinjau masker SAM di CPU untuk SEMUA frame berklik → <klip>/target/pratinjau/.
+    Tanpa jendela, tanpa ingest (titik harus sudah ada), proses sendiri dengan CUDA_VISIBLE_DEVICES=-1."""
+    if a.dry_run or a.frame is not None:
+        raise CliError(f"{pick_mod.PREVIEW_FLAG} membuat pratinjau SEMUA frame berklik di points.json tanpa jendela — tidak "
+                       f"bisa digabung dengan --dry-run / --frame", EXIT_USAGE)
+    cfg = load_cfg(a.config)
+    trim = requested_trim(a.trim_start, a.trim_end)
+    ctx = Ctx(video=a.video, cfg=cfg, work_dir=clip_work_dir(cfg, a.video, trim), config=a.config, trim=trim,
+              crop_dir=crop_dir_of(cfg, a.video))
+    preflight_video(a.video, ctx.work_dir, trim)
+    pick_cmd = f"{PROG} pick {quote_arg(a.video)}{''.join(f' {x}' for x in trim_args(trim))}{config_flag()}"
+    if _read_meta(ctx.work_dir) is None:
+        raise CliError(f"klip belum di-ingest ({ctx.work_dir / META_FILENAME} tidak ada) — klik target dulu (pick menjalankan "
+                       f"[1] ingest): {pick_cmd}")
+    if not isolate_stage.points_present(ctx.work_dir):
+        raise CliError(f"{isolate_stage.points_path(ctx.work_dir)} tidak ada — belum ada titik. Klik target dulu: {pick_cmd}")
+    print(f"pratinjau masker {a.video.name}: folder kerja {ctx.work_dir} (CPU, proses sendiri)", flush=True)
+    args = ["--work-dir", str(ctx.work_dir)] + (["--config", str(a.config)] if a.config is not None else [])
+    try:
+        return run_mask_preview(args)
+    except KeyboardInterrupt:                # satu baris sudah dicetak anak (atau run_mask_preview bila anak dimatikan)
+        return EXIT_INTERRUPTED
+
+
+MASK_PREVIEW_MODULE = "rotoscope.mask_preview"       # T-609: pick --mask-preview (BUKAN stage)
+MASK_PREVIEW_CPU_ENV = ("CUDA_VISIBLE_DEVICES", "-1")
+
+
+def run_mask_preview(args: Sequence[str]) -> int:
+    """T-609: pratinjau masker = proses sendiri `rotoscope.mask_preview`, CPU DIPAKSA (CUDA_VISIBLE_DEVICES=-1; modul menolak
+    berjalan tanpa itu); proses induk tetap tanpa torch. Helper sendiri (keputusan Rio T-609: jalur GPU `run_gpu_stage` tidak
+    disentuh). Ctrl+C: anak (konsol sama) diberi waktu selesai sendiri, lalu dihentikan; baris "dihentikan" dicetak bila anak
+    tidak keluar 130 sendiri."""
+    env = {**os.environ, MASK_PREVIEW_CPU_ENV[0]: MASK_PREVIEW_CPU_ENV[1]}
+    proc = _popen([sys.executable, "-m", MASK_PREVIEW_MODULE, *args], env=env)
+    try:
+        return proc.wait()
+    except BaseException as exc:
+        if isinstance(exc, KeyboardInterrupt):
+            try:
+                proc.wait(timeout=TERMINATE_TIMEOUT_S)
+            except subprocess.TimeoutExpired:
+                _stop(proc)
+        else:
+            _stop(proc)
+        if isinstance(exc, KeyboardInterrupt) and proc.returncode != EXIT_INTERRUPTED:
+            print(interrupted_line("pratinjau masker"), file=sys.stderr, flush=True)
+        raise
 
 
 def cmd_crop(a: argparse.Namespace) -> int:
@@ -865,11 +922,14 @@ def build_parser() -> argparse.ArgumentParser:
                                    "klik kiri = target, klik kanan = bukan target, tarik = kotak, N / U / R, Enter / S = "
                                    "simpan, Esc = keluar. frames/ belum ada → [1] ingest dulu (CPU).")
     k.add_argument("video", type=Path, help="video sumber (menentukan folder kerja klip)")
-    k.add_argument("--frame", type=int, default=0, help="frame yang diklik (angka di frame_%%05d.png; default 0)")
+    k.add_argument("--frame", type=int, default=None, help="frame yang diklik (angka di frame_%%05d.png; default 0)")
     k.add_argument("--config", type=Path, default=None)
     k.add_argument("--dry-run", action="store_true",
                    help="tanpa jendela: kanvas → <klip>/target/pick_dryrun/frame_%%05d.png + tata letak; "
                         "points.json tidak disentuh")
+    k.add_argument("--mask-preview", action="store_true",
+                   help="T-609: tanpa jendela, CPU: masker SAM 2.1 tiny di SETIAP frame berklik (satu frame per klik, BUKAN "
+                        "pelacakan video) → <klip>/target/pratinjau/klik_f%%05d_t%%d.png + pratinjau.json")
     _add_trim_args(k)
     k.set_defaults(func=cmd_pick)
 

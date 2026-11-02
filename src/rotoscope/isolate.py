@@ -24,6 +24,10 @@ Alur run:
 pesan (exit 1), tidak ada yang dihitung / dihapus. `frames: []` → hasil tanpa GPU (semua `tanpa_prompt`). Tanpa `--limit`:
 masker selalu seluruh klip.
 
+T-609: target dengan klik kanan > `isolate.neg_points_warn_max` (per target per frame) → PERINGATAN di `--dry-run` dan sebelum
+GPU (dengan / tanpa `--yes`); tidak memblokir, bukan kunci, tidak masuk manifest. Pratinjau masker CPU di frame klik = modul
+`mask_preview` (`pick --mask-preview`), memakai `TorchSamBackend(device="cpu")` dari modul ini.
+
 Dua lapis (pola depth.py): backend model (`TorchSamBackend` / `TorchEngine`) — satu-satunya bagian yang meng-import torch /
 transformers; logika stage (`run_isolate`, `track_job`, `compose_labels`, kunci basi, …) — numpy saja, diuji dengan backend
 palsu lewat `backend_factory`. Urutan pemanggilan sesi (tambah input → hitung frame kondisi → maju → mundur) ada di `track_job`
@@ -856,6 +860,15 @@ def describe_plan(clip: Clip, cuts: list[int], shots: list[tuple[int, int]], job
     return lines
 
 
+def neg_points_warning(clip: Clip, over: Sequence[tuple[int, int, int]], limit: int, *, preview_hint: bool = True) -> str:
+    """T-609: PERINGATAN klik kanan > limit per target per frame (`isolate.neg_points_warn_max`); tidak memblokir."""
+    pick_cmd = cli_cmd("pick", clip.work_dir)
+    hint = f"Cek (CPU): {pick_cmd} {pick.PREVIEW_FLAG}; kurangi klik: " if preview_hint else "Kurangi klik: "
+    return (f"PERINGATAN: klik kanan lebih dari {limit} per target: {', '.join(f'f{f} target {t} ({n})' for f, t, n in over)}. "
+            f"Data T-608: 30 klik kanan melemahkan skor objek SAM, 47–67 membuat masker kosong. {hint}"
+            f"{pick_cmd} --frame {over[0][0]}. Tidak memblokir (isolate.neg_points_warn_max = {limit}).")
+
+
 def gpu_frames(jobs: list[Job]) -> int:
     return sum(j.shot[1] - j.shot[0] + 1 for j in jobs)
 
@@ -877,6 +890,7 @@ def run_isolate(cfg: PipelineConfig, *, yes: bool = False, restart: bool = False
     t0 = time.perf_counter()
     frames_sha, per_frame = frames_fingerprint(clip)
     doc = load_valid_points(clip, per_frame)
+    over = pick.doc_over_negative(doc, cfg.isolate.neg_points_warn_max)    # T-609: peringatan saja, BUKAN kunci
     points_bytes = clip.points_path.read_bytes()
     identity = clip_identity(clip.work_dir)
     key = build_key(cfg, hashlib.sha256(points_bytes).hexdigest(), frames_sha)
@@ -884,6 +898,8 @@ def run_isolate(cfg: PipelineConfig, *, yes: bool = False, restart: bool = False
     state, reasons = existing_state(clip, key, identity)
     if state == "ok" and not restart:
         log(f"[1b] isolate: up-to-date — dilewati (tanpa GPU; kunci {canonical_sha256(key)[:12]}, {key_s:.1f} s)")
+        if dry_run and over:                   # T-609: --dry-run selalu memeriksa titik (run biasa up-to-date: tanpa peringatan)
+            log(neg_points_warning(clip, over, cfg.isolate.neg_points_warn_max))
         return {"status": "up-to-date"}
     t1 = time.perf_counter()
     cuts, shots = detect_scenes(clip, cfg.stabilize.temporal.cut_diff, thumbs)
@@ -900,15 +916,20 @@ def run_isolate(cfg: PipelineConfig, *, yes: bool = False, restart: bool = False
             log(line)
         log(f"  GPU: {'dibutuhkan (--yes wajib)' if jobs and (state != 'ok' or restart) else 'tidak dibutuhkan'}; "
             f"{n_gpu} frame dihitung SAM ≈ {est:.0f} s (≈ {SECONDS_PER_FRAME_ESTIMATE} s/frame + muat ±{LOAD_SECONDS_ESTIMATE:.0f} s)")
+        if over:
+            log(neg_points_warning(clip, over, cfg.isolate.neg_points_warn_max))
         log("  dry-run: tidak ada yang dihitung / ditulis / dihapus")
         return {"status": "dry-run", "state": state, "reasons": reasons, "cuts": cuts, "shots": shots,
-                "jobs": [job_json(j) for j in jobs], "gpu_frames": n_gpu, "estimate_s": round(est, 1)}
-    if jobs and not yes:
+                "jobs": [job_json(j) for j in jobs], "gpu_frames": n_gpu, "estimate_s": round(est, 1),
+                "neg_points_over": [list(o) for o in over]}
+    if over and jobs:                          # T-609: sebelum GPU (dengan / tanpa --yes); tidak memblokir
+        log(neg_points_warning(clip, over, cfg.isolate.neg_points_warn_max))
+    if jobs and not yes:                       # T-609 (C1): tanpa saran `run … --yes` (run = ingest + SEMUA stage)
         raise StageError(
             f"[1b] isolate butuh GPU ({why}" + (f": {'; '.join(reasons[:4])}" if reasons else "") + f") — {n_gpu} frame × "
-            f"≈ {SECONDS_PER_FRAME_ESTIMATE} s ≈ {est / 60:.1f} mnt. Tidak ada yang dihitung / dihapus. Jalankan ulang dengan "
-            f"--yes: {stage_cmd(clip.work_dir)} --yes (atau {cli_cmd('run', clip.work_dir)} --yes). Rencana: "
-            f"{stage_cmd(clip.work_dir)} --dry-run")
+            f"≈ {SECONDS_PER_FRAME_ESTIMATE} s ≈ {est / 60:.1f} mnt. Tidak ada yang dihitung / dihapus. Jalankan ulang [1b] saja "
+            f"dengan --yes: {stage_cmd(clip.work_dir)} --yes. Rencana tanpa GPU: {stage_cmd(clip.work_dir)} --dry-run. Cek klik "
+            f"dulu (CPU): {cli_cmd('pick', clip.work_dir)} {pick.PREVIEW_FLAG}")
     if state == "basi":
         log(f"PERINGATAN: isolate/ basi — dihitung ulang seluruh klip:\n  " + "\n  ".join(reasons))
     if restart and clip.out_dir.exists():

@@ -888,3 +888,143 @@ def test_37_real_sam_gpu(tmp_path):
     first, second, m = _real_check(tmp_path, "cuda")
     assert m["run"]["vram"]["max_reserved_mib"] > 0 and m["run"]["open"]["device"] == "cuda"
     print("GPU dua kali byte-identik:", first == second)
+
+
+# ── (43)–(47) T-609: peringatan klik kanan (YAML isolate.neg_points_warn_max) + pesan tanpa `run … --yes` ──
+NEG = [(10, 12, 1)] + [(30, 5 + k % 20, 0) for k in range(11)]       # 1 klik kiri + 11 klik kanan (frame 40 × 30)
+
+
+def test_43_neg_warning_in_dry_run_strict_threshold_from_yaml(tmp_path):
+    work, _ = make_clip(tmp_path, n=6)
+    write_points(work, {1: [(1, NEG, None)], 4: [(1, NEG[:11], None), (2, P, None)]})     # f4 target 1: 10 kanan
+    logs: list[str] = []
+    res = iso.run_isolate(cfg_for(work), dry_run=True, log=logs.append)
+    warn = [m for m in logs if m.startswith("PERINGATAN: klik kanan")]
+    assert res["neg_points_over"] == [[1, 1, 11]] and len(warn) == 1
+    assert "f1 target 1 (11)" in warn[0] and "f4" not in warn[0]
+    assert f"{stage_common.cli_cmd('pick', work)} --mask-preview" in warn[0] and "--frame 1" in warn[0]
+    assert iso.run_isolate(cfg_for(work, **{"isolate.neg_points_warn_max": 9}), dry_run=True,
+                           log=quiet)["neg_points_over"] == [[1, 1, 11], [4, 1, 10]]
+    logs.clear()
+    assert iso.run_isolate(cfg_for(work, **{"isolate.neg_points_warn_max": 11}), dry_run=True,
+                           log=logs.append)["neg_points_over"] == []
+    assert not any("klik kanan lebih" in m for m in logs) and not (work / "isolate").exists()
+    run(work)                                                             # up-to-date: --dry-run tetap memeriksa titik
+    logs.clear()
+    assert iso.run_isolate(cfg_for(work), dry_run=True, log=logs.append)["status"] == "up-to-date"
+    assert any(m.startswith("PERINGATAN: klik kanan lebih dari 10 per target: f1 target 1 (11)") for m in logs)
+
+
+def test_44_neg_warning_before_gpu_and_message_without_run(tmp_path):
+    work, _ = make_clip(tmp_path, n=6)
+    write_points(work, {1: [(1, NEG, None)]})
+    logs: list[str] = []
+    with pytest.raises(StageError) as ei:
+        iso.run_isolate(cfg_for(work), yes=False, log=logs.append, ram_probe=lambda: None)
+    msg = str(ei.value)
+    assert any(m.startswith("PERINGATAN: klik kanan lebih dari 10 per target: f1 target 1 (11)") for m in logs)
+    assert f"{iso.stage_cmd(work)} --yes" in msg and f"{iso.stage_cmd(work)} --dry-run" in msg
+    assert f"{stage_common.cli_cmd('pick', work)} --mask-preview" in msg
+    assert stage_common.cli_cmd("run", work) not in msg and "rotoscope run" not in msg and "(atau" not in msg   # K3
+    assert not (work / "isolate").exists()
+    logs.clear()
+    fac = factory()
+    res = iso.run_isolate(cfg_for(work), yes=True, backend_factory=fac, log=logs.append, ram_probe=lambda: None)
+    assert res["status"] == "dihitung" and fac.made and any("klik kanan lebih dari 10" in m for m in logs)   # tidak memblokir
+    logs.clear()
+    fac = factory()
+    assert iso.run_isolate(cfg_for(work), yes=True, backend_factory=fac, log=logs.append,
+                           ram_probe=lambda: None)["status"] == "up-to-date"
+    assert not fac.made and not any("klik kanan" in m for m in logs)                 # up-to-date: tanpa GPU, tanpa peringatan
+
+
+def test_45_neg_threshold_not_in_key_manifest_or_any_hash(tmp_path):
+    import dataclasses
+
+    from rotoscope import export as ex
+    from rotoscope.config import section_hash
+
+    work, _ = make_clip(tmp_path, n=6)
+    write_points(work, {1: [(1, NEG, None)]})
+    run(work)
+    m = manifest(work)
+    assert "neg" not in json.dumps(m["key"]) and "neg_points" not in json.dumps(m)
+    for v in (0, 3, 1000):
+        alt = cfg_for(work, **{"isolate.neg_points_warn_max": v})
+        assert iso.build_key(alt, "a", "b") == iso.build_key(cfg_for(work), "a", "b")
+        fac = factory()
+        assert iso.run_isolate(alt, yes=True, backend_factory=fac, log=quiet, ram_probe=lambda: None)["status"] == "up-to-date"
+        assert not fac.made
+    base, alt = load_pipeline(), load_pipeline(overrides={"isolate.neg_points_warn_max": 0})
+    assert base.isolate.neg_points_warn_max == 10 and alt.isolate.neg_points_warn_max == 0
+    for f in dataclasses.fields(base):
+        if f.name != "isolate":                                            # bagian isolate tidak pernah di-hash utuh (test_46)
+            assert section_hash(base, f.name) == section_hash(alt, f.name), f.name
+    assert ex.export_hash(base) == ex.export_hash(alt)
+
+
+def test_46_isolate_section_read_per_field_only():
+    """`isolate.*` hanya dibaca per field; kunci [1b] = build_key (tanpa neg_points_warn_max); bagian isolate tidak pernah di-hash /
+    di-dump utuh di modul mana pun; key YAML hanya dipakai config + pemakai peringatan."""
+    import inspect
+    import re
+
+    src = Path(iso.__file__).parent
+    whole = re.compile(r'section_hash\([^)]*["\']isolate["\']|to_dict\([^)]*\.isolate\b|asdict\([^)]*\.isolate\b')
+    users = set()
+    for p in sorted(src.glob("*.py")):
+        text = p.read_text(encoding="utf-8")
+        assert not whole.search(text), p.name
+        if "neg_points_warn_max" in text:
+            users.add(p.name)
+    assert users == {"config.py", "isolate.py", "mask_preview.py", "cli.py", "pick.py"}
+    assert "neg" not in inspect.getsource(iso.build_key)
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None, reason="ffmpeg/ffprobe tidak ada")
+def test_47_real_cpu_chain_unchanged_when_neg_threshold_changes(tmp_path, monkeypatch, capsys):
+    """Rantai CPU nyata ([1b] tiruan, [3]–[6] asli): ganti isolate.neg_points_warn_max → TIDAK ada stage yang basi, semua berkas
+    klip + out/ byte-identik (bukan hanya isi: manifest + cap waktu juga), [1b] tanpa backend."""
+    import test_pick as tp
+    import test_stabilize as tst
+
+    from rotoscope import export as ex
+    from rotoscope import stylize as sty
+    from rotoscope import vectorize as vec
+
+    monkeypatch.chdir(tmp_path)
+    video = tmp_path / "clip.mp4"
+    video.write_bytes(b"x")
+    work = tst.make_work(tmp_path / "stage")
+    meta = json.loads((work / "meta.json").read_text(encoding="utf-8"))
+    meta.update(source_path=str(video.resolve()), target_fps=24, has_audio=False)
+    (work / "meta.json").write_text(json.dumps(meta), encoding="utf-8")
+    wd = tmp_path / "work" / "clips" / "clip"
+    wd.parent.mkdir(parents=True)
+    shutil.move(str(work), str(wd))
+    (wd / "frames").mkdir()
+    for i in range(tst.N_FRAMES):
+        tp.write_png(wd / "frames" / f"frame_{i:05d}.png", tp.frame_rgb(i, tst.W, tst.H))
+    (wd / "qc_report.json").write_text(json.dumps({"stage": "segment_qc", "frames": [
+        {"frame": f"frame_{i:05d}.png", "index": i, "fail_reasons": []} for i in range(tst.N_FRAMES)]}), encoding="utf-8")
+    for d in ("seg", "depth"):
+        p = wd / d / "manifest.json"
+        p.write_text(json.dumps({**json.loads(p.read_text(encoding="utf-8")), "clip": clip_identity(wd)}), encoding="utf-8")
+    write_points(wd, {1: [(1, [(3, 4, 1)] + [(8, 9, 0)] * 12, None)]})    # 12 klik kanan > 10
+    r = Rec()
+    InProcIso.fac, InProcIso.seen = factory(), []
+    monkeypatch.setattr(cli, "_popen", InProcIso)
+    monkeypatch.setattr(cli, "CPU_MAINS", {"ingest": r.cpu("ingest"), "stabilize": stb.main, "vectorize": vec.main,
+                                           "stylize": sty.main, "export": ex.main})
+    out = tmp_path / "out"
+    assert cli.main(["run", str(video), "--yes"]) == 0
+    assert "klik kanan lebih dari 10" in capsys.readouterr().out and len(InProcIso.fac.made) == 1
+    assert cli.main(["run", str(video), "--yes"]) == 0                     # kontrol: run ulang tanpa perubahan
+    before = tree(wd) | {f"out/{k}": v for k, v in tree(out).items()}
+    assert any(k.startswith("stable/") for k in before) and any(k.startswith("out/") for k in before)
+    for v in (0, 1000):
+        conf = tmp_path / f"neg{v}.yaml"
+        conf.write_text(f"isolate:\n  neg_points_warn_max: {v}\n", encoding="utf-8")
+        assert cli.main(["run", str(video), "--yes", "--config", str(conf)]) == 0
+        after = tree(wd) | {f"out/{k}": v for k, v in tree(out).items()}
+        assert after == before and len(InProcIso.fac.made) == 1, sorted(k for k in after if after.get(k) != before.get(k))

@@ -156,6 +156,9 @@ PIPELINE_INVALID = [
     ({"ingest.crop.detect.min_active_frac": 0}, r"ingest\.crop\.detect\.min_active_frac"),
     ({"ingest.crop.preview.hint_static_frac": 1.2}, r"ingest\.crop\.preview\.hint_static_frac"),
     ({"ingest.trim": {"start_s": 1}}, r"ingest\.trim.*tidak dikenal"),        # T-607 no. 15: trim hanya lewat --start / --end
+    ({"isolate.neg_points_warn_max": -1}, r"isolate\.neg_points_warn_max.*≥ 0"),     # T-609
+    ({"isolate.neg_points_warn_max": 10.5}, r"isolate\.neg_points_warn_max.*int"),
+    ({"isolate.neg_points_warn_max": True}, r"isolate\.neg_points_warn_max.*int"),
     ({"segment.model": "1b"}, r"segment\.model \('1b'\)"),
     ({"segment.model_ids": {"0.8b": "facebook/sapiens-seg-0.8b"}}, r"segment\.model_ids\.0\.8b.*sapiens2-seg-"),
     ({"segment.model_ids": {"0.4b": "facebook/sapiens-seg-0.4b-torchscript"}}, r"CC-BY-NC"),
